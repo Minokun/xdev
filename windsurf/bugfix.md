@@ -69,8 +69,21 @@ git push origin HEAD
 ```bash
 git log --oneline -10 -- <affected-files>
 ```
-- 读错误堆栈 / 复现步骤，锁定根因文件 + 行号
-- ⏱ 5 min 内无法定位 → 立即升级 S3
+读错误堆栈 / 复现步骤，锁定根因文件 + 行号。
+
+**优先用 blame/bisect 定位引入时间点（比猜假设快 3-5 倍）：**
+```bash
+# 精准定位到出问题的行
+git blame -L <start_line>,<end_line> <file>
+
+# 不确定哪次提交引入时，直接二分查找
+git bisect start
+git bisect bad HEAD
+git bisect good <last-known-good-commit>
+# 找到引入 commit 后，查看该 commit 的 diff 即为根因线索
+```
+
+⏱ 5 min 无结果 → 立即升级 S3。
 
 **Step B — 单次假设验证（≤ 10 min）**
 - 添加临时断言 / 日志，运行复现
@@ -138,7 +151,12 @@ Regression test included for <bug description>"
 
 **Phase 1 — 收集证据**
 - 读错误堆栈、追踪代码路径
-- `git log --oneline -20 -- <affected-files>`
+- ```bash
+  git log --oneline -20 -- <affected-files>
+  git blame -L <start_line>,<end_line> <file>
+  # 已知上次正常版本时：git bisect start && git bisect bad HEAD && git bisect good <last-good>
+  ```
+- bisect 找到引入 commit → 直接看该 diff，根因通常就在其中
 - 确认能否稳定复现
 
 **Phase 2 — 模式分析**

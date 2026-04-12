@@ -59,7 +59,21 @@ argument-hint: <bug 描述或错误信息>
 ```bash
 git log --oneline -10 -- <affected-files>
 ```
-读错误堆栈 / 复现步骤，锁定根因文件 + 行号。⏱ 5 min 无结果 → 立即升级 S3。
+读错误堆栈 / 复现步骤，锁定根因文件 + 行号。
+
+**优先用 blame/bisect 定位引入时间点（比猜假设快 3-5 倍）：**
+```bash
+# 精准定位到出问题的行
+git blame -L <start_line>,<end_line> <file>
+
+# 不确定哪次提交引入时，直接二分查找
+git bisect start
+git bisect bad HEAD
+git bisect good <last-known-good-commit>
+# 找到引入 commit 后，查看该 commit 的 diff 即为根因线索
+```
+
+⏱ 5 min 无结果 → 立即升级 S3。
 
 **Step B — 单次假设验证（≤ 10 min）**
 - 添加临时断言 / 日志，运行复现
@@ -111,6 +125,15 @@ Fix: <what was changed>"
 ## ── S3 深度路 ──
 
 ### 阶段 1：完整根因调查
+
+**前置：blame/bisect 快速锁定（在调用 investigate 前，≤ 5 min）**
+```bash
+git log --oneline -20 -- <affected-files>
+git blame -L <start_line>,<end_line> <file>
+# 已知上次正常版本时，直接 bisect：
+git bisect start && git bisect bad HEAD && git bisect good <last-good>
+```
+将 bisect 定位结果（引入 commit + diff）作为上下文传入 investigate，加速根因分析。
 
 **→ 调用 skill：`investigate`**
 
