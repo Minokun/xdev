@@ -204,17 +204,19 @@ cd ~/.claude/skills/gstack && ./setup
 
 克隆到固定位置后软链接过去——后续只需 `git pull` 即可更新。
 
-**方式 A — Windsurf**
+**方式 A — Windsurf（全局，所有项目可用）**
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-# 将各工作流文件软链到项目目录
-ln -s ~/.claude/skills/xdev/windsurf/full-dev.md /path/to/your/project/.windsurf/workflows/full-dev.md
-ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md /path/to/your/project/.windsurf/workflows/full-dev-design.md
-ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md /path/to/your/project/.windsurf/workflows/full-dev-impl.md
-ln -s ~/.claude/skills/xdev/windsurf/bugfix.md /path/to/your/project/.windsurf/workflows/bugfix.md
-ln -s ~/.claude/skills/xdev/windsurf/iterate.md /path/to/your/project/.windsurf/workflows/iterate.md
+# 软链到 Windsurf 全局 workflows 目录
+ln -s ~/.claude/skills/xdev/windsurf/full-dev.md ~/.codeium/windsurf/windsurf/workflows/full-dev.md
+ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md ~/.codeium/windsurf/windsurf/workflows/full-dev-design.md
+ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md ~/.codeium/windsurf/windsurf/workflows/full-dev-impl.md
+ln -s ~/.claude/skills/xdev/windsurf/bugfix.md ~/.codeium/windsurf/windsurf/workflows/bugfix.md
+ln -s ~/.claude/skills/xdev/windsurf/iterate.md ~/.codeium/windsurf/windsurf/workflows/iterate.md
 ```
+
+> 如需项目级安装（随仓库版本管理），改为软链到项目根目录的 `.windsurf/workflows/` 下。
 
 调用方式：
 ```

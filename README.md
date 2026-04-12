@@ -204,17 +204,19 @@ cd ~/.claude/skills/gstack && ./setup
 
 Clone to a fixed location, then symlink — this way `git pull` is all you need to update.
 
-**Option A — Windsurf**
+**Option A — Windsurf (global, available in all projects)**
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-# Symlink each workflow file into your project
-ln -s ~/.claude/skills/xdev/windsurf/full-dev.md /path/to/your/project/.windsurf/workflows/full-dev.md
-ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md /path/to/your/project/.windsurf/workflows/full-dev-design.md
-ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md /path/to/your/project/.windsurf/workflows/full-dev-impl.md
-ln -s ~/.claude/skills/xdev/windsurf/bugfix.md /path/to/your/project/.windsurf/workflows/bugfix.md
-ln -s ~/.claude/skills/xdev/windsurf/iterate.md /path/to/your/project/.windsurf/workflows/iterate.md
+# Symlink into Windsurf's global workflows directory
+ln -s ~/.claude/skills/xdev/windsurf/full-dev.md ~/.codeium/windsurf/windsurf/workflows/full-dev.md
+ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md ~/.codeium/windsurf/windsurf/workflows/full-dev-design.md
+ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md ~/.codeium/windsurf/windsurf/workflows/full-dev-impl.md
+ln -s ~/.claude/skills/xdev/windsurf/bugfix.md ~/.codeium/windsurf/windsurf/workflows/bugfix.md
+ln -s ~/.claude/skills/xdev/windsurf/iterate.md ~/.codeium/windsurf/windsurf/workflows/iterate.md
 ```
+
+> For project-level install (version-controlled with your repo), symlink into `.windsurf/workflows/` inside your project root instead.
 
 Invoke with:
 ```
