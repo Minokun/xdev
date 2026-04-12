@@ -71,7 +71,7 @@ cat docs/plans/YYYY-MM-DD-<feature-name>.md      # TDD 实现计划
 ```
 Agent A（test）→ 只写失败测试 → 确认 FAIL → 提交测试文件
                                                   ↓ Red 确认后
-Agent B（impl）→ 只写最小实现 → 确认 PASS → 全量测试 → 提交
+Agent B（impl）→ 只写最小实现 → 确认 PASS → 共享模块影响范围检查（如适用）→ 全量测试 → 提交 `feat(task-NNN): <desc>`
 
 多个配对 → 不同配对可同时并行
 ```
@@ -97,6 +97,20 @@ Agent B（impl）→ 只写最小实现 → 确认 PASS → 全量测试 → 提
 **步骤 B：写最小实现使测试通过**
 再次运行验证命令，预期：PASS
 
+**步骤 B.5：共享模块影响范围检查（条件触发）**
+
+触发判断：修改的文件是否被 ≥ 2 个外部模块引用（工具函数 / 基类 / 核心接口）？
+
+```bash
+# Python 项目
+grep -r "from <module_path> import\|import <module_name>" src/ -l
+# TypeScript 项目
+grep -r "from '.*<module_name>'\|require('.*<module_name>')" src/ --include="*.ts" -l
+```
+
+- ✅ 未被外部引用 → 跳过，直接进入步骤 C
+- ⚠️ 有外部引用 → 将识别出的上游调用方测试文件追加到验证范围，确认它们在修改后仍 PASS，再进入步骤 C
+
 **步骤 C：运行完整测试套件确认无回归**
 ```bash
 cd backend && uv run pytest -v
@@ -107,7 +121,7 @@ cd frontend && npm test
 **步骤 D：原子提交**
 ```bash
 git add <changed-files>
-git commit -m "feat: <specific change description>"
+git commit -m "feat(task-NNN): <specific change description>"
 ```
 
 ### 4.2 TDD 例外处理

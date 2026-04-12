@@ -265,7 +265,7 @@ Agent A - task-NNN-<feature>-test：
 
 Agent B - task-NNN-<feature>-impl（等 Agent A 报告 FAIL 后再启动）：
 读取计划中该任务的 BDD 场景和验证命令。
-执行：写最小实现使测试通过 → 运行验证命令确认 PASS → 全量测试确认无回归 → 原子提交。
+执行：写最小实现使测试通过 → 运行验证命令确认 PASS → 共享模块影响范围检查（如适用）→ 全量测试确认无回归 → 原子提交 `feat(task-NNN): <desc>`。
 ```
 
 ### 并行执行（普通独立任务）
@@ -288,8 +288,9 @@ Task: task-NNN-<feature>-<type>
 读取计划中该任务的 BDD 场景、文件列表和验证命令。执行完整 TDD 循环：
 1. 写失败测试（确认 FAIL）
 2. 写最小实现（确认 PASS）
-3. 全量测试（确认无回归）
-4. 原子提交
+3. 共享模块影响范围检查（如适用，见 B.5）
+4. 全量测试（确认无回归）
+5. 原子提交：`git commit -m "feat(task-NNN): <desc>"`
 ```
 
 **TDD 循环步骤（subagent 执行）：**
@@ -299,6 +300,20 @@ Task: task-NNN-<feature>-<type>
 
 **B. 写最小实现**
 再次运行验证命令，预期：PASS
+
+**B.5 共享模块影响范围检查（条件触发）**
+
+触发判断：修改的文件是否被 ≥ 2 个外部模块引用（工具函数 / 基类 / 核心接口）？
+
+```bash
+# Python 项目
+grep -r "from <module_path> import\|import <module_name>" src/ -l
+# TypeScript 项目
+grep -r "from '.*<module_name>'\|require('.*<module_name>')" src/ --include="*.ts" -l
+```
+
+- ✅ 未被外部引用 → 跳过，直接进入 Step C
+- ⚠️ 有外部引用 → 将识别出的上游调用方测试文件追加到验证范围，确认它们在修改后仍 PASS，再进入 Step C
 
 **C. 全量测试确认无回归**
 ```bash
@@ -310,7 +325,7 @@ cd frontend && npm test
 **D. 原子提交**
 ```bash
 git add <changed-files>
-git commit -m "feat: <specific change description>"
+git commit -m "feat(task-NNN): <specific change description>"
 ```
 
 ### TDD 例外处理

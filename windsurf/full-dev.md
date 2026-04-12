@@ -280,6 +280,20 @@ cd backend && uv run pytest tests/<test_file>.py::<test_name> -v
 ```
 预期：PASS
 
+**步骤 B.5：共享模块影响范围检查（条件触发）**
+
+触发判断：修改的文件是否被 ≥ 2 个外部模块引用（工具函数 / 基类 / 核心接口）？
+
+```bash
+# Python 项目
+grep -r "from <module_path> import\|import <module_name>" src/ -l
+# TypeScript 项目
+grep -r "from '.*<module_name>'\|require('.*<module_name>')" src/ --include="*.ts" -l
+```
+
+- ✅ 未被外部引用 → 跳过，直接进入步骤 C
+- ⚠️ 有外部引用 → 将识别出的上游调用方测试文件追加到验证范围，确认它们在修改后仍 PASS，再进入步骤 C
+
 **步骤 C：运行完整测试套件确认无回归**
 ```bash
 # 后端全量测试
@@ -292,7 +306,7 @@ cd frontend && npm test
 **步骤 D：原子提交**
 ```bash
 git add <changed-files>
-git commit -m "feat: <specific change description>"
+git commit -m "feat(task-NNN): <specific change description>"
 ```
 
 ### 4.2 TDD 例外处理

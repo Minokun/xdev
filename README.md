@@ -43,6 +43,7 @@ There are plenty of AI command collections out there. Here's why xdev is differe
 | Confirmation policy | ❌ | ❌ | ✅ 🔴/🟡/🟢 three tiers |
 | **Adaptive execution** | ❌ | ❌ | ✅ Self-assesses severity, auto-selects workflow and skills |
 | **Dependency-aware parallelism** | ❌ | ❌ | ✅ Analyzes task graph, runs independent tasks in parallel |
+| **Cognitive load** | High — pre-map scenarios, manually chain tools | High — craft precise prompts for every variation | **Low — describe the goal, xdev decides how** |
 
 > **Confirmation tiers:** 🔴 high-risk ops (git push, PR publish) — always confirm · 🟡 mid-risk (bulk file edits) — prompt by default · 🟢 low-risk (read files, run tests) — auto-execute
 
