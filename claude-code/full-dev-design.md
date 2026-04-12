@@ -107,11 +107,13 @@ Subagent D → plan-ceo-review    （如适用）
 
 每个 subagent 收到：设计文档路径 + 各自审查维度 + 输出格式（HIGH/MEDIUM/LOW 问题列表）
 
+> **重要：** subagent 只输出问题列表，不直接修改设计文档。修复操作由主线程统一执行，避免并发写入冲突。
+
 **只有 plan-eng-review 时**：在主线程直接调用，不开 subagent。
 
 **汇总（所有 subagent 完成后）：**
 1. 合并所有 HIGH 级别问题，去重
-2. 按优先级逐一修复设计文档
+2. 按优先级逐一修复设计文档（主线程执行，每修复一个问题单独确认）
 3. 所有 HIGH 未解决项清零才进入下一阶段
 
 **门禁：** 无 HIGH 未解决项。 2 次重审后仍有 HIGH → 降级为仅 eng-review。
@@ -193,7 +195,11 @@ Subagent C — 任务完整性检查
   输出：缺失字段的任务列表
 ```
 
-汇总发现的问题并修复，然后提交：
+**汇总规则（所有 subagent 完成后）：**
+- 合并 3 份报告，去重，归纳为统一问题清单
+- **HIGH 问题**（缺覆盖、循环依赖、缺必填字段）→ 必须修复后才提交
+- **MEDIUM 问题**（依赖疑似多余、描述模糊）→ 权衡修复，记录决策理由
+- 修复完成后，重新检查受影响的任务，确认无新问题引入
 
 ```bash
 git add docs/plans/ && git commit -m "docs: add implementation plan for <feature>"
