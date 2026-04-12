@@ -172,7 +172,7 @@ After all three steps complete, confirm the files are in place and tell me which
 
 ### Step 1 — Install superpowers
 
-superpowers provides skills used in xdev: `brainstorming`, UI/UX design skills, and frontend utilities.
+superpowers provides the `brainstorming` skill used in xdev (lightweight requirement exploration for simple features), plus a broader suite of development workflow skills (`writing-plans`, `test-driven-development`, `systematic-debugging`, `dispatching-parallel-agents`, etc.) that Claude Code agents can draw on during execution.
 
 **Claude Code (official marketplace — easiest):**
 ```
@@ -257,22 +257,24 @@ cd ~/.claude/skills/xdev && git pull
 
 | Skill | Source | Used in |
 |-------|--------|---------|
-| `brainstorming` | superpowers | full-dev stage 1 |
-| `ui-ux-pro-max`, `frontend-design` | superpowers | full-dev (UI features) |
-| `investigate` | gstack | bugfix S3 |
-| `health` | gstack | full-dev, bugfix S3, iterate |
-| `qa` / `qa-only` | gstack | full-dev, bugfix S3 (UI) |
-| `browse` | gstack | bugfix S2 UI verification |
-| `ship` | gstack | all workflows |
-| `learn` | gstack | full-dev, bugfix S3 |
-| `writing-plans` | gstack | full-dev stage 3 |
-| `office-hours` | gstack | full-dev stage 1 (large features) |
-| `plan-eng-review` | gstack | full-dev stage 2 |
+| `superpowers:brainstorm` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design stage 1 (simple features) |
+| `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design stage 1 (large features) |
+| `plan-eng-review` | gstack | full-dev stage 2 (always) |
 | `plan-design-review` | gstack | full-dev stage 2 (UI changes) |
 | `plan-devex-review` | gstack | full-dev stage 2 (API changes) |
 | `plan-ceo-review` | gstack | full-dev stage 2 (large features) |
+| `investigate` | gstack | bugfix S3 |
+| `health` | gstack | full-dev, bugfix S3, iterate |
+| `qa` | gstack | full-dev, bugfix S3 (UI), iterate |
+| `browse` | gstack | bugfix S2 UI verification |
+| `ship` | gstack | all workflows |
+| `learn` | gstack | full-dev, bugfix S3 |
 
 > xdev degrades gracefully if individual skills are missing — the workflow file will call the skill and it simply won't execute if not installed.
+
+**Optional UI companions** (not part of xdev's orchestration, but pair well for UI-heavy work):
+- [`ui-ux-pro-max`](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) — community UI/UX design skill
+- `frontend-design` — Claude's official frontend design assistant
 
 ---
 

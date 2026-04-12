@@ -172,7 +172,7 @@ xdev 解决了这四个问题。
 
 ### 第一步 —— 安装 superpowers
 
-superpowers 提供 xdev 使用的部分 skill：`brainstorming`、UI/UX 设计类 skill 及前端工具集。
+superpowers 提供 xdev 使用的 `brainstorming` skill（简单功能的轻量级需求探索），同时还包含一套更完整的开发工作流 skill（`writing-plans`、`test-driven-development`、`systematic-debugging`、`dispatching-parallel-agents` 等），Claude Code 代理在执行过程中可按需调用。
 
 **Claude Code（官方市场，最简单）：**
 ```
@@ -257,22 +257,24 @@ cd ~/.claude/skills/xdev && git pull
 
 | Skill | 来源 | 使用位置 |
 |-------|------|---------|
-| `brainstorming` | superpowers | full-dev 阶段 1 |
-| `ui-ux-pro-max`、`frontend-design` | superpowers | full-dev（UI 功能） |
-| `investigate` | gstack | bugfix S3 |
-| `health` | gstack | full-dev、bugfix S3、iterate |
-| `qa` / `qa-only` | gstack | full-dev、bugfix S3（UI）|
-| `browse` | gstack | bugfix S2 UI 验证 |
-| `ship` | gstack | 所有工作流 |
-| `learn` | gstack | full-dev、bugfix S3 |
-| `writing-plans` | gstack | full-dev 阶段 3 |
-| `office-hours` | gstack | full-dev 阶段 1（大功能）|
-| `plan-eng-review` | gstack | full-dev 阶段 2 |
+| `superpowers:brainstorm` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design 阶段 1（简单功能） |
+| `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design 阶段 1（大功能） |
+| `plan-eng-review` | gstack | full-dev 阶段 2（必选） |
 | `plan-design-review` | gstack | full-dev 阶段 2（UI 变更）|
 | `plan-devex-review` | gstack | full-dev 阶段 2（API 变更）|
 | `plan-ceo-review` | gstack | full-dev 阶段 2（大功能）|
+| `investigate` | gstack | bugfix S3 |
+| `health` | gstack | full-dev、bugfix S3、iterate |
+| `qa` | gstack | full-dev、bugfix S3（UI）、iterate |
+| `browse` | gstack | bugfix S2 UI 验证 |
+| `ship` | gstack | 所有工作流 |
+| `learn` | gstack | full-dev、bugfix S3 |
 
 > 如果某个 skill 未安装，xdev 会优雅降级 —— 工作流文件会调用该 skill，未安装时跳过即可。
+
+**可选 UI 配套工具**（不在 xdev 编排链路内，但做 UI 功能时可配合使用）：
+- [`ui-ux-pro-max`](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) —— 社区 UI/UX 设计 skill
+- `frontend-design` —— Claude 官方前端设计助手
 
 ---
 
