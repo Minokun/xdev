@@ -40,6 +40,10 @@ argument-hint: <改动描述>
 | 涉及数据库 schema 变更 | → /project:xdev:full-dev |
 | 涉及第三方 API 集成 | → /project:xdev:full-dev |
 | 影响已发布 API 的行为 | → /project:xdev:full-dev |
+| 新增页面 / 视图 / 路由 | → /project:xdev:full-dev（含视觉设计阶段） |
+| 新增组件且含 ≥ 2 个交互状态 | → /project:xdev:full-dev（含视觉设计阶段） |
+
+> **UI 迭代留在本流程的条件：** 现有组件的样式调整（文案 / 间距 / 颜色微调）、修复现有 UI 的显示 bug。这类改动用 `qa` 验证足够，不需要设计 skill。
 
 **升级路径：**
 - 量化阈值任一不满足 → 升级到 `/project:xdev:full-dev`
