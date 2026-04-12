@@ -129,37 +129,73 @@ git add docs/plans/ && git commit -m "docs: add visual design specs for <feature
 
 ---
 
-## 阶段 3：TDD 实现计划 (Writing Plans)
+## 阶段 3：TDD 实现计划
 
-**→ 调用 skill：`writing-plans`**
+基于设计文档生成细粒度 TDD 实现计划。
 
-- 基于设计文档生成细粒度 TDD 任务
-- 每个步骤 2-5 分钟：写失败测试 → 确认失败 → 写最小实现 → 确认通过 → 提交
-- **关键：** 每个任务必须包含精确文件路径、完整代码、精确命令
-- 产出：`docs/plans/YYYY-MM-DD-<feature-name>.md`
+**核心原则：**
+- **描述 What，不写 How** — 描述"实现什么"，不写实际代码（代码在执行阶段写）
+- **BDD 驱动** — 每个任务内嵌 Given/When/Then 场景，意图自洽，执行者无需猜测
+- **Red-Green 配对** — 每个功能拆为 test + impl 两个任务，共享 NNN 编号前缀
+- **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
 
-### 3.1 任务依赖标注
+### 任务格式
 
-**每个任务必须额外标注**依赖关系（供 `full-dev-impl` 并行分析使用）：
+每个功能点拆为一对任务：
 
-```markdown
-## 任务3: 实现 Card 组件
-依赖：无
-文件：src/components/Card.tsx, src/components/Card.test.tsx
-...
-
-## 任务5: 实现 List 页面
-依赖：任务3（需要 Card 组件），任务4（需要 API 接口）
-文件：src/pages/List.tsx, src/pages/List.test.tsx
-...
+```
+task-NNN-<feature>-test  ← 只写失败测试（Red）
+task-NNN-<feature>-impl  ← 只写最小实现让测试通过（Green）
 ```
 
-标注规则：
-- `依赖：无` — 可与其他无依赖任务并行
-- `依赖：任务N` — 必须等任务N完成后执行
-- `文件：` — 列出所有受影响文件（创建/修改）
+**每个任务必须包含（示例）：**
 
-### 3.2 实现计划提交
+```markdown
+## task-001-login-test
+
+**BDD 场景：**
+Given 用户未登录
+When 提交正确的用户名和密码
+Then 返回 200 状态码和有效的 JWT token
+
+**涉及文件：** src/auth/login.test.ts
+**验证命令：** npm test src/auth/login.test.ts
+**预期：** FAIL（测试先于实现，应失败）
+**依赖：** 无
+
+---
+
+## task-001-login-impl
+
+**BDD 场景：**（同 task-001-login-test）
+
+**涉及文件：** src/auth/login.ts
+**验证命令：** npm test src/auth/login.test.ts
+**预期：** PASS
+**依赖：** task-001-login-test
+```
+
+### 依赖规则
+
+| 规则 | 说明 |
+|------|------|
+| test 任务 | 无依赖（不依赖其他功能的测试） |
+| impl 任务 | 仅依赖同 NNN 的 test 任务，不等其他功能 |
+| 不同模块的任务 | 默认独立，可并行 |
+| 禁止顺序串联 | 不因"执行顺序"添加依赖，只标真实技术前提 |
+
+### 计划反思（提交前必做）
+
+计划草稿完成后，并行派发 3 个 subagent 验证质量，再提交：
+
+```
+Subagent A — 覆盖检查：每个功能点是否都有对应的 test + impl 配对
+Subagent B — 依赖图检查：依赖标注是否正确、有无循环依赖
+Subagent C — 任务完整性检查：每个任务是否包含 BDD 场景、文件列表、验证命令
+```
+
+汇总问题并修复，然后提交：
+
 ```bash
 git add docs/plans/ && git commit -m "docs: add implementation plan for <feature>"
 ```

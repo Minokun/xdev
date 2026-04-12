@@ -120,37 +120,86 @@ Subagent D → plan-ceo-review    （如适用）
 
 ## 阶段 3：TDD 实现计划
 
-基于设计文档生成细粒度 TDD 实现计划：
+基于设计文档生成细粒度 TDD 实现计划。
 
-**每个任务必须包含：**
-- 精确文件路径（如 `backend/core/xxx.py`）
-- 完整代码（可直接复制粘贴）
-- 精确测试命令（如 `cd backend && uv run pytest tests/test_xxx.py::test_yyy -v`）
-- 预期结果（FAIL → PASS）
+**核心原则：**
+- **描述 What，不写 How** — 描述"实现什么"，不写实际代码（代码在执行阶段写）
+- **BDD 驱动** — 每个任务内嵌 Given/When/Then 场景，意图自洽，执行者无需猜测
+- **Red-Green 配对** — 每个功能拆为 test + impl 两个任务，共享 NNN 编号前缀
+- **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
 
-每个步骤 2-5 分钟：写失败测试 → 确认失败 → 写最小实现 → 确认通过 → 提交
+### 任务格式
 
-- 产出：`docs/plans/YYYY-MM-DD-<feature-name>.md`
+每个功能点拆为一对任务：
 
-### 任务依赖标注
-
-**每个任务必须额外标注**依赖关系（供 `full-dev-impl` 并行分析使用）：
-
-```markdown
-## 任务3: 实现 Card 组件
-依赖：无
-文件：src/components/Card.tsx, src/components/Card.test.tsx
-...
-
-## 任务5: 实现 List 页面
-依赖：任务3（需要 Card 组件），任务4（需要 API 接口）
-文件：src/pages/List.tsx, src/pages/List.test.tsx
-...
+```
+task-NNN-<feature>-test  ← 只写失败测试（Red）
+task-NNN-<feature>-impl  ← 只写最小实现让测试通过（Green）
 ```
 
-标注规则：`依赖：无` → 可并行 | `依赖：任务N` → 必须等待 | `文件：` → 受影响文件
+**每个任务必须包含（示例）：**
 
-提交：`git add docs/plans/ && git commit -m "docs: add implementation plan for <feature>"`
+```markdown
+## task-001-login-test
+
+**BDD 场景：**
+Given 用户未登录
+When 提交正确的用户名和密码
+Then 返回 200 状态码和有效的 JWT token
+
+**涉及文件：** src/auth/login.test.ts
+**验证命令：** npm test src/auth/login.test.ts
+**预期：** FAIL（测试先于实现，应失败）
+**依赖：** 无
+
+---
+
+## task-001-login-impl
+
+**BDD 场景：**（同 task-001-login-test）
+
+**涉及文件：** src/auth/login.ts
+**验证命令：** npm test src/auth/login.test.ts
+**预期：** PASS
+**依赖：** task-001-login-test
+```
+
+### 依赖规则
+
+| 规则 | 说明 |
+|------|------|
+| test 任务 | 无依赖（不依赖其他功能的测试） |
+| impl 任务 | 仅依赖同 NNN 的 test 任务，不等其他功能 |
+| 不同模块的任务 | 默认独立，可并行 |
+| 禁止顺序串联 | 不因"执行顺序"添加依赖，只标真实技术前提 |
+
+> **例外：** 确有技术前提时才标依赖（如"需要先有 auth 中间件才能测试 protected route"）。
+
+### 计划反思（提交前必做）
+
+计划草稿完成后，并行派发 3 个 subagent 验证质量，再提交：
+
+```
+Subagent A — 覆盖检查
+  目标：设计文档中每个功能点是否都有对应的 test + impl 配对
+  输出：未覆盖功能列表、无对应功能的孤立任务
+
+Subagent B — 依赖图检查
+  目标：depends-on 标注是否正确、有无循环依赖、有无遗漏依赖
+  输出：依赖图可视化 + 问题列表
+
+Subagent C — 任务完整性检查
+  目标：每个任务是否包含 BDD 场景、文件列表、验证命令
+  输出：缺失字段的任务列表
+```
+
+汇总发现的问题并修复，然后提交：
+
+```bash
+git add docs/plans/ && git commit -m "docs: add implementation plan for <feature>"
+```
+
+**产出：** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 
 ---
 

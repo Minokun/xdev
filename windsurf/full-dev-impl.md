@@ -58,10 +58,28 @@ cat docs/plans/YYYY-MM-DD-<feature-name>.md      # TDD 实现计划
 
 > **注意：** 不确定依赖关系时，保守归入串行。宁可少并行，不要产生冲突。
 
-### 4.1 批次化执行
+### 4.1 执行模式优先级
+
+| 优先级 | 模式 | 触发条件 |
+|--------|------|---------|
+| 1 | **Red-Green 配对** | 批次含同 NNN 的 test + impl 任务对 |
+| 2 | **并行执行** | 批次内任务互相独立（不同文件/模块）|
+| 3 | **串行** | 最后手段：批次内有不可拆分的文件冲突 |
+
+**Red-Green 配对执行：**
+
+```
+Agent A（test）→ 只写失败测试 → 确认 FAIL → 提交测试文件
+                                                  ↓ Red 确认后
+Agent B（impl）→ 只写最小实现 → 确认 PASS → 全量测试 → 提交
+
+多个配对 → 不同配对可同时并行
+```
+
+### 4.2 批次化执行
 
 按批次顺序执行：
-- **批次内**：按任务独立执行 TDD 循环，顺序不限
+- **批次内**：同时启动所有任务，每个 subagent 独立执行 TDD 循环
 - **批次间**：串行——前一批次全量测试通过后再进入下一批次
 - **冲突处理**：批次后全量测试失败 → 识别冲突任务 → 串行重做冲突部分
 
@@ -70,25 +88,14 @@ cat docs/plans/YYYY-MM-DD-<feature-name>.md      # TDD 实现计划
 每个任务执行以下 TDD 循环：
 
 **步骤 A：写失败测试**
-```bash
-# 后端
-cd backend && uv run pytest tests/<test_file>.py::<test_name> -v
-# 前端
-cd frontend && npm test -- --run <test_file>
-```
-预期：FAIL
+运行任务中指定的验证命令，预期：FAIL
 
 **步骤 B：写最小实现使测试通过**
-```bash
-cd backend && uv run pytest tests/<test_file>.py::<test_name> -v
-```
-预期：PASS
+再次运行验证命令，预期：PASS
 
 **步骤 C：运行完整测试套件确认无回归**
 ```bash
-# 后端全量测试
 cd backend && uv run pytest -v
-# 前端全量测试
 cd frontend && npm test
 ```
 预期：全部 PASS
