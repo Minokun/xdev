@@ -272,9 +272,8 @@ cd ~/.claude/skills/xdev && git pull
 
 > xdev degrades gracefully if individual skills are missing — the workflow file will call the skill and it simply won't execute if not installed.
 
-**Optional UI companions** (not part of xdev's orchestration, but pair well for UI-heavy work):
-- [`ui-ux-pro-max`](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) — community UI/UX design skill
-- `frontend-design` — Claude's official frontend design assistant
+| `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
+| `frontend-design` | Claude official | full-dev / full-dev-design stage 1.5 (single page / small components) |
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-description: 设计阶段 — 编排 office-hours + plan-*-review skill 链（支持并行审查），产出设计文档 + 实现计划
+description: 设计阶段 — 编排 office-hours + 视觉设计（条件）+ plan-*-review skill 链（支持并行审查），产出设计文档 + 实现计划
 argument-hint: <需求描述>
 ---
 
@@ -40,6 +40,44 @@ argument-hint: <需求描述>
 - 完成后提交：`git add docs/plans/ && git commit -m "docs: add design for <feature>"`
 
 **🔴 门禁：** 设计文档经用户确认。 3 轮无进展 → 暂停，请用户重新描述。
+
+---
+
+## 阶段 1.5：视觉设计（条件触发）
+
+**触发判断（分析阶段 1 产出的设计文档）：**
+
+| 信号 | 处理 |
+|------|------|
+| 新建页面 / 路由 / 视图 | ✅ 触发 |
+| 新建复杂组件（≥ 3 个 或 含多种交互状态） | ✅ 触发 |
+| 重大视觉改版 / 品牌升级 | ✅ 触发 |
+| 设计系统变更（新 token / 新主题） | ✅ 触发 |
+| 纯后端 / 纯逻辑 / 无 UI 改动 | ⏭ 跳过 |
+| 小幅 UI 调整（文案 / 间距 / 颜色微调） | ⏭ 跳过 |
+| 修复现有 UI 的 bug | ⏭ 跳过 |
+
+🟡 判定结果通知用户（`触发视觉设计 — <原因>` 或 `跳过视觉设计 — <原因>`），继续执行。
+
+**触发时：选择设计 skill**
+
+| 场景 | 调用 skill | 原因 |
+|------|-----------|------|
+| 全新产品 / 大模块 / 复杂交互设计 | **→ `ui-ux-pro-max`** | 端到端 UI/UX 设计，含竞品参考、交互方案、完整组件规范 |
+| 单页面 / 少量组件 / 功能增强 | **→ `frontend-design`** | Claude 官方前端设计助手，快速产出组件结构与样式规范 |
+
+> **降级规则：** 优先使用已安装的 skill。两者均未安装 → 跳过此步骤，在设计文档中手动补充 UI 描述后继续。
+
+**输入：** 阶段 1 产出的设计文档
+**产出（追加到设计文档对应章节）：**
+- 组件结构与层级关系
+- 交互状态规范（hover / active / loading / error / empty）
+- 样式规范（颜色、间距、字体、阴影、圆角）
+- 响应式断点与无障碍要求
+
+提交：`git add docs/plans/ && git commit -m "docs: add visual design specs for <feature>"`
+
+**门禁：** 视觉规范已追加到设计文档。
 
 ---
 
@@ -119,7 +157,9 @@ Subagent D → plan-ceo-review    （如适用）
 ## Skill 编排总览
 
 ```
-office-hours
+office-hours / superpowers:brainstorm
+    ↓
+[ui-ux-pro-max / frontend-design]  ← 条件触发（涉及 UI 时）
     ↓
 [plan-eng-review ‖ plan-design-review ‖ plan-devex-review ‖ plan-ceo-review]  ← 并行
     ↓ 汇总修复

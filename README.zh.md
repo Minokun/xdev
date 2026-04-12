@@ -272,9 +272,8 @@ cd ~/.claude/skills/xdev && git pull
 
 > 如果某个 skill 未安装，xdev 会优雅降级 —— 工作流文件会调用该 skill，未安装时跳过即可。
 
-**可选 UI 配套工具**（不在 xdev 编排链路内，但做 UI 功能时可配合使用）：
-- [`ui-ux-pro-max`](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) —— 社区 UI/UX 设计 skill
-- `frontend-design` —— Claude 官方前端设计助手
+| `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design 阶段 1.5（全新产品 / 复杂 UI）|
+| `frontend-design` | Claude 官方 | full-dev / full-dev-design 阶段 1.5（单页面 / 少量组件）|
 
 ---
 
