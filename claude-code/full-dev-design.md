@@ -15,6 +15,31 @@ argument-hint: <需求描述>
 
 ---
 
+## 前置：会话恢复检查
+
+在 `docs/state/` 下查找当前工作流的状态文件，匹配规则：文件名前缀 = `full-dev-design--<当前分支>--`
+
+```
+找到匹配的状态文件？
+│
+├── 未找到 → 正常启动，继续执行
+│
+└── 找到 → 执行三重校验
+    ├── 校验1：文件中的「分支」== 当前 git 分支？
+    │   └── 不匹配 → 🟡 提示"会话来自分支 X，当前在 Y，不自动恢复"，删除状态文件，正常启动
+    ├── 校验2：文件中「锁定的 HEAD」仍在当前分支 git 历史中？
+    │   └── 不在历史中 → 🟡 提示"会话的锚点提交已不在历史中"，删除状态文件，正常启动
+    ├── 校验3：文件中「计划文件」路径存在？
+    │   └── 不存在 → 🟡 提示"会话引用的计划文件不存在"，删除状态文件，正常启动
+    ├── 「已完成」字段 == true → 说明上次已正常完成，删除状态文件，正常启动
+    └── 全部通过 → 🟡 通知用户：
+                   "检测到未完成的设计会话（功能：<slug>，已完成阶段：<N>），
+                    将从阶段 <N+1> 继续。如需重新开始请告知。"
+                   **跳转到对应阶段继续执行。**
+```
+
+---
+
 ## 前置：读取项目上下文
 
 读取 `CLAUDE.md` 了解项目架构、开发命令、关键模式。
@@ -219,6 +244,30 @@ git add docs/plans/ && git commit -m "docs: add implementation plan for <feature
 ```
 
 **产出：** `docs/plans/YYYY-MM-DD-<feature-name>.md`
+
+### 写入会话状态（设计阶段完成）
+
+从 `$ARGUMENTS` 提炼功能名 slug（kebab-case 英文），然后原子写入状态文件：
+
+```bash
+mkdir -p docs/state
+_STATE_FILE="docs/state/full-dev-design--${_BRANCH}--${_SLUG}.md"
+cat > /tmp/xdev-state-tmp.md << STATEOF
+## xdev 会话状态
+- **功能：** ${_SLUG}
+- **工作流：** full-dev-design
+- **分支：** ${_BRANCH}
+- **锁定的 HEAD：** ${_HEAD}
+- **完成阶段：** 1, 2, 3
+- **当前阶段：** 完成（等待 full-dev-impl 接续）
+- **设计文件：** ${_DESIGN_FILE}
+- **计划文件：** ${_PLAN_FILE}
+- **更新时间：** $(date '+%Y-%m-%d %H:%M')
+STATEOF
+mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
+```
+
+🟡 通知用户：`设计阶段会话状态已写入 ${_STATE_FILE}`
 
 ---
 

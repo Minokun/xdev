@@ -18,11 +18,52 @@ argument-hint: <需求描述>
 
 ---
 
+## 前置：会话恢复检查
+
+在 `docs/state/` 下查找当前工作流的状态文件，匹配规则：文件名前缀 = `full-dev--<当前分支>--`
+
+```
+找到匹配的状态文件？
+│
+├── 未找到 → 正常启动，继续执行
+│
+└── 找到 → 执行三重校验
+    ├── 校验1：文件中的「分支」== 当前 git 分支？
+    │   └── 不匹配 → 🟡 提示"会话来自分支 X，当前在 Y，不自动恢复"，删除状态文件，正常启动
+    ├── 校验2：文件中「锁定的 HEAD」仍在当前分支 git 历史中？
+    │   └── 不在历史中 → 🟡 提示"会话的锚点提交已不在历史中"，删除状态文件，正常启动
+    ├── 校验3：文件中「计划文件」路径存在？
+    │   └── 不存在 → 🟡 提示"会话引用的计划文件不存在"，删除状态文件，正常启动
+    ├── 「已完成」字段 == true → 说明上次会话已正常完成，删除状态文件，正常启动
+    └── 全部通过 → 🟡 通知用户：
+                   "检测到未完成的会话（功能：<slug>，已完成阶段：<N>），
+                    将从阶段 <N+1> 继续。如需重新开始请告知。"
+                   **跳转到对应阶段继续执行，跳过已完成阶段。**
+```
+
+---
+
 ## 前置：读取项目上下文
 
 读取 `CLAUDE.md` 了解项目架构、开发命令、关键模式。
 
 如项目存在历史经验记录（`docs/learnings/` 或 learn skill 产出目录），读取最近 3-5 条与当前需求相关的记录，避免重复踩坑。
+
+### 代码库快照（冷启动补充上下文）
+
+检查 `docs/state/codebase-snapshot.md` 是否存在并有效：
+
+```
+docs/state/codebase-snapshot.md 存在？
+│
+├── 不存在 → 🟡 提示"未检测到代码库快照，建议先运行 /xdev:map 以获得更好的代码库上下文"，继续执行（不强制）
+│
+└── 存在 → 校验新鲜度
+    ├── 快照中的 Git 分支 ≠ 当前分支 → 🟡 提示"快照来自分支 X，当前在 Y，快照已过期，建议重新运行 /xdev:map"，跳过快照
+    ├── 快照中的 commit SHA 不在当前分支历史中 → 🟡 提示"快照锚点提交不在当前历史中，快照已过期"，跳过快照
+    ├── 快照生成时间 > 7 天 → 🟡 提示"快照已超过 7 天，建议重新运行 /xdev:map"，跳过快照
+    └── 通过 → 读取快照作为项目上下文补充
+```
 
 ---
 
@@ -167,6 +208,11 @@ Then 返回 200 状态码和有效的 JWT token
 **涉及文件：** src/auth/login.test.ts
 **验证命令：** npm test src/auth/login.test.ts
 **预期：** FAIL（测试先于实现，应失败）
+**通过条件：**
+- 验证命令：`npm test src/auth/login.test.ts`
+- 期望退出码：1（FAIL）
+- 输出必须包含：`FAIL` 或 `Error: Cannot find module`
+- 输出不得包含：`SyntaxError`（语法错误不算有效 FAIL）
 **依赖：** 无
 
 ---
@@ -178,8 +224,23 @@ Then 返回 200 状态码和有效的 JWT token
 **涉及文件：** src/auth/login.ts
 **验证命令：** npm test src/auth/login.test.ts
 **预期：** PASS
+**通过条件：**
+- 验证命令：`npm test src/auth/login.test.ts`
+- 期望退出码：0（PASS）
+- 输出必须包含：`1 passed`
+- 额外断言（可选）：`curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/login -d '{"user":"test","pass":"test"}'` 返回 `200` 或 `401`
 **依赖：** task-001-login-test
 ```
+
+**通过条件字段规则：**
+
+| 字段 | 必须 | 说明 |
+|------|------|------|
+| 验证命令 | 是 | 与任务声明的验证命令一致 |
+| 期望退出码 | 是 | 0 = PASS，1 = FAIL，具体数字 |
+| 输出必须包含 | 是 | 可 grep 的精确文本片段 |
+| 输出不得包含 | 否 | 排除误判（如语法错误不算有效 FAIL） |
+| 额外断言 | 否 | 补充验证命令（如 curl 探针） |
 
 ### 依赖规则
 
@@ -206,9 +267,10 @@ Subagent B — 依赖图检查
   输出：依赖图可视化 + 问题列表
 
 Subagent C — 任务完整性与 BDD 质量检查
-  目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令
+  目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令、通过条件
         ② BDD 质量：Given 必须有具体输入值，Then 必须有可断言的输出（状态码/字段/数值），禁止模糊表述（如"系统正常"/"成功"）
-  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表
+        ③ 通过条件可推导性：「输出必须包含」的文本片段能否从该验证命令的实际输出中推导？不能推导的标记为 HIGH 问题，必须修复
+  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表 + 通过条件不可推导的任务列表
 ```
 
 **汇总规则（所有 subagent 完成后）：**
@@ -223,6 +285,32 @@ git add docs/plans/ && git commit -m "docs: add implementation plan for <feature
 
 **产出：** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 
+### 写入会话状态（阶段 3 完成）
+
+从 `$ARGUMENTS` 提炼功能名 slug（kebab-case 英文，如 `wechat-login`），然后原子写入状态文件：
+
+```bash
+mkdir -p docs/state
+# 变量由上下文填充：_SLUG / _BRANCH / _HEAD / _DESIGN_FILE / _PLAN_FILE
+_STATE_FILE="docs/state/full-dev--${_BRANCH}--${_SLUG}.md"
+cat > /tmp/xdev-state-tmp.md << STATEOF
+## xdev 会话状态
+- **功能：** ${_SLUG}
+- **工作流：** full-dev
+- **分支：** ${_BRANCH}
+- **锁定的 HEAD：** ${_HEAD}
+- **完成阶段：** 1, 2, 3
+- **当前阶段：** 4（TDD 实现循环）
+- **下一步：** 待执行首批任务
+- **设计文件：** ${_DESIGN_FILE}
+- **计划文件：** ${_PLAN_FILE}
+- **更新时间：** $(date '+%Y-%m-%d %H:%M')
+STATEOF
+mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
+```
+
+🟡 通知用户：`会话状态已写入 ${_STATE_FILE}`
+
 ---
 
 ## — 交接检查点（默认跳过，直接继续阶段 4）
@@ -233,6 +321,8 @@ git add docs/plans/ && git commit -m "docs: add implementation plan for <feature
 ---
 
 ## 阶段 4：TDD 实现循环
+
+> **状态更新：** 阶段开始时，更新状态文件的「当前阶段」为 `4（TDD 实现循环）`，「完成阶段」追加 `4` 待完成。
 
 ### 任务依赖分析
 
@@ -284,12 +374,14 @@ git add docs/plans/ && git commit -m "docs: add implementation plan for <feature
 
 ```
 Agent A - task-NNN-<feature>-test：
-读取计划中该任务的 BDD 场景和验证命令。
-执行：写失败测试 → 运行验证命令确认 FAIL → 提交测试文件 → 报告 Red 确认。
+读取计划中该任务的 BDD 场景、验证命令和通过条件。
+执行：写失败测试 → 运行验证命令 → 用通过条件逐项验收（退出码 + 输出包含 + 输出不含）→ 全部满足后提交测试文件 → 报告 Red 确认。
+**不得提交除非通过条件全部满足。**
 
 Agent B - task-NNN-<feature>-impl（等 Agent A 报告 FAIL 后再启动）：
-读取计划中该任务的 BDD 场景和验证命令。
-执行：写最小实现使测试通过 → 运行验证命令确认 PASS → 共享模块影响范围检查（如适用）→ 全量测试确认无回归 → 原子提交 `feat(task-NNN): <desc>`。
+读取计划中该任务的 BDD 场景、验证命令和通过条件。
+执行：写最小实现使测试通过 → 运行验证命令 → 用通过条件逐项验收（退出码 + 输出包含 + 额外断言）→ 共享模块影响范围检查（如适用）→ 全量测试确认无回归 → 原子提交 `feat(task-NNN): <desc>`。
+**不得提交除非通过条件全部满足。**
 ```
 
 ### 并行执行（普通独立任务）
@@ -309,12 +401,14 @@ Agent B - task-NNN-<feature>-impl（等 Agent A 报告 FAIL 后再启动）：
 
 ```
 Task: task-NNN-<feature>-<type>
-读取计划中该任务的 BDD 场景、文件列表和验证命令。执行完整 TDD 循环：
+读取计划中该任务的 BDD 场景、文件列表、验证命令和通过条件。执行完整 TDD 循环：
 1. 写失败测试（确认 FAIL）
 2. 写最小实现（确认 PASS）
-3. 共享模块影响范围检查（如适用，见 B.5）
-4. 全量测试（确认无回归）
-5. 原子提交：`git commit -m "feat(task-NNN): <desc>"`
+3. 用通过条件逐项验收：退出码 ✓ | 输出必须包含 ✓ | 输出不得包含 ✓ | 额外断言 ✓（如有）
+4. 共享模块影响范围检查（如适用，见 B.5）
+5. 全量测试（确认无回归）
+6. 原子提交：`git commit -m "feat(task-NNN): <desc>"`
+**不得提交除非通过条件全部满足。**
 ```
 
 **TDD 循环步骤（subagent 执行）：**
@@ -369,6 +463,8 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 ## 阶段 5 + 6：质量检查 & QA（并行执行）
 
+> **状态更新：** 阶段开始时，更新状态文件「完成阶段」追加 `4`，「当前阶段」改为 `5+6（质量检查 & QA）`。
+
 `health` 和 `qa` 互不依赖，**同时派发**：
 
 > **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa。
@@ -392,9 +488,20 @@ Subagent B → 调用 skill: qa     （浏览器测试，先启动 ./start.sh al
 
 ## 阶段 7：发布
 
+> **状态更新：** 阶段开始时，更新状态文件「完成阶段」追加 `5+6`，「当前阶段」改为 `7（发布）`。
+
 **→ 调用 skill：`ship`**
 
 ship skill 内置：合并主分支 → 全量测试 → pre-landing review → 版本管理 → PR 创建。
+
+**发布完成后，删除状态文件：**
+
+```bash
+# 先标记已完成（防止删除前中断导致误恢复）
+sed -i '' 's/^## xdev 会话状态/## xdev 会话状态\n- **已完成：** true/' "${_STATE_FILE}" 2>/dev/null || true
+# 再删除
+rm -f "${_STATE_FILE}"
+```
 
 ---
 

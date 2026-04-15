@@ -23,18 +23,34 @@ description: 完整开发-实现阶段 — TDD 执行 + health + QA + ship + lea
 
 ---
 
-## 启动：读取交接产物
-
-开始前，读取设计阶段的产出文件：
+## 启动：会话恢复检查 & 读取交接产物
 
 ```bash
-# 1. 拉取最新代码（确保有设计阶段的提交）
 git pull
+```
 
-# 2. 读取以下文件
+### 会话恢复检查
+
+在 `docs/state/` 下查找文件名前缀 = `full-dev--<当前分支>--` 或 `full-dev-design--<当前分支>--` 的状态文件：
+
+```
+找到匹配的状态文件？
+│
+├── 未找到 → 正常读取 docs/plans/ 下最新的设计文档和实现计划
+│
+└── 找到 → 三重校验（分支匹配 + HEAD 在历史中 + 计划文件存在 + 未标记「已完成」）
+    ├── 任一失败 → 删除状态文件，正常读取
+    └── 全部通过 → 通知用户"检测到未完成的会话（功能：<slug>，已完成阶段：<N>），从阶段 <N+1> 继续"
+                   使用状态文件中的「计划文件」，跳转到对应阶段继续执行。
+```
+
+### 读取交接产物
+
+```bash
+# 读取以下文件
 cat AGENTS.md                                    # 项目架构和开发命令
-cat docs/plans/YYYY-MM-DD-<topic>-design.md      # 设计文档
-cat docs/plans/YYYY-MM-DD-<feature-name>.md      # TDD 实现计划
+cat docs/plans/YYYY-MM-DD-<topic>-design.md      # 设计文档（或状态文件中指定路径）
+cat docs/plans/YYYY-MM-DD-<feature-name>.md      # TDD 实现计划（或状态文件中指定路径）
 ```
 
 **启动验证：**
@@ -45,6 +61,8 @@ cat docs/plans/YYYY-MM-DD-<feature-name>.md      # TDD 实现计划
 ---
 
 ## 阶段 4：TDD 实现循环
+
+> **状态更新：** 如存在状态文件，更新「当前阶段」为 `4（TDD 实现循环）`。
 
 ### 4.0 任务依赖分析
 
@@ -155,6 +173,8 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 ## 阶段 5 + 6：质量检查 & QA（并行执行）
 
+> **状态更新：** 如存在状态文件，更新「完成阶段」追加 `4`，「当前阶段」改为 `5+6（质量检查 & QA）`。
+
 两个 skill 互不依赖，并行调用：
 
 > **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa。
@@ -173,6 +193,8 @@ git commit -m "feat(task-NNN): <specific change description>"
 ---
 
 ## 阶段 7：发布 (Ship = Review + Release)
+
+> **状态更新：** 如存在状态文件，更新「完成阶段」追加 `5+6`，「当前阶段」改为 `7（发布）`。
 
 > ship skill 内置了 pre-landing review（含对抗性审查），无需单独调用 review skill。
 
@@ -194,6 +216,15 @@ git commit -m "feat(task-NNN): <specific change description>"
 ### 7.2 发布后验证
 
 **→ 调用 skill：`canary`**（如适用）
+
+**发布完成后，删除状态文件：**
+
+```bash
+# 先标记已完成（防止删除前中断导致误恢复）
+sed -i '' 's/^## xdev 会话状态/## xdev 会话状态\n- **已完成：** true/' "${_STATE_FILE}" 2>/dev/null || true
+# 再删除
+rm -f "${_STATE_FILE}"
+```
 
 ---
 
