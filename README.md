@@ -174,10 +174,18 @@ Please install xdev and its dependencies for me:
 2. Install gstack:
    Run: git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
 
-3. Install xdev via symlink (so future updates only need a git pull):
+3. Install ui-ux-pro-max (UI/UX design skill):
+   Claude Code: run these two commands:
+     /plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
+     /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
+   Windsurf/Cursor/other: run:
+     npm install -g uipro-cli
+     uipro init --ai windsurf   (or: cursor / codex / opencode)
+
+4. Install xdev via symlink (so future updates only need a git pull):
    Run: git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev && ln -s ~/.claude/skills/xdev/claude-code ~/.claude/commands/xdev
 
-After all three steps complete, confirm the files are in place and tell me which xdev commands are now available.
+After all steps complete, confirm the files are in place and tell me which xdev commands are now available.
 ```
 
 ### Step 1 — Install superpowers
@@ -208,6 +216,29 @@ gstack provides the core engineering skills used by xdev: `investigate`, `health
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
 cd ~/.claude/skills/gstack && ./setup
+```
+
+### Step 2.5 — Install ui-ux-pro-max
+
+`ui-ux-pro-max` provides end-to-end UI/UX design support (competitor references, interaction design, component specs). Used in `full-dev` / `full-dev-design` stage 1.5 when building new products or complex UIs.
+
+**Claude Code (marketplace):**
+```
+/plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
+/plugin install ui-ux-pro-max@ui-ux-pro-max-skill
+```
+
+**Windsurf / Cursor / other (CLI — recommended):**
+```bash
+npm install -g uipro-cli
+uipro init --ai windsurf   # or: cursor / codex / opencode / all
+```
+
+**Global install (available across all projects):**
+```bash
+npm install -g uipro-cli
+uipro init --ai claude --global   # Claude Code
+uipro init --ai windsurf --global # Windsurf
 ```
 
 ### Step 3 — Install xdev
@@ -282,11 +313,10 @@ cd ~/.claude/skills/xdev && git pull
 | `browse` | gstack | bugfix S2 UI verification |
 | `ship` | gstack | all workflows |
 | `learn` | gstack | full-dev, bugfix S3 |
-
-> xdev degrades gracefully if individual skills are missing — the workflow file will call the skill and it simply won't execute if not installed.
-
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
 | `frontend-design` | Claude official | full-dev / full-dev-design stage 1.5 (single page / small components) |
+
+> xdev degrades gracefully if individual skills are missing — the workflow file will call the skill and it simply won't execute if not installed.
 
 ---
 

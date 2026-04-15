@@ -174,10 +174,18 @@ xdev 解决了这四个问题。
 2. 安装 gstack：
    执行：git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
 
-3. 通过软链接安装 xdev（后续只需 git pull 即可更新）：
+3. 安装 ui-ux-pro-max（UI/UX 设计 skill）：
+   Claude Code：执行以下两条命令：
+     /plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
+     /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
+   Windsurf/Cursor/其他：执行：
+     npm install -g uipro-cli
+     uipro init --ai windsurf   （或：cursor / codex / opencode）
+
+4. 通过软链接安装 xdev（后续只需 git pull 即可更新）：
    执行：git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev && ln -s ~/.claude/skills/xdev/claude-code ~/.claude/commands/xdev
 
-三步完成后，请确认文件已就位，并告诉我现在可以使用哪些 xdev 命令。
+全部完成后，请确认文件已就位，并告诉我现在可以使用哪些 xdev 命令。
 ```
 
 ### 第一步 —— 安装 superpowers
@@ -208,6 +216,29 @@ gstack 提供 xdev 使用的核心工程 skill：`investigate`、`health`、`qa`
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
 cd ~/.claude/skills/gstack && ./setup
+```
+
+### 第 2.5 步 —— 安装 ui-ux-pro-max
+
+`ui-ux-pro-max` 提供端到端 UI/UX 设计支持（竞品参考、交互方案、完整组件规范）。在 `full-dev` / `full-dev-design` 阶段 1.5 构建全新产品或复杂 UI 时调用。
+
+**Claude Code（插件市场）：**
+```
+/plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
+/plugin install ui-ux-pro-max@ui-ux-pro-max-skill
+```
+
+**Windsurf / Cursor / 其他（CLI —— 推荐）：**
+```bash
+npm install -g uipro-cli
+uipro init --ai windsurf   # 或：cursor / codex / opencode / all
+```
+
+**全局安装（所有项目可用）：**
+```bash
+npm install -g uipro-cli
+uipro init --ai claude --global   # Claude Code
+uipro init --ai windsurf --global # Windsurf
 ```
 
 ### 第三步 —— 安装 xdev
@@ -282,11 +313,10 @@ cd ~/.claude/skills/xdev && git pull
 | `browse` | gstack | bugfix S2 UI 验证 |
 | `ship` | gstack | 所有工作流 |
 | `learn` | gstack | full-dev、bugfix S3 |
-
-> 如果某个 skill 未安装，xdev 会优雅降级 —— 工作流文件会调用该 skill，未安装时跳过即可。
-
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design 阶段 1.5（全新产品 / 复杂 UI）|
 | `frontend-design` | Claude 官方 | full-dev / full-dev-design 阶段 1.5（单页面 / 少量组件）|
+
+> 如果某个 skill 未安装，xdev 会优雅降级 —— 工作流文件会调用该 skill，未安装时跳过即可。
 
 ---
 
