@@ -99,7 +99,7 @@ xdev 解决了这四个问题。
 
 ## 包含什么
 
-5 个工作流文件，覆盖完整开发生命周期：
+6 个工作流文件，覆盖完整开发生命周期：
 
 | 工作流 | Claude Code | Windsurf | 使用场景 | 目标时长 |
 |--------|-------------|----------|---------|---------|
@@ -108,6 +108,7 @@ xdev 解决了这四个问题。
 | **full-dev-impl** | `/xdev:full-dev-impl` | `/full-dev-impl` | 仅实现阶段 —— 读取设计计划并执行 | 数小时~数天 |
 | **bugfix** | `/xdev:bugfix` | `/bugfix` | Bug、崩溃、异常行为 | 15 分钟~90 分钟 |
 | **iterate** | `/xdev:iterate` | `/iterate` | 小改动、优化、配置调整 | 15~60 分钟 |
+| **map** | `/xdev:map` | `/map` | 扫描代码库生成快照，供冷启动补充上下文 | < 1 分钟 |
 
 > **跨工具交接：** `full-dev-design` + `full-dev-impl` 让你为不同阶段选择最合适的模型 —— 用强推理模型（如 Opus）做规划，用快速执行模型（如 Codex）做实现。xdev 通过共享计划文件自动完成交接。
 
@@ -127,6 +128,14 @@ xdev 解决了这四个问题。
 阶段 7：发布（ship —— 含审查 + PATCH 版本 + PR）
 阶段 8：经验沉淀（learn —— 条件触发）
 ```
+
+### 三项内置可靠性机制
+
+**会话恢复** —— 每个工作流在阶段 3 结束后写入状态文件到 `docs/state/`，并在后续各阶段更新。会话中断后，下次调用时自动检测状态文件，通过三重校验（分支匹配、HEAD 在历史中、计划文件存在），从上次完成的阶段继续，而非重头来过。状态文件加入 `.gitignore`，ship 完成后自动删除。
+
+**结构化通过条件** —— 阶段 3 生成的每个任务都带有可机械校验的通过条件：精确的验证命令、期望退出码、必须包含的输出文本、以及可选的额外断言（如 `curl` 探针）。Subagent 提交前必须逐项验收，全部满足才能提交。Subagent C 在计划反思阶段额外校验"输出必须包含"的文本片段是否能从验证命令的实际输出中推导。
+
+**代码库快照（`/xdev:map`）** —— 首次进入陌生代码库时运行一次。xdev 扫描目录树和源码文件，将快照写入 `docs/state/codebase-snapshot.md`（gitignore），后续 `full-dev` 调用时自动读取作为项目上下文。快照含三层新鲜度校验（分支 + commit + 7 天过期）和截断标记。
 
 ### /bugfix —— 三级根因修复流水线
 
@@ -215,6 +224,7 @@ ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md ~/.codeium/windsurf/wind
 ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md ~/.codeium/windsurf/windsurf/workflows/full-dev-impl.md
 ln -s ~/.claude/skills/xdev/windsurf/bugfix.md ~/.codeium/windsurf/windsurf/workflows/bugfix.md
 ln -s ~/.claude/skills/xdev/windsurf/iterate.md ~/.codeium/windsurf/windsurf/workflows/iterate.md
+ln -s ~/.claude/skills/xdev/windsurf/map.md ~/.codeium/windsurf/windsurf/workflows/map.md
 ```
 
 > 如需项目级安装（随仓库版本管理），改为软链到项目根目录的 `.windsurf/workflows/` 下。

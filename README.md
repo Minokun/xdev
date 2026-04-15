@@ -99,7 +99,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 
 ## What's inside
 
-5 workflow files that cover the complete development lifecycle:
+6 workflow files that cover the complete development lifecycle:
 
 | Workflow | Claude Code | Windsurf | When to use | Target time |
 |----------|-------------|----------|-------------|------------|
@@ -108,6 +108,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 | **full-dev-impl** | `/xdev:full-dev-impl` | `/full-dev-impl` | Implementation phase only — reads the design plan and executes | Hours–days |
 | **bugfix** | `/xdev:bugfix` | `/bugfix` | Bug, crash, unexpected behavior | 15 min–90 min |
 | **iterate** | `/xdev:iterate` | `/iterate` | Small change, optimization, config tweak | 15–60 min |
+| **map** | `/xdev:map` | `/map` | Scan codebase and generate a snapshot for cold-start context | < 1 min |
 
 > **Cross-tool handoff:** `full-dev-design` + `full-dev-impl` let you use the best model for each phase — plan with a powerful reasoning model (e.g. Opus), implement with a fast execution model (e.g. Codex). xdev handles the handoff automatically via a shared plan file.
 
@@ -127,6 +128,14 @@ Stage 5+6: Quality + QA (parallel) — health ‖ qa
 Stage 7: Release (ship — includes review + PATCH bump + PR)
 Stage 8: Learning (learn — conditional trigger)
 ```
+
+### Three built-in reliability features
+
+**Session recovery** — Every workflow writes a state file to `docs/state/` at stage 3 and updates it at each subsequent stage. If a session is interrupted mid-way, the next invocation detects the file, runs a 3-way validation (branch match, HEAD still in history, plan file exists), and resumes from the last completed stage instead of restarting from scratch. State files are gitignored and deleted automatically after a successful ship.
+
+**Structured pass criteria** — Every task in the stage-3 plan now carries a machine-checkable `pass criteria` block: the exact verification command, expected exit code, required output strings, and optional extra assertions (e.g. a `curl` probe). Subagents may not commit unless all criteria pass. Subagent C validates that the "must-contain" string is actually derivable from the verification command's real output.
+
+**Codebase snapshot (`/xdev:map`)** — Run once when you first enter an unfamiliar repo. xdev scans the directory tree and source files, writes a snapshot to `docs/state/codebase-snapshot.md` (gitignored), and subsequent `full-dev` invocations read it for instant project context. The snapshot includes a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off.
 
 ### /bugfix — three-tier root-cause pipeline
 
@@ -215,6 +224,7 @@ ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md ~/.codeium/windsurf/wind
 ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md ~/.codeium/windsurf/windsurf/workflows/full-dev-impl.md
 ln -s ~/.claude/skills/xdev/windsurf/bugfix.md ~/.codeium/windsurf/windsurf/workflows/bugfix.md
 ln -s ~/.claude/skills/xdev/windsurf/iterate.md ~/.codeium/windsurf/windsurf/workflows/iterate.md
+ln -s ~/.claude/skills/xdev/windsurf/map.md ~/.codeium/windsurf/windsurf/workflows/map.md
 ```
 
 > For project-level install (version-controlled with your repo), symlink into `.windsurf/workflows/` inside your project root instead.
@@ -303,13 +313,15 @@ xdev/
 │   ├── full-dev-design.md
 │   ├── full-dev-impl.md
 │   ├── bugfix.md
-│   └── iterate.md
+│   ├── iterate.md
+│   └── map.md
 └── claude-code/           ← Symlink to .claude/commands/xdev/ or ~/.claude/commands/xdev/
     ├── full-dev.md
     ├── full-dev-design.md
     ├── full-dev-impl.md
     ├── bugfix.md
-    └── iterate.md
+    ├── iterate.md
+    └── map.md
 ```
 
 ---
