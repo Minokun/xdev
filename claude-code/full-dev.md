@@ -87,6 +87,20 @@ docs/state/codebase-snapshot.md 存在？
 
 **🔴 门禁：** 设计文档经用户确认后才进入下一阶段。
 
+### 1.1 设计系统（design-consultation，极窄触发）
+
+**同时满足以下两个条件才触发：**
+1. 全新产品/从零开始（非在已有产品上增加功能）
+2. 项目中不存在任何设计系统（无 design tokens、无 brand guidelines、无组件库规范）
+
+**任一情形即跳过：** 已有组件库（shadcn/antd/etc）| 已有品牌色/字体规范 | 在已有产品上新增模块（即使模块是全新的）
+
+🟢 自动检查触发条件，命中则执行，否则静默跳过。
+
+**→ 调用 skill：`design-consultation`**
+
+**产出：** 创建 `DESIGN.md`（项目设计系统 source of truth）——含 design tokens、颜色/字体规范、品牌指南。供 stage 1.5 读取，不重复生成 token。
+
 ---
 
 ## 阶段 1.5：视觉设计（条件触发）
@@ -163,6 +177,10 @@ Subagent D → plan-ceo-review    （如适用）
 3. 所有 HIGH 未解决项清零才进入下一阶段
 
 **门禁：** 无 HIGH 未解决项。 2 次重审后仍有 HIGH → 降级为仅 eng-review。
+
+### 一键全审（全栈大功能推荐）
+
+**→ 调用 skill：`autoplan`** — 自动执行全部审查
 
 ---
 
@@ -465,24 +483,55 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 > **状态更新：** 阶段开始时，更新状态文件「完成阶段」追加 `4`，「当前阶段」改为 `5+6（质量检查 & QA）`。
 
-`health` 和 `qa` 互不依赖，**同时派发**：
+> **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa 和 design-review。
 
-> **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa。
+> **review 触发判定（命中任一则触发）：** 新引入第三方库/依赖（非版本升级）| 跨模块架构变更（新增模块、修改核心接口/基类）| auth/安全敏感代码改动 | 首次引入新设计模式或并发/事务模式
 
-**涉及 UI 的改动：**
+> **cso 触发判定（命中任一则触发）：** 认证/登录/SSO/OAuth | 支付/计费/订阅 | PII 数据处理 | 文件上传/下载 | Webhook 接收端 | Secret/API Key 管理 | 权限边界变更
+
+**并行池（按触发条件组合）：**
+
+| Subagent | 触发条件 |
+|----------|---------|
+| `review` | 条件触发（见 review 触发判定） |
+| `cso --diff` | 条件触发（见 cso 触发判定） |
+| `health` | **必选**（所有场景） |
+| `qa` | 条件（涉及 UI） |
+| `design-review` | 条件（涉及 UI） |
+
+**典型场景：**
+
+全量（涉及 UI + review 触发 + 安全敏感）：
 ```
-Subagent A → 调用 skill: health  （代码质量仪表盘，评分 >= 7/10）
-Subagent B → 调用 skill: qa     （浏览器测试，先启动 ./start.sh all）
+Subagent A → 调用 skill: review
+Subagent B → 调用 skill: cso（/cso --diff，认证场景可用 /cso --diff --scope auth）
+Subagent C → 调用 skill: health
+Subagent D → 调用 skill: qa（先启动 ./start.sh all）
+Subagent E → 调用 skill: design-review
 ```
 
-**不涉及 UI 的改动：**
+涉及 UI，无安全敏感，无架构变更：
 ```
-直接在主线程调用 skill: health  （单任务不值得开 subagent）
+Subagent A → 调用 skill: health
+Subagent B → 调用 skill: qa（先启动 ./start.sh all）
+Subagent C → 调用 skill: design-review
 ```
 
-两者完成后汇总：发现问题立即修复，每个修复单独提交。
+不涉及 UI，安全敏感 + 架构变更：
+```
+Subagent A → 调用 skill: review
+Subagent B → 调用 skill: cso（/cso --diff）
+Subagent C → 调用 skill: health
+```
 
-**门禁：** health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题。
+不涉及 UI，普通功能迭代：
+```
+主线程 → 调用 skill: health（单任务不值得开 subagent）
+```
+
+汇总：所有 subagent 完成后，发现问题立即修复，每个修复单独提交。
+
+**门禁：** review 无 [ASK] 未处理项（review 触发时）+ cso 无 HIGH 安全问题（cso 触发时）+ health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题（涉及 UI）+ 无 HIGH 视觉问题（涉及 UI）
 
 ---
 
@@ -490,9 +539,25 @@ Subagent B → 调用 skill: qa     （浏览器测试，先启动 ./start.sh al
 
 > **状态更新：** 阶段开始时，更新状态文件「完成阶段」追加 `5+6`，「当前阶段」改为 `7（发布）`。
 
+### 7.1 发布（ship）
+
+🟢 `📍 [7/8] 发布 — 7.1 ship`
+
 **→ 调用 skill：`ship`**
 
-ship skill 内置：合并主分支 → 全量测试 → pre-landing review → 版本管理 → PR 创建。
+ship 内置：merge 主分支 → 全量测试 → pre-landing review（不可跳过）→ 版本管理 → PR 创建 → **step 8.5 自动调用 /document-release**（同步 README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md/TODOS，推送到同一分支）。
+
+### 7.2 生产部署（land-and-deploy，可选）
+
+**触发条件（满足任一）：**
+- CLAUDE.md 中已配置 deploy 平台（见 `/setup-deploy`）
+- 用户在本次请求中明确要求部署到生产
+
+🔴 **必须确认：** 告知用户将执行 merge PR → 等待 CI → 验证生产健康，是否继续？
+
+🟢 确认后输出：`📍 [7/8] 发布 — 7.2 land-and-deploy`
+
+**→ 调用 skill：`land-and-deploy`**
 
 **发布完成后，删除状态文件：**
 
@@ -518,13 +583,19 @@ rm -f "${_STATE_FILE}"
 
 ```
 office-hours / superpowers:brainstorm
+    ↓（条件）design-consultation
     ↓
 [ui-ux-pro-max / frontend-design]  ← 条件触发（涉及 UI 时）
     ↓
-[plan-eng-review ‖ plan-design-review ‖ plan-devex-review ‖ plan-ceo-review]  ← 并行
+[plan-eng-review ‖ plan-design-review ‖ plan-devex-review ‖ plan-ceo-review]  ← 并行（安全架构风险由 plan-eng-review 兜）
     ↓ 汇总修复
-[TDD 批次化] → [health ‖ qa] → ship → learn
-                          ↑ 并行
+[TDD 批次化]
+    ↓
+[review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review]  ← 并行（qa/design-review 仅涉及 UI；review/cso 条件触发）
+    ↓
+ship（内置 pre-landing review + 内置 document-release）→ [land-and-deploy 可选]
+    ↓
+learn
 ```
 
 ## 核心规则

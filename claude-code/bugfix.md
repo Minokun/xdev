@@ -1,5 +1,5 @@
 ---
-description: Bug 修复流程 — 编排 investigate + TDD + health + qa + ship + learn skill 链
+description: Bug 修复流程 — blame/bisect 快速定位 + investigate(条件) + TDD + health + qa + ship + learn
 argument-hint: <bug 描述或错误信息>
 ---
 
@@ -25,7 +25,7 @@ argument-hint: <bug 描述或错误信息>
 |------|------|------|---------|
 | **S1 快速** | 单行/配置/文案，根因一眼可见 | 直接修复 → 测试 → git push | ≤ 15 min |
 | **S2 标准** | 单模块逻辑错误，可稳定复现 | 内联快速调查 → TDD → 全量测试 → ship | ≤ 35 min |
-| **S3 深度** | 跨模块、间歇性、竞态、数据损坏 | investigate → TDD → health+qa → ship | ≤ 90 min |
+| **S3 深度** | 跨模块、间歇性、竞态、数据损坏 | blame/bisect(快速出口) / investigate → TDD → health+qa+browse → ship | ≤ 90 min |
 
 🟡 判定后通知用户分级结果，继续执行。
 
@@ -34,7 +34,7 @@ argument-hint: <bug 描述或错误信息>
 | 触发 | 升级 |
 |------|------|
 | S1 修复后发现牵涉 > 1 个文件 | → S2 |
-| S2 快速取证 5 min 后无法定位根因文件 | → S3 |
+| S2 blame/bisect 2 次尝试无法定位根因 | → S3 |
 | S2 假设验证失败（仅一次机会） | → S3 |
 | 任何级别修复后全量测试失败 | → 重新调查，不降级 |
 
@@ -55,7 +55,7 @@ argument-hint: <bug 描述或错误信息>
 
 ### 阶段 1：内联快速调查（≤ 15 min，不调用 investigate）
 
-**Step A — 快速取证（≤ 5 min）**
+**Step A — 快速取证（≤ 2 次尝试）**
 ```bash
 git log --oneline -10 -- <affected-files>
 ```
@@ -73,9 +73,9 @@ git bisect good <last-known-good-commit>
 # 找到引入 commit 后，查看该 commit 的 diff 即为根因线索
 ```
 
-⏱ 5 min 无结果 → 立即升级 S3。
+2 次取证尝试无结果 → 立即升级 S3。
 
-**Step B — 单次假设验证（≤ 10 min）**
+**Step B — 单次假设验证（仅 1 次机会）**
 - 添加临时断言 / 日志，运行复现
 - ✅ 通过 → 进入阶段 2
 - ❌ 失败 → 立即升级 S3，调用 `investigate`
@@ -126,14 +126,19 @@ Fix: <what was changed>"
 
 ### 阶段 1：完整根因调查
 
-**前置：blame/bisect 快速锁定（在调用 investigate 前，≤ 5 min）**
+**Step A — blame/bisect 快速锁定（≤ 2 次尝试）**
 ```bash
 git log --oneline -20 -- <affected-files>
 git blame -L <start_line>,<end_line> <file>
 # 已知上次正常版本时，直接 bisect：
 git bisect start && git bisect bad HEAD && git bisect good <last-good>
 ```
-将 bisect 定位结果（引入 commit + diff）作为上下文传入 investigate，加速根因分析。
+
+**🟢 快速出口：** blame/bisect 已明确定位根因（引入 commit + 修改行一目了然）→ **直接跳入阶段 2 TDD，跳过 investigate**。
+
+**blame/bisect 无法定位时才调用 investigate：**
+
+将 blame/bisect 定位结果（引入 commit + diff）作为上下文传入 investigate，加速分析。
 
 **→ 调用 skill：`investigate`**
 
@@ -143,21 +148,26 @@ git bisect start && git bisect bad HEAD && git bisect good <last-good>
 
 同 S2 阶段 2。**修复 > 5 个文件 → 🔴 停止，请用户确认方向。**
 
-### 阶段 3+4：质量检查 & QA（并行）
+### 阶段 3：质量检查 & QA（并行）
+
+> **review 边界：** 普通 bug 修复（已有代码路径内）不触发 review，依赖 ship 内置 review 即可。复杂 bugfix 若命中以下条件同样触发 review：跨模块架构变更 | 新引入依赖 | auth/安全敏感逻辑。
+
+> **cso 边界：** bugfix 流程不自动触发 cso，即使 bug 涉及安全敏感代码（如 auth/PII 修复）也不例外——ship 内置 review 兜底；确有需要时手动调用 `/cso --diff`。
 
 **涉及 UI：**
 ```
-Subagent A → skill: health（质量评分不低于修复前）
+Subagent A → skill: health（确认质量评分不低于修复前）
 Subagent B → skill: qa（复现确认修复 + 相邻功能）
 ```
+health + qa 完成后：→ 用 `browse` 工具导航受影响页面，截图确认视觉无回归（≤ 3 min，不评分）。
 
-**不涉及 UI：** 主线程直接调用 `health`
+**不涉及 UI：** 主线程直接调用 `health`（确认评分不低于修复前）
 
-### 阶段 5：发布
+### 阶段 4：发布
 
 **→ 调用 skill：`ship`**（PATCH bump + review + PR）
 
-### 阶段 6：经验沉淀
+### 阶段 5：经验沉淀
 
 **跳过：** 纯配置/文案 | 已有类似记录
 **触发：** 新根因模式 | 同文件反复修复 | 防御性编程可复用
@@ -170,8 +180,8 @@ Subagent B → skill: qa（复现确认修复 + 相邻功能）
 
 ```
 S1: 直接修复 → git push
-S2: [内联调查] → [TDD] → ship
-S3: [investigate] → [TDD] → [health ‖ qa] → ship → learn
+S2: [blame/bisect 取证] → [TDD] → ship
+S3: [blame/bisect →（快速出口→跳过 investigate）] / [investigate] → [TDD] → [health ‖ qa] + browse → ship → [learn]
 ```
 
 ## 失败回路

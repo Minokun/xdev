@@ -93,6 +93,20 @@ git add docs/plans/ && git commit -m "docs: add design for <feature>"
 
 **门禁：** 设计文档经用户确认后才进入下一阶段。
 
+### 1.2 设计系统（design-consultation，极窄触发）
+
+**同时满足以下两个条件才触发：**
+1. 全新产品/从零开始（非在已有产品上增加功能）
+2. 项目中不存在任何设计系统（无 design tokens、无 brand guidelines、无组件库规范）
+
+**任一情形即跳过：** 已有组件库（shadcn/antd/etc）| 已有品牌色/字体规范 | 在已有产品上新增模块（即使模块是全新的）
+
+🟢 自动检查触发条件，命中则执行，否则静默跳过。
+
+**→ 调用 skill：`design-consultation`**
+
+**产出：** 创建 `DESIGN.md`（项目设计系统 source of truth）——含 design tokens、颜色/字体规范、品牌指南。供 stage 1.5 读取，不重复生成 token。
+
 ---
 
 ## 阶段 1.5：视觉设计（条件触发）
@@ -446,47 +460,73 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 > **状态更新：** 更新状态文件「完成阶段」追加 `4`，「当前阶段」改为 `5+6（质量检查 & QA）`。
 
-两个 skill 互不依赖，并行调用：
+> **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa 和 design-review。
 
-> **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa。
+> **review 触发判定（命中任一则触发）：** 新引入第三方库/依赖（非版本升级）| 跨模块架构变更（新增模块、修改核心接口/基类）| auth/安全敏感代码改动 | 首次引入新设计模式或并发/事务模式
 
-**涉及 UI 的改动：**
-- **→ 调用 skill：`health`**（代码质量仪表盘，评分 >= 7/10）
-- **→ 调用 skill：`qa`**（浏览器测试，先启动 `./start.sh all`）
+> **cso 触发判定（命中任一则触发）：** 认证/登录/SSO/OAuth | 支付/计费/订阅 | PII 数据处理 | 文件上传/下载 | Webhook 接收端 | Secret/API Key 管理 | 权限边界变更
 
-**不涉及 UI 的改动：**
-- 只调用 **→ skill：`health`**，跳过 qa
+**并行池（按触发条件组合）：**
 
-两者完成后汇总：发现问题立即修复，每个修复单独提交。
+| Subagent | 触发条件 |
+|----------|---------|
+| `review` | 条件触发（见 review 触发判定） |
+| `cso --diff` | 条件触发（见 cso 触发判定） |
+| `health` | **必选**（所有场景） |
+| `qa` | 条件（涉及 UI） |
+| `design-review` | 条件（涉及 UI） |
 
-**门禁：** health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题。
+**典型场景：**
+
+全量（涉及 UI + review 触发 + 安全敏感）：
+- **→ 调用 skill：`review`**
+- **→ 调用 skill：`cso`**（`/cso --diff`，认证场景可用 `/cso --diff --scope auth`）
+- **→ 调用 skill：`health`**
+- **→ 调用 skill：`qa`**（先启动 `./start.sh all`）
+- **→ 调用 skill：`design-review`**
+
+涉及 UI，无安全敏感，无架构变更：
+- **→ 调用 skill：`health`**
+- **→ 调用 skill：`qa`**（先启动 `./start.sh all`）
+- **→ 调用 skill：`design-review`**
+
+不涉及 UI，安全敏感 + 架构变更：
+- **→ 调用 skill：`review`**
+- **→ 调用 skill：`cso`**（`/cso --diff`）
+- **→ 调用 skill：`health`**
+
+不涉及 UI，普通功能迭代：
+- 只调用 **→ skill：`health`**（单任务不值得开 subagent）
+
+汇总：所有 skill 完成后，发现问题立即修复，每个修复单独提交。
+
+**门禁：** review 无 [ASK] 未处理项（review 触发时）+ cso 无 HIGH 安全问题（cso 触发时）+ health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题（涉及 UI）+ 无 HIGH 视觉问题（涉及 UI）
 
 ---
 
-## 阶段 7：发布 (Ship = Review + Release)
+## 阶段 7：发布
 
 > **状态更新：** 更新状态文件「完成阶段」追加 `5+6`，「当前阶段」改为 `7（发布）`。
 
-> ship skill 内置了 pre-landing review（含对抗性审查），无需单独调用 review skill。
+### 7.1 发布（ship）
+
+🟢 `📍 [7/8] 发布 — 7.1 ship`
 
 **→ 调用 skill：`ship`**
 
-自动执行：
-1. 预检查（分支、未提交变更）
-2. 合并主分支
-3. 运行测试（合并后代码）
-4. AI 测试覆盖评估 + 自动生成缺失测试
-5. 计划完成度审计
-6. **预合并审查 + 对抗性审查**（替代原独立 review 阶段）
-7. 版本号更新 + CHANGELOG 生成
-8. TODOS.md 自动更新
-9. 可分割原子提交
-10. 推送 + 创建 PR
-11. 自动同步文档
+ship 内置：预检查 → 合并主分支 → 运行测试 → AI 测试覆盖评估 → 计划完成度审计 → **pre-landing review（含对抗性审查，不可跳过）** → 版本号更新 + CHANGELOG → TODOS.md 更新 → 推送 + PR 创建 → **step 8.5 自动调用 /document-release**（同步 README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md/TODOS，推送到同一分支）。
 
-### 7.2 发布后验证
+### 7.2 生产部署（land-and-deploy，可选）
 
-**→ 调用 skill：`canary`**（如适用）
+**触发条件（满足任一）：**
+- AGENTS.md 中已配置 deploy 平台（见 `/setup-deploy`）
+- 用户在本次请求中明确要求部署到生产
+
+🔴 **必须确认：** 告知用户将执行 merge PR → 等待 CI → 验证生产健康，是否继续？
+
+🟢 确认后输出：`📍 [7/8] 发布 — 7.2 land-and-deploy`
+
+**→ 调用 skill：`land-and-deploy`**
 
 **发布完成后，删除状态文件：**
 
@@ -528,7 +568,7 @@ rm -f "${_STATE_FILE}"
     │                                          │
     ▼                                          │
 设计文档                                        │ /full-dev-design
-    │                                          │
+    │（条件）design-consultation → DESIGN.md   │
     ▼                                          │
 [ui-ux-pro-max / frontend-design] ← 条件触发（涉及 UI 时）
     │                                          │
@@ -551,11 +591,11 @@ rm -f "${_STATE_FILE}"
 └──────────────────────────┘                   │
     │                                          │
     ▼                                          │
-[health ‖ qa] ──→ 质量 + QA（qa 仅涉及 UI 时）    │
+[review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review]  ← 并行（qa/design-review 仅涉及 UI；review/cso 条件触发）
     │                                          │
     ▼                                          │
-[ship] ──→ review + 版本 + PR + 文档           │
-    │                                          │
+[ship] ──→ pre-landing review + 版本 + PR + document-release（内置）
+    │（可选）[land-and-deploy] ──→ merge + CI + 生产验证
     ▼                                          │
 [learn] ──→ 经验沉淀                            ┘
     │

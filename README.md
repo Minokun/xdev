@@ -124,8 +124,8 @@ Stage 2: Plan review — parallel subagents (eng + design + devex + ceo as neede
 Stage 3: TDD implementation plan (writing-plans) with dependency annotations
          ── handoff point (optional, for cross-tool split) ──
 Stage 4: Implementation — parallel task batches based on dependency graph
-Stage 5+6: Quality + QA (parallel) — health ‖ qa
-Stage 7: Release (ship — includes review + PATCH bump + PR)
+Stage 5+6: Quality + QA (parallel) — review(cond.) ‖ cso --diff(cond.) ‖ health ‖ qa ‖ design-review
+Stage 7: Release — 7.1 ship (includes pre-landing review + auto document-release) → 7.2 land-and-deploy (optional)
 Stage 8: Learning (learn — conditional trigger)
 ```
 
@@ -303,15 +303,21 @@ cd ~/.claude/skills/xdev && git pull
 |-------|--------|---------|
 | `superpowers:brainstorm` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design stage 1 (simple features) |
 | `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design stage 1 (large features) |
+| `design-consultation` | gstack | full-dev / full-dev-design stage 1.1 (new product with no design system) |
 | `plan-eng-review` | gstack | full-dev stage 2 (always) |
 | `plan-design-review` | gstack | full-dev stage 2 (UI changes) |
 | `plan-devex-review` | gstack | full-dev stage 2 (API changes) |
 | `plan-ceo-review` | gstack | full-dev stage 2 (large features) |
+| `autoplan` | gstack | full-dev stage 2 (full-stack, Claude Code only) |
 | `investigate` | gstack | bugfix S3 |
 | `health` | gstack | full-dev, bugfix S3, iterate |
 | `qa` | gstack | full-dev, bugfix S3 (UI), iterate |
+| `design-review` | gstack | full-dev stage 5+6 (UI changes), bugfix S3 (UI) |
+| `review` | gstack | full-dev stage 5+6 (conditional: new deps / arch changes / security) |
+| `cso` | gstack | full-dev stage 5+6 (conditional: auth / payment / PII / secrets) |
 | `browse` | gstack | bugfix S2 UI verification |
 | `ship` | gstack | all workflows |
+| `land-and-deploy` | gstack | full-dev stage 7.2 (optional: merge PR + CI + production health check) |
 | `learn` | gstack | full-dev, bugfix S3 |
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
 | `frontend-design` | Claude official | full-dev / full-dev-design stage 1.5 (single page / small components) |

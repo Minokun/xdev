@@ -73,6 +73,20 @@ git add docs/plans/ && git commit -m "docs: add design for <feature>"
 
 **🔴 门禁：** 设计文档经用户确认后才进入下一阶段。
 
+### 1.2 设计系统（design-consultation，极窄触发）
+
+**同时满足以下两个条件才触发：**
+1. 全新产品/从零开始（非在已有产品上增加功能）
+2. 项目中不存在任何设计系统（无 design tokens、无 brand guidelines、无组件库规范）
+
+**任一情形即跳过：** 已有组件库（shadcn/antd/etc）| 已有品牌色/字体规范 | 在已有产品上新增模块（即使模块是全新的）
+
+🟢 自动检查触发条件，命中则执行，否则静默跳过。
+
+**→ 调用 skill：`design-consultation`**
+
+**产出：** 创建 `DESIGN.md`（项目设计系统 source of truth）——含 design tokens、颜色/字体规范、品牌指南。供 stage 1.5 读取，不重复生成 token。
+
 ---
 
 ## 阶段 1.5：视觉设计（条件触发）

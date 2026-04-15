@@ -124,8 +124,8 @@ xdev 解决了这四个问题。
 阶段 3：TDD 实现计划（writing-plans，含依赖标注）
          ── 交接点（可选，用于跨工具拆分）──
 阶段 4：TDD 实现 —— 按依赖图并行执行任务批次
-阶段 5+6：质量 + QA（并行）—— health ‖ qa
-阶段 7：发布（ship —— 含审查 + PATCH 版本 + PR）
+阶段 5+6：质量 + QA（并行）—— review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review
+阶段 7：发布 —— 7.1 ship（含 pre-landing review + 自动 document-release）→ 7.2 land-and-deploy（可选）
 阶段 8：经验沉淀（learn —— 条件触发）
 ```
 
@@ -144,7 +144,7 @@ xdev 解决了这四个问题。
   │
   ├── S1：直接修复 → 测试 → git push              （≤ 15 min）
   ├── S2：内联调查 → TDD → 全量测试 → ship        （≤ 35 min）
-  └── S3：investigate → TDD → health+qa → ship → learn（≤ 90 min）
+  └── S3：investigate → TDD → health+qa+design-review → ship → learn（≤ 90 min）
 ```
 
 ### /iterate —— 范围门控快速路径
@@ -231,7 +231,7 @@ cd ~/.claude/skills/gstack && ./setup
 **Windsurf / Cursor / 其他（CLI —— 推荐）：**
 ```bash
 npm install -g uipro-cli
-uipro init --ai windsurf   # 或：cursor / codex / opencode / all
+uipro init --ai windsurf   # 或：cursor / codex / opencode
 ```
 
 **全局安装（所有项目可用）：**
@@ -303,15 +303,21 @@ cd ~/.claude/skills/xdev && git pull
 |-------|------|---------|
 | `superpowers:brainstorm` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design 阶段 1（简单功能） |
 | `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design 阶段 1（大功能） |
+| `design-consultation` | gstack | full-dev / full-dev-design 阶段 1.1（全新产品且无设计系统时） |
 | `plan-eng-review` | gstack | full-dev 阶段 2（必选） |
 | `plan-design-review` | gstack | full-dev 阶段 2（UI 变更）|
 | `plan-devex-review` | gstack | full-dev 阶段 2（API 变更）|
 | `plan-ceo-review` | gstack | full-dev 阶段 2（大功能）|
+| `autoplan` | gstack | full-dev 阶段 2（全栈大功能，仅 Claude Code）|
 | `investigate` | gstack | bugfix S3 |
 | `health` | gstack | full-dev、bugfix S3、iterate |
 | `qa` | gstack | full-dev、bugfix S3（UI）、iterate |
+| `design-review` | gstack | full-dev 阶段 5+6（UI 变更）、bugfix S3（UI）|
+| `review` | gstack | full-dev 阶段 5+6（条件：新依赖 / 架构变更 / 安全敏感）|
+| `cso` | gstack | full-dev 阶段 5+6（条件：认证 / 支付 / PII / Secret）|
 | `browse` | gstack | bugfix S2 UI 验证 |
 | `ship` | gstack | 所有工作流 |
+| `land-and-deploy` | gstack | full-dev 阶段 7.2（可选：merge PR + CI + 生产健康检查）|
 | `learn` | gstack | full-dev、bugfix S3 |
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design 阶段 1.5（全新产品 / 复杂 UI）|
 | `frontend-design` | Claude 官方 | full-dev / full-dev-design 阶段 1.5（单页面 / 少量组件）|
