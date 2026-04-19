@@ -12,6 +12,38 @@ argument-hint: <需求描述>
 
 **确认策略：** 🔴必须确认（设计文档审批、范围升级） | 🟡通知即继续（分流判定、审查组合、并行分组结果） | 🟢自动继续（门禁通过、TDD 步骤）
 
+**编排总览（8 阶段）：**
+
+```
+阶段 1   需求构思与设计 ──────────────────── 🔴 设计文档经用户确认
+           │ 条件：含 UI 变更
+         阶段 1.5  视觉设计
+           │
+阶段 2   计划审查（迭代循环）
+         ┌──────────────────────────────────┐
+         │ 2.1 记录 baseline → sidecar     │
+         │ 2.2 并行审查（subagents）       │
+         │ 2.3 修复（单轮实验）            │
+         │ 2.4 Keep/Discard 判定           │
+         │      ↓ Discard: git revert     │
+         │ 2.5 终止条件优先级表（首匹配） │
+         └──────────────────────────────────┘
+           │ HIGH=0 → 通过
+阶段 3   TDD 实现计划 ──────────────────── 含 BDD 场景 + Red-Green 配对
+           │
+阶段 4   TDD 实现循环
+         ┌──────────────────────────────────┐
+         │ Red-Green 配对 / 并行 / 串行    │
+         │ 3 次 FAIL → pivot → [TODO]      │
+         │ impl [TODO] → 配对 test 跟随    │
+         └──────────────────────────────────┘
+           │ 全量测试通过
+阶段 5+6 质量检查 & QA（并行）
+           │ health ≥ 7/10 + 无 CRITICAL
+阶段 7   发布 ─────────────────────────────── changelog + tag + deploy
+阶段 8   经验沉淀 ──────────────────────────── 条件触发
+```
+
 **HUD：** 每阶段开始输出 `📍 [N/8] 阶段名`
 
 **用户需求：** $ARGUMENTS
@@ -141,7 +173,9 @@ docs/state/codebase-snapshot.md 存在？
 
 ---
 
-## 阶段 2：计划审查
+## 阶段 2：计划审查（迭代循环）
+
+> **设计思想：** 设计阶段的文本修改成本远低于代码修改。借鉴 autoresearch "keep/discard + 回退" 范式，把"审查→修复→重审"做成显式的实验循环 —— 每轮修复作为一次实验，信号好则 keep，否则 discard 并换方向，避免"越修越乱"的螺旋。
 
 分析设计文档，按以下规则选择审查 skill 组合：
 
@@ -152,9 +186,22 @@ docs/state/codebase-snapshot.md 存在？
 | 新增/修改 API | **→ `plan-devex-review`** — API 设计、命名、文档、错误处理 |
 | 新模块/大功能/大重构 | **→ `plan-ceo-review`** — 范围是否合理、过度设计、MVP 路径 |
 
-**执行规则：**
-
 🟡 判定后通知用户审查组合（如 `eng + design + ceo`），继续执行。
+
+### 2.1 Baseline 记录（每轮审查前）
+
+每次进入/回到审查循环前，在 **sidecar 文件** `<plan-path>.review.log` 中追加一条 revision marker（不写入计划文件本身，避免污染 `plan_lines`）：
+
+```markdown
+<!-- review-rev-N: HIGH=X, MEDIUM=Y, plan_lines=Z, ts=YYYY-MM-DD HH:MM, action=<initial|fix-attempt|pivot> -->
+```
+
+- **位置约定：** sidecar 路径 = 计划文件路径 + `.review.log`（例：`docs/plans/foo.md` → `docs/plans/foo.md.review.log`）。一行一条，最新在最后。
+- **首轮：** `rev-0` 由首次审查结果写入（action=initial）；之后每一轮修复前先读 sidecar 最后一条 marker 作为 baseline。
+- **`plan_lines` 获取：** `wc -l <plan-file>`（sidecar 不参与计数，数字干净稳定）。
+- **discard 也写入 sidecar**（见 2.4），保持所有轨迹集中于一处。
+
+### 2.2 并行审查执行
 
 **审查 skill ≥ 2 个时，并行派发 subagents：**
 
@@ -165,22 +212,82 @@ Subagent C → plan-devex-review  （如适用）
 Subagent D → plan-ceo-review    （如适用）
 ```
 
-每个 subagent 收到：设计文档路径 + 各自审查维度 + 输出格式（HIGH/MEDIUM/LOW 问题列表）
+每个 subagent 收到：设计文档路径 + 各自审查维度 + **输出格式协议**（见下）。
 
-> **重要：** subagent 只输出问题列表，不直接修改设计文档。修复操作由主线程统一执行，避免并发写入冲突。
+**输出格式协议（硬约定，主线程据此机械提取计数）：**
+
+每个 reviewer subagent 的输出**必须**以如下结构结尾：
+
+```
+## Findings
+
+- [HIGH-1] <标题>：<描述>
+- [HIGH-2] <标题>：<描述>
+- [MEDIUM-1] <标题>：<描述>
+- [LOW-1] <标题>：<描述>
+
+<!-- tally-start -->
+HIGH: 2
+MEDIUM: 1
+LOW: 1
+<!-- tally-end -->
+```
+
+- 问题 ID 前缀：`[HIGH-N]` / `[MEDIUM-N]` / `[LOW-N]`
+- 计数块用 `<!-- tally-start -->` / `<!-- tally-end -->` 包裹；主线程按 `grep -E '^(HIGH|MEDIUM|LOW): [0-9]+$'` 提取
+- 计数必须与上方列表一致（不一致则重跑该 reviewer，不计入 baseline）
+- 多个 reviewer 按级别求和
+
+> **重要：** subagent 只输出问题列表和 tally，不直接修改设计文档。修复操作由主线程统一执行，避免并发写入冲突。
 
 **只有 plan-eng-review 时**：在主线程直接调用，不开 subagent。
 
-**汇总（所有 subagent 完成后）：**
-1. 合并所有 HIGH 级别问题，去重
-2. 按优先级逐一修复设计文档（主线程执行，每修复一个问题单独确认）
-3. 所有 HIGH 未解决项清零才进入下一阶段
+### 2.3 修复（单轮实验）
 
-**门禁：** 无 HIGH 未解决项。 2 次重审后仍有 HIGH → 降级为仅 eng-review。
+汇总所有 subagent 输出：
+1. 合并 HIGH 级别问题，去重
+2. 主线程逐一修复设计文档（每修复一个问题单独确认）
+3. 提交：`git commit -m "fix(review-rev-N): address <topic> HIGH issues"`
+
+### 2.4 Keep / Discard 判定（修复后重审）
+
+重新派发同一组 reviewer，产出 `rev-(N+1)` 计数。对比 `rev-N` baseline：
+
+**Keep 条件（全部满足才保留本轮修复）：**
+- HIGH 减少 ≥ 1（或从非零降为 0）
+- MEDIUM 新增 ≤ 2
+- plan_lines 增幅 ≤ max(20%, +30 行)（短计划的绝对值兜底；超出需在 commit message 中写明 `[complexity-justified: ...]`）
+
+**Discard 操作（任一条件不满足）：**
+```bash
+git revert HEAD --no-edit   # 回退本轮修复
+```
+在 sidecar 文件 `<plan-path>.review.log` 追加：
+```markdown
+<!-- review-rev-N discard: 原因 X -->
+```
+**换方向**重新尝试修复（不在同一方向继续细调）。
+
+Keep 则将 `rev-(N+1)` marker 写入文件，进入下一轮（若仍有 HIGH）或进入阶段 3（若 HIGH=0）。
+
+### 2.5 终止条件（按顺序判定，首个命中立即执行）
+
+每轮 keep/discard 决策完成后，按以下顺序判定是否终止循环：
+
+| 优先级 | 条件 | 动作 |
+|---|---|---|
+| 1 | HIGH = 0 且最近一轮为 keep | ✅ 通过，进入阶段 3 |
+| 2 | 连续 discard ≥ 3 | 🔴 暂停，请用户介入：重新定义范围，或接受现有 HIGH |
+| 3 | 累计轮次（含 discard） ≥ 5 | 🔴 暂停，请用户介入（保底兜底） |
+| 4 | 累计 keep ≥ 2 且 HIGH 仍未降为 0 | 降级：仅保留 `plan-eng-review` 再跑 1 轮，其后仍未 0 → 接受 HIGH 作为 tradeoff 进入阶段 3 |
+| 5 | 连续 discard = 2 | 🟡 通知用户"审查循环陷入局部最优，继续换思路"，回到 2.3 继续 |
+| 6 | 其他情况 | 回到 2.3 继续下一轮 |
+
+> **阅读提示：** 条件 2 > 条件 4 —— 即使发生过 2 次 keep，只要随后出现 3 次连续 discard，仍按优先级 2 暂停而非降级。
 
 ### 一键全审（全栈大功能推荐）
 
-**→ 调用 skill：`autoplan`** — 自动执行全部审查
+**→ 调用 skill：`autoplan`** — 自动执行全部审查。注意：autoplan 在迭代循环中仍需遵循 2.1/2.4/2.5 的 baseline 与 keep/discard 协议。
 
 ---
 
@@ -477,6 +584,20 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 **门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`。
 
+**🔄 上限前换向规则（第 3 次尝试强制换方向）：**
+前 2 次 FAIL 在同一方向上，第 3 次（最后一次）**必须显式换方向**后再尝试：
+- 重读任务 BDD 场景和 in-scope 文件，寻找被忽略的前提
+- 组合之前 near-miss 的半对尝试（两次都"部分成立"时，交集处常是真因）
+- 更激进的实现方向：换算法、换数据结构、换接口边界
+- commit message 标注：`[pivot] 放弃方向 X，转向方向 Y，理由：<依据>`
+
+换向后仍 FAIL 才标记 `[TODO]` 跳过。
+
+**Red-Green 配对的边界处理：**
+- **impl 任务被标记 `[TODO]`** → 其配对的 test 任务标记为 `[TODO-blocked: impl-NNN]`，不执行（测试无法验证未实现的功能）
+- **test 任务失败**（测试本身写错而非 impl 问题）→ 修复测试，不计入 impl 的 FAIL 次数，两者 FAIL 计数独立
+- **无法区分 test 还是 impl 的问题** → 优先重读 BDD 场景澄清预期，再决定修哪侧
+
 ---
 
 ## 阶段 5 + 6：质量检查 & QA（并行执行）
@@ -611,7 +732,7 @@ learn
 |------|---------|----------|
 | 设计 | 3 轮无进展 | 暂停，请用户重新描述 |
 | 视觉设计 | skill 未安装 | 跳过，手动补充 UI 描述后继续 |
-| 审查 | 2 次重审 | 降级为仅 eng-review |
+| 审查 | 详见阶段 2.5 终止条件优先级表 | 按优先级表动作执行（暂停 / 降级 / 继续） |
 | TDD（单任务） | 3 次 | 跳过标记 `[TODO]` |
 | 并行批次冲突 | 1 次重新分析依赖 | 降级为串行执行 |
 | 质量 | 2 次 | 记录 tech debt，继续 |

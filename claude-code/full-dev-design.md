@@ -122,7 +122,9 @@ argument-hint: <需求描述>
 
 ---
 
-## 阶段 2：计划审查
+## 阶段 2：计划审查（迭代循环）
+
+> **设计思想：** 设计阶段的文本修改成本远低于代码修改。借鉴 autoresearch "keep/discard + 回退" 迭代范式，把"审查→修复→重审"变成显式的实验循环 —— 每轮修复作为一次实验，信号好则 keep，否则 discard 并换方向，避免"越修越乱"的螺旋。
 
 分析设计文档，按以下规则选择审查 skill 组合：
 
@@ -133,9 +135,22 @@ argument-hint: <需求描述>
 | 新增/修改 API | **→ `plan-devex-review`** — API 设计、命名、文档、错误处理 |
 | 新模块/大功能/大重构 | **→ `plan-ceo-review`** — 范围是否合理、过度设计、MVP 路径 |
 
-**执行规则：**
-
 🟡 判定后通知用户审查组合（如 `eng + design + ceo`），继续执行。
+
+### 2.1 Baseline 记录（每轮审查前）
+
+每次进入/回到审查循环前，在 **sidecar 文件** `<plan-path>.review.log` 中追加一条 revision marker（不写入计划文件本身，避免污染 `plan_lines`）：
+
+```markdown
+<!-- review-rev-N: HIGH=X, MEDIUM=Y, plan_lines=Z, ts=YYYY-MM-DD HH:MM, action=<initial|fix-attempt|pivot> -->
+```
+
+- **位置约定：** sidecar 路径 = 计划文件路径 + `.review.log`（例：`docs/plans/foo.md` → `docs/plans/foo.md.review.log`）。一行一条，最新在最后。
+- **首轮：** `rev-0` 由首次审查结果写入（action=initial）；之后每一轮修复前先读 sidecar 最后一条 marker 作为 baseline。
+- **`plan_lines` 获取：** `wc -l <plan-file>`（sidecar 不参与计数，因此数字干净稳定，是 simplicity criterion 的代理指标）。
+- **discard 也写入 sidecar**（见 2.4），保持所有轨迹集中于一处。
+
+### 2.2 并行审查执行
 
 **审查 skill ≥ 2 个时，并行派发 subagents：**
 
@@ -146,18 +161,78 @@ Subagent C → plan-devex-review  （如适用）
 Subagent D → plan-ceo-review    （如适用）
 ```
 
-每个 subagent 收到：设计文档路径 + 各自审查维度 + 输出格式（HIGH/MEDIUM/LOW 问题列表）
+每个 subagent 收到：设计文档路径 + 各自审查维度 + **输出格式协议**（见下）。
 
-> **重要：** subagent 只输出问题列表，不直接修改设计文档。修复操作由主线程统一执行，避免并发写入冲突。
+**输出格式协议（硬约定，主线程据此机械提取计数）：**
+
+每个 reviewer subagent 的输出**必须**以如下结构结尾：
+
+```
+## Findings
+
+- [HIGH-1] <标题>：<描述>
+- [HIGH-2] <标题>：<描述>
+- [MEDIUM-1] <标题>：<描述>
+- [LOW-1] <标题>：<描述>
+
+<!-- tally-start -->
+HIGH: 2
+MEDIUM: 1
+LOW: 1
+<!-- tally-end -->
+```
+
+- **问题 ID 前缀：** `[HIGH-N]` / `[MEDIUM-N]` / `[LOW-N]`，N 从 1 起编号
+- **计数块：** 用 `<!-- tally-start -->` / `<!-- tally-end -->` 包裹，每行 `级别: 数字`，主线程按 `grep -E '^(HIGH|MEDIUM|LOW): [0-9]+$'` 在该块内提取
+- **计数必须与上方列表一致**（reviewer 自校验；不一致则重新派发该 reviewer，不计入 baseline）
+- 多个 reviewer 时，主线程按级别求和得到本轮 `HIGH=X, MEDIUM=Y`
+
+> **重要：** subagent 只输出问题列表和 tally，不直接修改设计文档。修复操作由主线程统一执行，避免并发写入冲突。
 
 **只有 plan-eng-review 时**：在主线程直接调用，不开 subagent。
 
-**汇总（所有 subagent 完成后）：**
-1. 合并所有 HIGH 级别问题，去重
-2. 按优先级逐一修复设计文档（主线程执行，每修复一个问题单独确认）
-3. 所有 HIGH 未解决项清零才进入下一阶段
+### 2.3 修复（单轮实验）
 
-**门禁：** 无 HIGH 未解决项。 2 次重审后仍有 HIGH → 降级为仅 eng-review。
+汇总所有 subagent 输出：
+1. 合并 HIGH 问题，去重
+2. 主线程逐一修复设计文档（每修复一个问题单独确认）
+3. 提交：`git add docs/plans/ && git commit -m "fix(review-rev-N): address <topic> HIGH issues"`
+
+### 2.4 Keep / Discard 判定（修复后重审）
+
+重新派发同一组 reviewer，产出 `rev-(N+1)` 计数。对比 `rev-N` baseline：
+
+**Keep 条件（全部满足才保留本轮修复）：**
+- HIGH 减少 ≥ 1（或从非零降为 0）
+- MEDIUM 新增 ≤ 2
+- plan_lines 增幅 ≤ max(20%, +30 行)（短计划的绝对值兜底；超出需在 commit message 中说明 `[complexity-justified: ...]`）
+
+**Discard 操作（任一条件不满足）：**
+```bash
+git revert HEAD --no-edit   # 回退本轮修复
+```
+在 sidecar 文件 `<plan-path>.review.log` 追加：
+```markdown
+<!-- review-rev-N discard: 原因 X（例：修 HIGH-3 引入 2 个新 MEDIUM + plan_lines +28%） -->
+```
+**换方向**重新尝试修复（不在同一方向继续细调，见 2.5）。
+
+Keep 则将 `rev-(N+1)` marker 写入文件，进入下一轮（若仍有 HIGH）或进入阶段 3（若 HIGH=0）。
+
+### 2.5 终止条件（按顺序判定，首个命中立即执行）
+
+每轮 keep/discard 决策完成后，按以下顺序判定是否终止循环：
+
+| 优先级 | 条件 | 动作 |
+|---|---|---|
+| 1 | HIGH = 0 且最近一轮为 keep | ✅ 通过，进入阶段 3 |
+| 2 | 连续 discard ≥ 3 | 🔴 暂停，请用户介入：重新定义范围，或接受现有 HIGH |
+| 3 | 累计轮次（含 discard） ≥ 5 | 🔴 暂停，请用户介入（保底兜底） |
+| 4 | 累计 keep ≥ 2 且 HIGH 仍未降为 0 | 降级：仅保留 `plan-eng-review` 再跑 1 轮，其后仍未 0 → 接受 HIGH 作为 tradeoff 进入阶段 3 |
+| 5 | 连续 discard = 2 | 🟡 通知用户"审查循环陷入局部最优，继续换思路"，回到 2.3 继续 |
+| 6 | 其他情况 | 回到 2.3 继续下一轮 |
+
+> **阅读提示：** 条件 2 > 条件 4 —— 即使发生过 2 次 keep，只要随后出现 3 次连续 discard，仍按优先级 2 暂停而非降级。
 
 ---
 

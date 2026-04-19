@@ -338,6 +338,34 @@ cd ~/.claude/skills/xdev && git pull
 
 ---
 
+## Gate Types: Mechanical vs Judgement
+
+xdev uses two fundamentally different kinds of quality gates. Mixing them up is a common failure mode — this section fixes the terminology.
+
+### Mechanical Gate
+
+- **Adjudicator**: a script or command
+- **Signal**: exit code, exact string match (grep), reproducible byte-for-byte
+- **Examples**: `pass criteria` — `expected exit code = 0`, `output must contain "1 passed"`, `curl probe returns 200`
+- **Rule**: **must be strictly binary** (pass / fail). No grey zone, no "close enough".
+
+### Judgement Gate
+
+- **Adjudicator**: an LLM or a human
+- **Signal**: semantic evaluation — two runs on the same input may differ slightly
+- **Examples**: `health ≥ 7/10`, `review` with no unresolved HIGH issues, `design-review` visual compliance, `plan-*-review` HIGH/MEDIUM count
+- **Rule**: rubrics and scores are acceptable **but the evaluation dimensions must be enumerated** (no opaque "overall good"). Each dimension passes independently — never average dimensions into a single comprehensive score.
+
+### What not to do
+
+**Do not forcibly binarize a judgement gate into a single Yes/No.** A single binary like "is the code well-designed?" creates false precision — the LLM still has to make a judgement call, you just lose the resolution. The real win from binarization only applies to mechanical gates (where a script can actually decide).
+
+Corollary: when tightening a gate, first ask "is this mechanical or judgement?". Mechanical → add exit code / grep / probe. Judgement → add an evaluation dimension, not a Yes/No.
+
+> See `docs/CHANGELOG.md` for the history of this distinction — including which directions were tried and rejected. *(Note: the CHANGELOG is written in Chinese.)*
+
+---
+
 ## File Structure
 
 ```

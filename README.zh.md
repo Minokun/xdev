@@ -338,6 +338,34 @@ cd ~/.claude/skills/xdev && git pull
 
 ---
 
+## 门禁类型：机械 vs 判断
+
+xdev 的所有质量门禁分两类，**不要混淆**——混淆是一个常见失败模式，这一节把术语钉死。
+
+### 机械门禁 (Mechanical Gate)
+
+- **判定主体**：脚本/命令
+- **信号**：退出码、精确文本匹配（grep）、字节级可复现
+- **举例**：`pass criteria` — `期望退出码 = 0` / `输出必须包含 "1 passed"` / `curl 探针返回 200`
+- **规则**：**必须严格二元**（通过 / 不通过）。无灰度，无"差不多就行"。
+
+### 判断门禁 (Judgement Gate)
+
+- **判定主体**：LLM 或人类
+- **信号**：语义评估——同输入两次运行可能略有差异
+- **举例**：`health ≥ 7/10`、`review` 无未解决 HIGH、`design-review` 视觉合规、`plan-*-review` 的 HIGH/MEDIUM 计数
+- **规则**：**接受量表和评分**，但**评估维度必须列明**（禁止黑盒"总体还行"）。每个维度独立通过，**不得将多维度平均为综合分**。
+
+### 反模式
+
+**不要把判断门禁强行压成单条 Yes/No。** 比如"代码设计是否合理?" 一条二元问题制造伪精确——LLM 还是要做同样的主观判断，你只是丢失了分辨率。二元化的真正红利只对机械门禁成立（那里脚本能真正裁决）。
+
+推论：想收紧某条门禁时，先问"这是机械还是判断？"。机械 → 加退出码 / grep / 探针。判断 → 加评估维度，**不是**加 Yes/No。
+
+> 这一区分的演化历史（包含被尝试和放弃的方向）见 `docs/CHANGELOG.md`。
+
+---
+
 ## 文件结构
 
 ```
@@ -349,13 +377,15 @@ xdev/
 │   ├── full-dev-design.md
 │   ├── full-dev-impl.md
 │   ├── bugfix.md
-│   └── iterate.md
+│   ├── iterate.md
+│   └── map.md
 └── claude-code/           ← 软链接到 .claude/commands/xdev/ 或 ~/.claude/commands/xdev/
     ├── full-dev.md
     ├── full-dev-design.md
     ├── full-dev-impl.md
     ├── bugfix.md
-    └── iterate.md
+    ├── iterate.md
+    └── map.md
 ```
 
 ---
