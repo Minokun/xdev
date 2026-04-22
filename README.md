@@ -6,6 +6,12 @@ English | [中文](./README.zh.md)
 
 ---
 
+## Overview
+
+![xdev technical overview](./docs/assets/xdev-tech-overview-en.png)
+
+---
+
 ## Quick Start
 
 Just describe what you need — xdev classifies the complexity, picks the right path, executes, verifies, and ships.
