@@ -35,21 +35,21 @@ Just describe what you need — xdev classifies the complexity, picks the right 
 
 There are plenty of AI command collections out there. Here's why xdev is different:
 
-### vs. gstack / superpowers / oh-my-codex
+### vs. gstack / superpowers / oh-my-codex / oh-my-openagent
 
-| | gstack / superpowers | oh-my-codex | **xdev** |
-|--|---------------------|-------------|---------|
-| What it is | Individual power tools | Prompt templates / slash commands | **End-to-end workflow orchestration** |
-| Scope | Single task per command | Single task per prompt | **Full dev lifecycle (design → ship)** |
-| Quality gates | ❌ | ❌ | ✅ Pass/fail at every stage |
-| Failure handling | ❌ | ❌ | ✅ Retry limits + escalation paths |
-| Cross-tool handoff | ❌ | ❌ | ✅ Design in Opus, implement in Codex |
-| Parallel execution | ❌ | ❌ | ✅ Subagent dispatch for reviews |
-| Tiered execution paths | ❌ | ❌ | ✅ S1/S2/S3 for bugs (15 min vs 90 min) |
-| Confirmation policy | ❌ | ❌ | ✅ 🔴/🟡/🟢 three tiers |
-| **Adaptive execution** | ❌ | ❌ | ✅ Self-assesses severity, auto-selects workflow and skills |
-| **Dependency-aware parallelism** | ❌ | ❌ | ✅ Analyzes task graph, runs independent tasks in parallel |
-| **Cognitive load** | High — pre-map scenarios, manually chain tools | High — craft precise prompts for every variation | **Low — describe the goal, xdev decides how** |
+| | gstack / superpowers | oh-my-codex | oh-my-openagent | **xdev** |
+|--|---------------------|-------------|-----------------|---------|
+| What it is | Individual power tools | Prompt templates / slash commands | Multi-agent orchestration modes (team / ultrawork / autopilot) | **End-to-end workflow orchestration** |
+| Scope | Single task per command | Single task per prompt | Parallel agent dispatch per command | **Full dev lifecycle (design → ship)** |
+| Quality gates | ❌ | ❌ | ❌ | ✅ Pass/fail at every stage |
+| Failure handling | ❌ | ❌ | ❌ | ✅ Retry limits + escalation paths |
+| Cross-tool handoff | ❌ | ❌ | ❌ | ✅ Design in Opus, implement in Codex |
+| Parallel execution | ❌ | ❌ | ✅ Explicit multi-agent modes | ✅ Subagent dispatch built into workflow |
+| Tiered execution paths | ❌ | ❌ | ❌ | ✅ S1/S2/S3 for bugs (15 min vs 90 min) |
+| Confirmation policy | ❌ | ❌ | ❌ | ✅ 🔴/🟡/🟢 three tiers |
+| **Adaptive execution** | ❌ | ❌ | ❌ — user picks the mode | ✅ Self-assesses severity, auto-selects workflow and skills |
+| **Dependency-aware parallelism** | ❌ | ❌ | ❌ — parallel by declaration, not by task graph | ✅ Analyzes task graph, runs independent tasks in parallel |
+| **Cognitive load** | High — pre-map scenarios, manually chain tools | High — craft precise prompts for every variation | Medium — pick the right mode & agent mix per task | **Low — describe the goal, xdev decides how** |
 
 > **Confirmation tiers:** 🔴 high-risk ops (git push, PR publish) — always confirm · 🟡 mid-risk (bulk file edits) — prompt by default · 🟢 low-risk (read files, run tests) — auto-execute
 
