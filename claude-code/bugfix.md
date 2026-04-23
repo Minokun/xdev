@@ -187,6 +187,30 @@ health + qa 完成后：→ 用 `browse` 工具导航受影响页面，截图确
 
 **不涉及 UI：** 主线程直接调用 `health`（确认评分不低于修复前）
 
+### 阶段 3.5：Gatekeeper 终检（S3 条件触发）
+
+**触发条件（任一满足）：** 修复 > 5 个文件 | 跨 ≥ 2 个模块
+
+**锚点优先级 fallback：**
+
+```
+1. investigate 根因报告（存在则优先）
+   → 锚点 = 报告中声明的"影响范围"章节
+2. blame/bisect 快速出口的定位 commit diff（快速出口跳过 investigate 时）
+   → 锚点 = 引入 bug 的 commit diff + 受影响文件列表
+3. 均不存在 → 跳过，记录：
+   <!-- gk-bugfix-skipped: no anchor, rely on ship pre-landing review -->
+```
+
+**检查命题：** 修复改动是否超出锚点声明的影响面
+
+派发 Subagent：
+- 输入：锚点内容 + `git diff <fix-start-sha>..HEAD`
+- `[符合]` → 修复在影响面内，继续
+- `[超范围]`（MEDIUM）→ 警告用户"修复引入了锚点未声明的模块改动"，不阻断
+
+防止"顺手多修"导致 PR 膨胀。超范围不阻断，只警告后继续发布。
+
 ### 阶段 4：发布
 
 **→ 调用 skill：`ship`**（PATCH bump + review + PR）

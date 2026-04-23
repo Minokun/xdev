@@ -219,6 +219,16 @@ Affected files: <文件:行号>
 
 汇总：发现问题立即修复，修复单独提交。
 
+### 阶段 3.5：Gatekeeper 终检（S3 条件触发）
+
+**触发：** 修复 > 5 文件 | 跨 ≥ 2 模块。
+
+**锚点 fallback：** investigate 根因报告 → blame/bisect 定位 commit diff → 跳过（ship review 兜底）
+
+检查修复是否超出锚点声明影响面。`[超范围]`（MEDIUM）仅警告不阻断。
+
+> 完整协议见 `claude-code/bugfix.md#阶段 3.5`
+
 ### 阶段 4：发布（S3）
 
 **→ 调用 skill：`ship`**

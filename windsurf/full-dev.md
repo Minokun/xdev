@@ -588,10 +588,22 @@ git commit -m "feat(task-NNN): <specific change description>"
 - **test 任务失败**（测试本身写错而非 impl 问题）→ 修复测试，不计入 impl 的 FAIL 次数，两者 FAIL 计数独立
 - **无法区分 test 还是 impl 的问题** → 优先重读 BDD 场景澄清预期，再决定修哪侧
 
-### 4.5 实现完成检查点
+### 4.5 Gatekeeper 批次间偏差检测
+
+每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent。
+
+- sha 丢失兜底（rebase/squash）：兜底到 `git merge-base HEAD main`
+- `DEVIATION > 0` → 🔴 暂停，**只允许修代码**；改文档须降级回阶段 1
+- `OUT_OF_SCOPE` / `MISSING` → 写 sidecar，阶段 5+6 review 统一判定
+- subagent 失败 → 重试 1 次，再失败 WARN 降级不阻断
+
+> 完整 Gatekeeper prompt 模板见 `claude-code/full-dev.md#Gatekeeper-批次间偏差检测`
+
+### 4.6 实现完成检查点 + Gatekeeper 最终检查
 - 所有计划中的任务标记为 DONE
 - 所有测试通过（后端 + 前端）
 - 每个功能点有对应测试
+- **Gatekeeper 最终 drift-check**（不受双阈值限制，无 impl 提交则跳过）
 
 ---
 

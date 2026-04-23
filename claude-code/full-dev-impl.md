@@ -194,6 +194,17 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 底线：不能自动化测试时，commit message 标注 `[manual-verify]`。
 
+### Gatekeeper 批次间偏差检测
+
+每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent，对比代码实现范围与设计文档声明范围。
+
+- sha 丢失兜底（rebase/squash）：兜底到 `git merge-base HEAD main`
+- `DEVIATION > 0` → 🔴 暂停，**只允许修代码**；改文档须降级回阶段 1
+- `OUT_OF_SCOPE` / `MISSING` → 写 sidecar，阶段 5+6 `review` 统一判定
+- subagent 失败 → 重试 1 次，再失败 WARN 降级不阻断
+
+> 完整 Gatekeeper prompt 模板和 sidecar 格式见 `full-dev.md#Gatekeeper-批次间偏差检测`
+
 **门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`。
 
 **🔄 上限前换向规则（第 3 次尝试强制换方向）：**
@@ -209,6 +220,10 @@ git commit -m "feat(task-NNN): <specific change description>"
 - **impl 任务被标记 `[TODO]`** → 其配对的 test 任务标记为 `[TODO-blocked: impl-NNN]`，不执行（测试无法验证未实现的功能）
 - **test 任务失败**（测试本身写错而非 impl 问题）→ 修复测试，不计入 impl 的 FAIL 次数，两者 FAIL 计数独立
 - **无法区分 test 还是 impl 的问题** → 优先重读 BDD 场景澄清预期，再决定修哪侧
+
+### Gatekeeper 最终检查（阶段 4 结束前，必跑）
+
+全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。`DEVIATION > 0` 仍触发 🔴 暂停。
 
 ---
 

@@ -607,6 +607,102 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 底线：不能自动化测试时，commit message 标注 `[manual-verify]`。
 
+### Gatekeeper 批次间偏差检测
+
+**每完成一个批次后**，执行双阈值判断决定是否触发 drift-check：
+
+```bash
+# 取上次 Gatekeeper 锚点 sha（从 sidecar 日志读取）
+LAST_GK_SHA=$(tail -n 20 <plan>.gatekeeper.log 2>/dev/null \
+  | grep -oE 'sha=[a-f0-9]+' | tail -1 | cut -d= -f2)
+LAST_GK_SHA=${LAST_GK_SHA:-<阶段3结束时的HEAD>}
+
+# sha 丢失兜底（rebase/squash 后失效）
+if ! git cat-file -e "${LAST_GK_SHA}^{commit}" 2>/dev/null; then
+  LAST_GK_SHA=$(git merge-base HEAD main 2>/dev/null \
+    || git rev-list --max-parents=0 HEAD | head -1)
+  echo "<!-- gk-sha-lost: fallback to ${LAST_GK_SHA} -->" >> <plan>.gatekeeper.log
+fi
+
+# 双阈值：commits >= 5 且 实质 diff >= 200 行
+NEW_COMMITS=$(git rev-list --count ${LAST_GK_SHA}..HEAD)
+REAL_DIFF=$(git diff --name-only ${LAST_GK_SHA}..HEAD \
+  | grep -vE '^(docs/|.*\.md$|.*\.txt$)')
+DIFF_LINES=$(git diff --shortstat ${LAST_GK_SHA}..HEAD \
+  | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+')
+DIFF_LINES=${DIFF_LINES:-0}
+
+# 短路：全是文档变更则跳过
+[ -z "$REAL_DIFF" ] && {
+  echo "<!-- gk-skipped: no-real-changes, sha=$(git rev-parse HEAD) -->" >> <plan>.gatekeeper.log
+  continue  # 不触发，更新锚点
+}
+
+[ "$NEW_COMMITS" -ge 5 ] && [ "$DIFF_LINES" -ge 200 ] && {
+  # 触发 drift-check subagent（见下方 prompt 模板）
+}
+```
+
+**drift-check subagent 标准 prompt（保守输出原则）：**
+
+```
+你是架构审查员，只读设计文档和 diff，不读整份代码库。
+
+输入：
+- 设计文件：<path>
+- 已完成任务列表：task-NNN-...
+- Diff：git diff ${LAST_GK_SHA}..HEAD
+
+判断原则（保守输出，噪声比漏报更糟糕）：
+1. 优先 [覆盖]：小型辅助函数（< 30 行、单一调用点、服务于某 task-NNN 主功能）视为实现细节，不报超纲
+2. [偏离] 要精确：必须能从 diff 指出"接口契约/数据流/模块边界"与文档不一致的具体 file:line
+3. [缺失] 要显式：只基于设计文档明确列出的功能 / checklist，不从"我觉得应该有"推断
+4. 不确定时默认 [覆盖]，不堆砌条目
+
+输出格式（严格遵守，主线程按此解析）：
+
+## Gatekeeper Report
+
+### [覆盖] <N>
+- task-NNN: <功能描述> — 与设计文档章节 <章节> 一致
+
+### [偏离] <N>（HIGH）
+- task-NNN (<file>:<line>): <实现方向> vs <文档声明> — <偏离点>
+
+### [超纲] <N>（MEDIUM）
+- task-NNN: 实现了 <功能>，设计文档未声明
+
+### [缺失] <N>（MEDIUM）
+- 设计文档 <章节>: 声明的 <功能> 在已完成任务中无对应 impl
+
+<!-- gk-tally-start -->
+DEVIATION: <数字>
+OUT_OF_SCOPE: <数字>
+MISSING: <数字>
+<!-- gk-tally-end -->
+```
+
+**处理规则：**
+
+| 结果 | 处理 |
+|------|------|
+| `DEVIATION > 0` | 🔴 暂停，Intent Guard 把关；**用户只能选"修代码"**；如需改设计文档必须显式降级回阶段 1 重审 |
+| `OUT_OF_SCOPE > 0` | 写入 sidecar，继续执行，阶段 5+6 `review` 统一判定 |
+| `MISSING > 0` | 检查是否系 `[TODO]` 跳过任务所致（正常）；否则提醒补任务 |
+| 全部为 0 | 记录最新 sha，继续下一批次 |
+
+**失败兜底：**
+- drift-check subagent 超时/crash → 重试 1 次
+- 重试仍失败 → 降级 WARN：`<!-- gk-degraded: 自动检查失败，依赖阶段 5+6 review 兜底 -->`，不阻断主流程
+
+**sidecar 格式（`<plan-path>.gatekeeper.log`）：**
+```
+<!-- gk-rev-0: sha=abc123, commits=5, diff_lines=350, DEVIATION=0, OUT_OF_SCOPE=1, MISSING=0, ts=... -->
+<!-- gk-rev-1: sha=def456, commits=6, diff_lines=420, DEVIATION=2, OUT_OF_SCOPE=0, MISSING=0, ts=... -->
+<!-- gk-rev-1 resolved: 用户选择修代码，task-005 修改为符合文档 -->
+<!-- gk-skipped: no-real-changes, sha=aaa111, ts=... -->
+```
+
 **门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`。
 
 **🔄 上限前换向规则（第 3 次尝试强制换方向）：**
@@ -622,6 +718,17 @@ git commit -m "feat(task-NNN): <specific change description>"
 - **impl 任务被标记 `[TODO]`** → 其配对的 test 任务标记为 `[TODO-blocked: impl-NNN]`，不执行（测试无法验证未实现的功能）
 - **test 任务失败**（测试本身写错而非 impl 问题）→ 修复测试，不计入 impl 的 FAIL 次数，两者 FAIL 计数独立
 - **无法区分 test 还是 impl 的问题** → 优先重读 BDD 场景澄清预期，再决定修哪侧
+
+### Gatekeeper 最终检查（阶段 4 结束前，必跑）
+
+所有批次完成、全量测试通过后，**无条件触发一次最终 drift-check**（不受双阈值限制），作为进入阶段 5+6 的最后偏差校验。
+
+**例外跳过：** 若 `<阶段3结束sha>..HEAD` 之间无 impl 相关提交（全部任务 pivot / 标 `[TODO]` / 仅文档变更）：
+```bash
+<!-- gk-final-skipped: no impl commits since stage-3-end -->
+```
+
+Gatekeeper 最终检查使用与批次间相同的 subagent prompt 和处理规则，`DEVIATION > 0` 仍触发 🔴 暂停。
 
 ---
 
