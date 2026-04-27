@@ -163,6 +163,50 @@ xdev 解决了这四个问题。
   └── 在范围内 → TDD → health → ship
 ```
 
+### 项目上下文自主解析 —— `/map` 与 Graphify
+
+xdev **不需要单独的“了解项目”命令**。每个工作流启动时会根据任务复杂度、影响范围、已有上下文和缓存新鲜度自主选择上下文深度。
+
+```
+任务开始
+  │
+  ▼
+是否需要项目级理解？
+  ├── 否 → Level 0：不扫描，直接执行
+  └── 是
+       ├── 只需要基础结构 / 命令 / 测试模式
+       │     → Level 1：执行 /map 扫描逻辑，读取 docs/state/codebase-snapshot.md
+       │
+       └── 需要架构 / 跨模块关系 / 调用链 / 设计意图 / 全局状态
+             ├── graphify-out/{graph.json, GRAPH_REPORT.md} 存在且新鲜
+             │     → Level 3：读 GRAPH_REPORT.md + 定向 `graphify query`
+             │
+             ├── `command -v graphify` 成功，但图谱不存在或过期
+             │     ├── 当前 agent 可调度 Graphify skill pipeline
+             │     │     → Level 2：先做隐私确认，再初始化 / 刷新图谱
+             │     └── 否则 → 降级到 Level 1
+             │
+             └── Graphify 未安装
+                   → 说明是可选增强（README 第 2.6 步），降级到 Level 1
+```
+
+关键约束：
+- **CLI ≠ skill pipeline。** `command -v graphify` 只证明 CLI 可用（够做已有图谱 query 和 `graphify update .` 代码 AST 刷新）；首次完整建图还要求当前 agent 环境能运行 Graphify skill pipeline。
+- **不自动安装、不自动持久化。** 工作流不会执行 `graphify install`、`graphify watch`、`graphify hook install`；安装只在 README 第 2.6 步、用户主动配置时进行。
+- **隐私门控。** 首次完整初始化或对文档 / PDF / 图片 / 音视频做语义重抽取属于 🔴 操作 —— 必须先说明可能调用底层模型 API 并等待用户确认；只对代码做 AST 刷新属于 🟡（通知即继续）。
+- **Token 节制。** 工作流只读取 `GRAPH_REPORT.md` 和定向 `graphify query "<问题>" --graph graphify-out/graph.json` 的子图，**不**把完整 `graph.json` 塞进上下文。
+- **降级永远可用。** Graphify 未安装、初始化失败、更新失败、快照过期都自动降级到 `/map`（或跳过），工作流继续推进。
+
+各工作流默认值：
+
+| 工作流 | 默认深度 | 触发深度路径 |
+|--------|---------|-------------|
+| `/iterate` | 仅 Level 0/1 | 需要深度上下文 → 升级到 `/full-dev` 或 `/bugfix`（iterate 内部不深扫） |
+| `/bugfix` S1/S2 | Level 1 | S3 深度路径：先读 `GRAPH_REPORT.md` → `graphify query`；只在满足 Level 2 条件时初始化 |
+| `/full-dev` | 自适应 Level 0–3 | 生命周期与执行边界的“源”规则 |
+| `/full-dev-design` | Level 0/1，需要架构判断时进 Level 2 | 委托给 `/full-dev` 生命周期 |
+| `/full-dev-impl` | 默认信任设计计划，不足时再补 `graphify query` | 委托给 `/full-dev` 生命周期 |
+
 ---
 
 ## 安装
@@ -188,7 +232,12 @@ xdev 解决了这四个问题。
      npm install -g uipro-cli
      uipro init --ai windsurf   （或：cursor / codex / opencode）
 
-4. 通过软链接安装 xdev（后续只需 git pull 即可更新）：
+4. 可选：安装 Graphify 用于深度项目理解：
+   执行：uv tool install graphifyy
+   验证：graphify --help
+   注意：PyPI 包名是 graphifyy，请勿安装无关的 graphify 包。
+
+5. 通过软链接安装 xdev（后续只需 git pull 即可更新）：
    执行：git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev && ln -s ~/.claude/skills/xdev/claude-code ~/.claude/commands/xdev
 
 全部完成后，请确认文件已就位，并告诉我现在可以使用哪些 xdev 命令。
@@ -246,6 +295,49 @@ npm install -g uipro-cli
 uipro init --ai claude --global   # Claude Code
 uipro init --ai windsurf --global # Windsurf
 ```
+
+### 第 2.6 步 —— 安装 Graphify（可选，深度项目理解推荐）
+
+Graphify 是 xdev 的**深度项目上下文层**：当工作流需要架构边界、跨模块关系、调用链、设计意图或全局项目状态判断时启用。
+
+Graphify 是**可选**的；未安装时 xdev 工作流会降级到 `/map` 并继续。
+
+**依赖：** Python 3.10+。
+
+**推荐：全局 CLI 安装**
+```bash
+uv tool install graphifyy
+graphify --help
+```
+
+**备选（pipx）：**
+```bash
+pipx install graphifyy
+graphify --help
+```
+
+**重要：** 官方 PyPI 包名是 `graphifyy`，CLI 命令是 `graphify`。**不要**安装无关的 `graphify` 包。
+
+**可选：为 agent 启用 Graphify skill pipeline**
+
+CLI 已经够做已有图谱 query 和代码 AST 刷新；首次完整建图额外要求当前 agent 环境能运行 Graphify skill pipeline。
+
+Claude Code 示例：
+
+```bash
+graphify install --platform claude
+```
+
+其他 agent 请运行 `graphify --help` 选择对应 install 目标。**xdev 工作流不会自动执行这些 install / 配置命令**。
+
+**xdev 工作流执行策略：**
+- 在 query / update / check-update 之前用 `command -v graphify` 检测 CLI；找不到就说明它是可选增强并降级 `/map`。
+- **绝不**在普通工作流运行中自动执行 `graphify install`。
+- 已有图谱时优先读 `graphify-out/GRAPH_REPORT.md` 和定向 `graphify query`，不读完整 `graph.json`。
+- 安装 Graphify 不等于扫描项目；只有 Level 2 任务、`/map` 不够、且当前 agent 能运行 Graphify skill pipeline 时才会触发首次建图。
+- 已有图谱：纯代码刷新走 `graphify check-update .` + `graphify update .`；文档 / 媒体 / 敏感资料的语义刷新需要用户确认。
+- `command -v graphify` 只证明 CLI 存在 —— 够做已有图谱 query 和代码 AST 刷新，但不足以保证首次完整建图。
+- 除非用户明确要求，**不**启用 `graphify install`、`graphify watch`、`graphify hook install` 或其他平台 / 持久化自动化。
 
 ### 第三步 —— 安装 xdev
 

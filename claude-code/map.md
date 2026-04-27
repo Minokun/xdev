@@ -1,13 +1,15 @@
 ---
-description: 代码库冷启动快照 — 扫描当前项目生成结构快照，供 full-dev 等工作流读取以加速陌生代码库的上下文建立
+description: 代码库快速冷启动快照 — 生成浅层结构快照，供 full-dev 等工作流在不需要深度 Graphify 图谱时快速建立上下文
 argument-hint: （无需参数）
 ---
 
-# /xdev:map — 代码库快照
+# /xdev:map — 代码库快速快照
 
-扫描当前代码库，生成结构快照并存入 `docs/state/codebase-snapshot.md`。
+扫描当前代码库，生成浅层结构快照并存入 `docs/state/codebase-snapshot.md`。
 
 快照不提交到 git（已加入 `.gitignore`），作为**临时缓存**供后续工作流读取。
+
+`/xdev:map` 是快速启动方式，只回答"项目大概长什么样"。当其他 xdev 工作流判断需要理解整体项目状态、架构关系、调用链或设计意图时，应自主调度 Graphify 深度图谱，而不是要求用户手动运行额外命令。
 
 ---
 
@@ -96,7 +98,7 @@ grep -q "docs/state/" .gitignore 2>/dev/null || echo "docs/state/" >> .gitignore
 🟡 通知用户：
 
 ```
-✅ 代码库快照已生成：docs/state/codebase-snapshot.md
+✅ 代码库快速快照已生成：docs/state/codebase-snapshot.md
    分支：<branch>  |  commit：<sha>  |  生成时间：<time>
-   后续调用 /xdev:full-dev 时将自动读取此快照。
+   后续工作流会按任务复杂度自动选择读取此快照或调度 Graphify 深度图谱。
 ```

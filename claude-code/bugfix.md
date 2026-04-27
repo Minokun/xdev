@@ -29,6 +29,18 @@ argument-hint: <bug 描述或错误信息>
 
 读取 `CLAUDE.md` 了解项目架构、开发命令、关键模式。
 
+### 项目上下文自动解析
+
+不要要求用户单独执行"了解项目"命令。根据 bug 严重性和定位难度自主选择上下文深度：
+
+| 路径 | 默认上下文 | 升级条件 |
+|------|------------|----------|
+| S1 快速 | Level 0：直接使用报错、文件路径、当前上下文 | 根因不再一眼可见 → 升级 S2 后再补上下文 |
+| S2 标准 | Level 1：必要时自动执行 `/xdev:map` 扫描逻辑，读取 `docs/state/codebase-snapshot.md` | 涉及跨模块调用链、依赖关系不清 → 使用已有 Graphify 图谱做定向 query |
+| S3 深度 | Level 2/3：优先读 `graphify-out/GRAPH_REPORT.md`，再用 `graphify query` 聚焦故障链路 | 图谱不存在且 `command -v graphify` 成功 → 按 full-dev 的 Graphify 生命周期和执行边界处理，失败则降级 Level 1 |
+
+Graphify 生命周期、隐私、过期和降级规则与 `/xdev:full-dev` 保持一致；不要把完整 `graph.json` 直接塞入上下文。
+
 ---
 
 ## 阶段 0：严重性分级（决定路径）

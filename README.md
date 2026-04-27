@@ -163,6 +163,50 @@ Scope check (6 dimensions: lines / files / modules / deps / API / bug?)
   └── In scope    → TDD → health → ship
 ```
 
+### Project context resolution — `/map` vs Graphify
+
+xdev resolves project context **autonomously** at the start of every workflow. There is no separate "understand the project" command — the workflow self-classifies and picks the right depth.
+
+```
+Task starts
+  │
+  ▼
+Does the task need project-level understanding?
+  ├── No → Level 0: skip scanning, use the prompt as-is
+  └── Yes
+       ├── Only basic structure / commands / test patterns
+       │     → Level 1: run /map snapshot logic, read docs/state/codebase-snapshot.md
+       │
+       └── Architecture / cross-module / call chains / design intent / global state
+             ├── graphify-out/{graph.json, GRAPH_REPORT.md} fresh
+             │     → Level 3: read GRAPH_REPORT.md + targeted `graphify query`
+             │
+             ├── `command -v graphify` ok but graph missing/stale
+             │     ├── current agent can run the Graphify skill pipeline
+             │     │     → Level 2: initialize/refresh the graph (privacy gate first)
+             │     └── otherwise → fall back to Level 1
+             │
+             └── Graphify not installed
+                   → mention it as optional (README Step 2.6) and fall back to Level 1
+```
+
+Key rules:
+- **CLI ≠ skill pipeline.** `command -v graphify` only proves the CLI exists (good for queries and code-only AST refresh via `graphify update .`); first full graph initialization additionally requires the current agent environment to be able to run the Graphify skill pipeline.
+- **No auto-install, no auto-automation.** Workflows never run `graphify install`, `graphify watch`, or `graphify hook install`. Installation lives only in README Step 2.6 and runs on user request.
+- **Privacy gate.** First full initialization or any semantic refresh of docs/PDF/images/audio/video is 🔴 — the workflow must explain that semantic extraction can call the underlying model API and wait for confirmation. Code-only AST refresh is 🟡 (notify and continue).
+- **Token discipline.** Workflows read `GRAPH_REPORT.md` plus focused `graphify query "<question>" --graph graphify-out/graph.json` results. Full `graph.json` is never injected into context.
+- **Always degrade gracefully.** Missing Graphify, failed init, failed update, or stale snapshot all degrade to `/map` (or skip) and the workflow continues.
+
+Per-workflow defaults:
+
+| Workflow | Default depth | Deep path trigger |
+|----------|---------------|-------------------|
+| `/iterate` | Level 0/1 only | If deep context is needed → escalate to `/full-dev` or `/bugfix` (no deep scan inside iterate) |
+| `/bugfix` S1/S2 | Level 1 | S3 deep path: read `GRAPH_REPORT.md` → `graphify query`; init only if Level 2 conditions met |
+| `/full-dev` | Adaptive Level 0–3 | Source of truth for the lifecycle and execution boundary |
+| `/full-dev-design` | Level 0/1, Level 2 when architecture judgment is needed | Defers to `/full-dev` lifecycle |
+| `/full-dev-impl` | Trusts the design plan; supplements with `graphify query` only when the plan is insufficient | Defers to `/full-dev` lifecycle |
+
 ---
 
 ## Installation
@@ -188,7 +232,12 @@ Please install xdev and its dependencies for me:
      npm install -g uipro-cli
      uipro init --ai windsurf   (or: cursor / codex / opencode)
 
-4. Install xdev via symlink (so future updates only need a git pull):
+4. Optional: install Graphify for deep project understanding:
+   Run: uv tool install graphifyy
+   Verify: graphify --help
+   Note: the PyPI package is graphifyy; do not install the unrelated graphify package.
+
+5. Install xdev via symlink (so future updates only need a git pull):
    Run: git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev && ln -s ~/.claude/skills/xdev/claude-code ~/.claude/commands/xdev
 
 After all steps complete, confirm the files are in place and tell me which xdev commands are now available.
@@ -246,6 +295,50 @@ npm install -g uipro-cli
 uipro init --ai claude --global   # Claude Code
 uipro init --ai windsurf --global # Windsurf
 ```
+
+### Step 2.6 — Install Graphify (optional, recommended for deep project understanding)
+
+Graphify provides the deep project context layer used when xdev needs architecture boundaries, cross-module relationships, call chains, design rationale, or global project-state judgment.
+
+Graphify is **optional**. If it is not installed, xdev workflows must fall back to `/map` and continue.
+
+**Requirements:** Python 3.10+.
+
+**Recommended global CLI install:**
+```bash
+uv tool install graphifyy
+graphify --help
+```
+
+**Fallback if you use pipx:**
+```bash
+pipx install graphifyy
+graphify --help
+```
+
+**Important:** the official PyPI package is `graphifyy`, while the CLI command is `graphify`. Do not install the unrelated `graphify` package.
+
+**Optional: enable the Graphify skill pipeline for your agent**
+
+The CLI is enough for existing graph queries and code-only updates. First full graph initialization requires the Graphify skill pipeline to be available in the current agent environment.
+
+Claude Code example:
+
+```bash
+graphify install --platform claude
+```
+
+For other supported agents, run `graphify --help` and choose the matching install target. xdev workflows must not run these install/configuration commands automatically.
+
+**Execution policy inside xdev workflows:**
+- Detect Graphify CLI with `command -v graphify` before query/update/check-update steps.
+- Never auto-install Graphify or run `graphify install` inside a normal workflow run.
+- If Graphify is missing, tell the user it is an optional enhancement and continue with `/map`.
+- If a graph already exists, prefer `graphify-out/GRAPH_REPORT.md` and focused `graphify query` output over reading the full `graph.json`.
+- Installing Graphify does not scan the project. First graph initialization is only triggered by xdev workflows when a Level 2 task needs deep architecture/call-chain context, `/map` is insufficient, and the current agent can run the Graphify skill pipeline.
+- For existing graphs, code-only refreshes may use `graphify check-update .` and `graphify update .`; semantic refreshes for docs/media/sensitive materials require user confirmation.
+- `command -v graphify` only proves the CLI exists; it is enough for existing graph queries and code-only updates, but not by itself enough to guarantee first full graph initialization.
+- Do not enable `graphify install`, `graphify watch`, `graphify hook install`, or other platform/persistent automation unless the user explicitly asks for it.
 
 ### Step 3 — Install xdev
 
@@ -325,6 +418,7 @@ cd ~/.claude/skills/xdev && git pull
 | `ship` | gstack | all workflows |
 | `land-and-deploy` | gstack | full-dev stage 7.2 (optional: merge PR + CI + production health check) |
 | `learn` | gstack | full-dev, bugfix S3 |
+| `graphify` CLI | [Graphify](https://github.com/safishamsi/graphify) (`graphifyy` package) | optional deep project context for full-dev / full-dev-design / bugfix S3 |
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
 | `frontend-design` | Claude official | full-dev / full-dev-design stage 1.5 (single page / small components) |
 

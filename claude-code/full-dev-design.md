@@ -56,6 +56,17 @@ argument-hint: <需求描述>
 
 如项目存在历史经验记录（`docs/learnings/` 或 learn skill 产出目录），读取最近 3-5 条与当前需求相关的记录，避免重复踩坑。
 
+### 项目上下文自动解析（map / Graphify 自主调度）
+
+设计阶段需要理解"现有项目状态"时，不要求用户单独执行"了解项目"命令，按 `/xdev:full-dev` 同一策略自主选择：
+
+- Level 0：全新项目、用户已给足背景、或设计与现有代码关系很弱 → 不扫描。
+- Level 1：需要技术栈、目录、开发命令、测试模式 → 自动执行 `/xdev:map` 扫描逻辑并读取 `docs/state/codebase-snapshot.md`。
+- Level 2：需要判断现有架构边界、模块关系、业务流程、设计意图或重构影响面 → 按 `/xdev:full-dev` 的 Graphify 生命周期初始化/刷新图谱。
+- Level 3：已有图谱且只需聚焦某个流程/模块 → 使用 `graphify query` 获取小子图。
+
+Graphify 生命周期、隐私、过期和降级规则与 `/xdev:full-dev` 保持一致；不要把完整 `graph.json` 直接塞入上下文。
+
 ---
 
 ## 阶段 1：需求构思与设计

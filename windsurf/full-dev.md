@@ -95,21 +95,72 @@ auto_execution_mode: 3
 
 如项目存在历史经验记录（`docs/learnings/` 或 learn skill 产出目录），读取最近 3-5 条与当前需求相关的记录，避免重复踩坑。
 
-### 代码库快照（冷启动补充上下文）
+### 项目上下文自动解析（map / Graphify 自主调度）
 
-检查 `docs/state/codebase-snapshot.md` 是否存在并有效：
+不要要求用户单独执行"了解项目"命令。根据当前需求复杂度、影响范围、已有上下文和缓存新鲜度，自主选择上下文深度：
+
+| 层级 | 方式 | 适用场景 | 产物/读取 |
+|------|------|----------|-----------|
+| Level 0 | 不扫描 | 用户已给出明确文件/函数、简单文案或局部改动、当前上下文足够 | 直接继续 |
+| Level 1 | 快速 map | 缺少基础项目信息、需要技术栈/目录/开发命令/测试模式 | `docs/state/codebase-snapshot.md` |
+| Level 2 | 深度 Graphify | 需要整体项目状态、架构边界、跨模块关系、调用链、设计意图、全局风险判断 | `graphify-out/GRAPH_REPORT.md`；`graphify-out/graph.json` 仅作 query 输入 |
+| Level 3 | 定向 graph query | 已有图谱，当前任务需要聚焦某条流程/模块/概念关系 | `graphify query "<问题>" --graph graphify-out/graph.json` |
+
+#### 调度规则
 
 ```
-docs/state/codebase-snapshot.md 存在？
+当前任务需要项目级理解？
 │
-├── 不存在 → 提示"未检测到代码库快照，建议先运行 /map 以获得更好的代码库上下文"，继续执行（不强制）
+├── 否 → Level 0，直接继续
 │
-└── 存在 → 校验新鲜度
-    ├── 快照中的 Git 分支 ≠ 当前分支 → 提示"快照来自分支 X，当前在 Y，快照已过期，建议重新运行 /map"，跳过快照
-    ├── 快照中的 commit SHA 不在当前分支历史中 → 提示"快照锚点提交不在当前历史中，快照已过期"，跳过快照
-    ├── 快照生成时间 > 7 天 → 提示"快照已超过 7 天，建议重新运行 /map"，跳过快照
-    └── 通过 → 读取快照作为项目上下文补充
+└── 是
+    ├── 只需要基础结构/命令/目录 → Level 1
+    │   ├── 快照存在且有效 → 读取 docs/state/codebase-snapshot.md
+    │   └── 不存在或过期 → 自动执行 /map 的扫描逻辑，生成快照后读取
+    │
+    └── 需要架构/关系/调用链/设计原因/全局状态 → Level 2/3
+        ├── graphify-out/graph.json + GRAPH_REPORT.md 存在且有效 → 先读 GRAPH_REPORT.md，再按需 graphify query
+        ├── `command -v graphify` 成功但图谱不存在/过期 → 若当前 agent 可调度 Graphify skill pipeline，则初始化/刷新图谱；否则降级到 Level 1
+        └── graphify 未安装 → 说明 Graphify 是可选增强（安装见 README Step 2.6），当前降级到 Level 1
 ```
+
+#### 新鲜度判断
+
+- `docs/state/codebase-snapshot.md`：分支不一致、锚点 commit 不在当前历史、生成时间超过 7 天 → 视为过期。
+- `graphify-out/graph.json`：当前分支 HEAD 晚于图谱生成时间、关键源码/文档变更较多、`graphify check-update .` 提示需要更新 → 视为过期。
+- 过期不阻塞流程：能自动刷新则刷新；不能刷新则通知并降级。
+
+#### Graphify 生命周期：首次建图与更新
+
+安装 Graphify 不等于立即扫描项目。不要在 xdev 安装、普通会话启动、Level 0/1 任务或 `/iterate` 小改动中主动初始化图谱。
+
+首次初始化图谱只在同时满足以下条件时触发：
+
+1. 当前任务已被判定为 Level 2，需要架构边界、跨模块关系、调用链、设计意图或全局风险判断。
+2. `graphify-out/GRAPH_REPORT.md` 或 `graphify-out/graph.json` 不存在，或存在但按新鲜度规则失效。
+3. `/map` 快照不足以支撑判断。
+4. `command -v graphify` 成功。
+5. 当前 agent 环境可调度 Graphify skill pipeline；仅安装 CLI 不代表能首次完整建图。
+6. 通过隐私预检；若项目包含非代码文档、图片、PDF、音视频或可能敏感资料，必须先说明风险并等待用户确认。
+
+更新图谱按变更类型分流：
+
+- 只改代码，且已有图谱：可先执行 `graphify check-update .`；确认需要更新时，优先执行 `graphify update .` 做本地代码重抽取（Graphify CLI 标注 no LLM needed），🟡 通知即继续。
+- 文档、图片、PDF、音视频或语义资料发生变化：视为语义重抽取，🔴 先说明可能调用底层模型 API 并等待用户确认。
+- 大范围重构、模块迁移、分支切换、依赖图明显变化：优先更新图谱；失败则降级 Level 1 并继续。
+- 不自动执行 `graphify install`、`graphify watch`、`graphify hook install` 或任何平台配置、常驻、钩子模式；这些只在用户明确要求时配置。
+
+图谱初始化或更新后，只读取 `GRAPH_REPORT.md` 和定向 `graphify query` 结果，不直接塞入完整 `graph.json`。
+
+#### Graphify 执行边界
+
+- 读取已有 `graphify-out/GRAPH_REPORT.md`、检查 `graphify-out/graph.json` 是否存在、执行 `graphify query`：🟢 自动继续。
+- 检测 Graphify CLI 只用 `command -v graphify`；不要在普通工作流运行中自动安装 Graphify 或执行 `graphify install`。
+- `command -v graphify` 只证明 CLI 可用，可用于已有图谱 query 和代码 AST 更新；首次完整建图还需要当前 agent 可调度 Graphify skill pipeline。
+- 官方 PyPI 包名是 `graphifyy`，CLI 命令是 `graphify`；如需安装，只引用 README Step 2.6，不在普通工作流内展开安装命令。
+- 首次完整初始化或更新图谱前，若项目包含非代码文档、图片、PDF、音视频或可能敏感的工作资料：🔴 说明 Graphify 可能把非代码语义抽取内容发送到底层模型 API，等待用户确认。
+- 代码 AST 结构抽取、本地已有图谱查询、失败后降级到 `/map`：🟡 通知即继续。
+- 不要把完整 `graph.json` 直接塞入上下文；优先读取 `GRAPH_REPORT.md`，再用 `graphify query` 获取与当前任务相关的小子图。
 
 ---
 
