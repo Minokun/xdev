@@ -72,142 +72,346 @@ git pull
 
 ---
 
-## 阶段 4：TDD 实现循环
+## 阶段 4：TDD 实现循环（风险分级 + 批次感知 + 有界 review）
 
 > **状态更新：** 如存在状态文件，更新「当前阶段」为 `4（TDD 实现循环）`。
 
-### 任务依赖分析
+> **设计依据：** `docs/superpowers/specs/2026-04-27-xdev-full-dev-impl-flow-optimization-design.md`（rev 4）。本阶段把 review 和并行编排成本按风险分级，避免对低风险任务做完整 spec/quality 双重审查。
 
-读取实现计划中所有任务的依赖标注，构建依赖图：
+### 4.0 风险分级校验
 
-**判断规则：**
-- 任务 B 依赖任务 A：B 需要读取 A 写入的文件 | B 测试 A 实现的接口 | B 在 A 的基础上扩展
-- 任务 B 独立于 A：B 修改不同模块/文件 | B 的测试不依赖 A 的输出
+读取实现计划中每个任务的 `risk` 字段：
 
-🟡 输出分组结果，通知用户，继续执行。
+| 情形 | 行为 |
+|------|------|
+| 新计划，每个任务都有 `risk` + `risk_reason` | 直接进入 4.1 |
+| 新计划，任一任务缺字段 | 🔴 硬错误：阶段 4 终止；提示用户回到 `/xdev:full-dev-design` 重新出计划 |
+| 遗留计划（全部任务都没有 `risk`） | 自动 fallback：每条缺失项默认 `risk: L2`，写入状态文件 YAML 块的 `risk_inferred: []` 数组 |
 
-> **注意：** 不确定依赖关系时，保守归入串行。宁可少并行，不要产生冲突。
+**风险等级语义：**
 
-### 执行模式优先级
+| Level | 触发信号 | 默认执行策略 |
+|---|---|---|
+| L0 | 文档、注释、配置、不改公共行为 | 主线程或窄 subagent，无任务级 review |
+| L1 | 单模块特性逻辑、清晰测试、无共享契约/持久化 | TDD subagent，批次 review |
+| L2 | 共享契约、API 路由行为、跨模块工具、序列化、缓存契约 | TDD subagent，任务级 spec review，批次 quality review |
+| L3 | 金融/数学、安全、auth、权限、持久化、迁移、并发、部署基础设施 | TDD subagent，任务级 spec + quality + 独立审计 |
 
-按以下优先级选择执行模式，每次明确说明选择原因：
+> 不确定时选高一级。
 
-| 优先级 | 模式 | 触发条件 |
-|--------|------|---------|
-| 1 | **Red-Green 配对** | 批次含同 NNN 的 test + impl 任务对 |
-| 2 | **并行 subagent** | 批次内任务互相独立（不同文件/模块）|
-| 3 | **串行** | 最后手段：批次内有不可拆分的文件冲突 |
+**与 Graphify 的正交关系：** 风险分级决定 review 深度，Graphify 决定理解深度。两者独立。task packet 可以可选附带 `graphify query` 输出作为只读上下文，不参与 review 触发判定。
 
-### 并行前接口契约冻结
+### 4.1 状态文件 YAML 块初始化
 
-启动任何并行执行前，提取所有跨任务接口，冻结为约定：
+阶段 4 启动时，确认状态文件 `docs/state/full-dev--<branch>--<slug>.md` 末尾存在 fenced YAML 块；不存在则追加：
 
-| 接口 | 定义方任务 | 消费方任务 | 契约（字段 / 签名 / schema） |
-|------|----------|----------|--------------------------|
-| ... | task-NNN | task-MMM | ... |
+````markdown
+## stage 4 data
 
-> **规则：** 定义方不得在并行执行中单方面修改已冻结契约。消费方按契约编写，不做假设。
-> **仅一个任务涉及某接口时**：无需冻结，正常并行。
+```yaml
+tasks_in_flight: []
+false_positives: []
+risk_inferred: []
+```
+````
 
-### Red-Green 配对执行
+后续所有结构化数据（运行中任务、误报、风险推断）都写入该 YAML 块。**写盘节流：** 仅在 phase 转换或 status 变更时落盘；纯 `last_event_at` 更新留内存，最多 30 s 一次。原子写：临时文件 + `mv`，与主状态文件相同模式。
 
-识别计划中相同 NNN 前缀的 test + impl 配对，作为协调单元调度：
+### 4.2 路径预检（subagent 派发前必跑）
+
+| 检查 | 通过标准 |
+|------|----------|
+| 仓库根存在 | `git rev-parse --show-toplevel` 成功 |
+| 任务工作目录存在 | `test -d <cwd>` |
+| 计划修改的文件存在 | 每个 modify-file 都 `test -f` |
+| 计划新建的文件父目录存在 | 每个 new-file 父目录 `test -d` |
+| 测试命令 cwd 显式 | 任务 packet 中 cwd 是绝对路径或相对已声明的 cwd |
+| **CWD/path collision 规则** | 当 subagent cwd 是 `<repo>/<X>` 时，task packet 中所有路径**不得**以 `<X>/` 开头（精准捕获 `backend/backend/...` 类问题，不误伤 `apps/apps-foo`） |
+
+任一失败 → 不派发 subagent，先修 task packet。
+
+### 4.3 任务依赖分析
+
+读取所有任务的依赖标注，构建依赖图：
+
+- 任务 B 依赖任务 A：B 读取 A 写入的文件 / B 测试 A 实现的接口 / B 在 A 基础上扩展
+- 任务 B 独立于 A：B 修改不同模块/文件 / B 的测试不依赖 A 的输出
+
+🟡 输出分组结果，通知用户继续。不确定时归入串行。
+
+### 4.4 派发策略
+
+替换旧的「任务 ≤ 3 → 串行」一刀切规则。
+
+#### 4.4.1 小批次快路径（measurable gate）
+
+批次同时满足以下全部条件 → **主线程串行执行，跳过 subagent 派发**：
+
+- ≤ 2 个任务总数
+- 每个任务的「涉及文件」清单 ≤ 1 个
+- 每个任务的「测试文件」清单 ≤ 1 个
+- 无 L3 任务
+
+#### 4.4.2 冲突矩阵（不在快路径时使用）
+
+| 条件 | 策略 |
+|------|------|
+| 同一文件被多个任务编辑 | 串行 |
+| 同一测试文件、不同测试函数 | 主线程先建立**共享测试文件契约**（见 4.5），契约稳定后再派发 |
+| 共享新建 helper 被多任务依赖 | helper 任务先做，consumer 任务后做 |
+| 文件互不冲突 + 接口契约稳定 | 并行 |
+| L3 高风险任务 | 默认串行，除非明显隔离 |
+| 批次合并后全量测试失败 | 定位冲突任务 → `git revert` 回滚 → 归入新串行批次 |
+
+#### 4.4.3 Red-Green 配对
+
+识别计划中相同 NNN 前缀的 test + impl 配对：
 
 ```
-配对内（两个专属 agent，顺序协作）：
-  Agent A（test）→ 只写失败测试 → 运行验证命令确认 FAIL → 提交测试文件
-                                                              ↓ Red 确认后
-  Agent B（impl）→ 只写最小实现 → 运行验证命令确认 PASS → 全量测试 → 提交
+配对内顺序：
+  Agent A（test）→ 写失败测试 → 验证 FAIL → 提交测试文件
+                                              ↓ Red 确认后
+  Agent B（impl）→ 写最小实现 → 验证 PASS → 全量测试 → 提交
 
-多个配对 → 不同配对可同时并行执行
+多对配对 → 不同配对可同时并行
 ```
 
-**Subagent 派发模板（Red-Green 配对）：**
+### 4.5 共享测试文件契约（多任务共享 test 文件时）
 
+派发并行 subagent **之前**主线程必须：
+
+1. 创建/更新测试文件 skeleton：imports + fixtures + helper fakes + 命名空 test 函数。
+2. 给每个任务分配唯一的 test 函数名，记入 task packet `Reserved test functions`。
+3. 契约稳定 = 文件能编译（或测试 runner 报告 collected-but-skipped）+ 函数名唯一。
+4. **scaffold 必须先 commit**：`chore(task-NNN-test-contract): scaffold <test_file>`。subagent 启动前 HEAD 必须含此 scaffold。
+5. subagent 仅填自己的 reserved test 函数 + allowed 生产文件；不得新增、改名、重排其他任务的 reserved 函数。
+
+### 4.6 窄执行器 task packet
+
+implementation subagent 是**窄执行器**：
+
+**禁止：** 调 planning skill / 创建 `task_plan.md`、`progress.md`、`findings.md` / 重新扫描整个项目 / 编辑 allowlist 之外的文件 / 在 targeted 测试通过前跑全量测试 / 提交无关生成文件。
+
+**必须：** 只读 task packet / 派发前已校验路径 / 先写失败测试（除非任务显式非可测）/ 跑指定的 targeted 命令 / 跑指定的 related regression 命令 / 返回 `DONE` `BLOCKED` `NEEDS_REVIEW` `NEEDS_RECLASSIFY` 之一并附证据。
+
+**Task packet 模板：**
+
+```text
+Repository root: <absolute path>
+Working directory: <absolute path>
+Risk level: L1 | L2 | L3
+Task id: task-NNN
+Allowed files:
+- <absolute path>
+Tests allowed:
+- <absolute path>
+Reserved test functions: (无共享契约时整段省略)
+- <test_function_name>
+Targeted command:
+- <command>
+Related regression command:
+- <command>
+Graphify context (可选，read-only):
+- <path to focused graphify query output, omit if none>
+不得调用 planning skill。
+不得创建 planning 文件。
+不得编辑 allowed 之外的文件。
+仅返回 status 和证据。
 ```
-Agent A - task-NNN-<feature>-test：
-读取计划中该任务的 BDD 场景和验证命令。
-执行：写失败测试 → 运行验证命令确认 FAIL → 提交测试文件 → 报告 Red 确认。
 
-Agent B - task-NNN-<feature>-impl（等 Agent A 报告 FAIL 后再启动）：
-读取计划中该任务的 BDD 场景和验证命令。
-执行：写最小实现使测试通过 → 运行验证命令确认 PASS → 共享模块影响范围检查（如适用）→ 全量测试确认无回归 → 原子提交 `feat(task-NNN): <desc>`。
+> Graphify context 只在主线程已有该任务对应的聚焦 `graphify query` 输出时附加；不在 executor 内部即兴生成。
+
+### 4.7 NEEDS_RECLASSIFY 处理（风险升级通道）
+
+如果 subagent 在实现中发现该任务实际触及更高风险面（L1 实际跨 auth 边界、改持久化、动共享契约），**立即停止编码**并返回：
+
+```text
+status: NEEDS_RECLASSIFY
+proposed_risk: L2 | L3
+reason: <一行说明 + file:line 证据>
 ```
 
-### 并行执行（普通独立任务）
+主线程动作：
+1. 读取 reason，确认是否同意升级。
+2. 在计划中更新该任务的 `risk` 字段；变更追加到 `risk_inferred: []`（标记 `source: needs_reclassify`）。
+3. 按新风险重路由（L3 → 串行 + audit；L2 → 加 spec review）。
+4. 重发 task packet。
 
-按批次派发 subagent：
-- **批次内**：同时启动所有任务，每个 subagent 独立执行完整 TDD 循环
-- **批次间**：串行——前一批次全量测试通过后再启动下一批次
-- **冲突处理**：批次后全量测试失败 →
-  1. 逐一运行各任务验证命令，定位失败任务
-  2. `git diff HEAD~N -- <affected-files>` 确认哪些任务修改了相同文件
-  3. 对冲突任务执行 `git revert` 回滚提交
-  4. 将冲突任务归入新批次，串行重做
+subagent 不得擅自扩大范围继续做。
 
-> 任务 ≤ 3 个或全部有依赖时，退化为串行执行。
+### 4.8 TDD 循环步骤（subagent 执行）
 
-**Subagent 派发模板（普通任务）：**
+**A. 写失败测试** —— 跑任务的验证命令，预期 FAIL。
 
-```
-Task: task-NNN-<feature>-<type>
-读取计划中该任务的 BDD 场景、文件列表和验证命令。执行完整 TDD 循环：
-1. 写失败测试（确认 FAIL）
-2. 写最小实现（确认 PASS）
-3. 共享模块影响范围检查（如适用，见 B.5）
-4. 全量测试（确认无回归）
-5. 原子提交：`git commit -m "feat(task-NNN): <desc>"`
-```
+**B. 写最小实现** —— 再跑验证命令，预期 PASS。
 
-**TDD 循环步骤（subagent 执行）：**
-
-**A. 写失败测试**
-运行任务中指定的验证命令，预期：FAIL
-
-**B. 写最小实现**
-再次运行验证命令，预期：PASS
-
-**B.5 共享模块影响范围检查（条件触发）**
-
-触发判断：修改的文件是否被 ≥ 2 个外部模块引用（工具函数 / 基类 / 核心接口）？
+**B.5 共享模块影响范围检查（条件触发）** —— 修改文件是否被 ≥ 2 个外部模块引用？
 
 ```bash
-# Python 项目
+# Python
 grep -r "from <module_path> import\|import <module_name>" src/ -l
-# TypeScript 项目
+# TypeScript
 grep -r "from '.*<module_name>'\|require('.*<module_name>')" src/ --include="*.ts" -l
 ```
 
-- ✅ 未被外部引用 → 跳过，直接进入 Step C
-- ⚠️ 有外部引用 → 将识别出的上游调用方测试文件追加到验证范围，确认它们在修改后仍 PASS，再进入 Step C
+- 未被外部引用 → 跳过 → Step C
+- 有外部引用 → 把上游调用方测试追加到验证范围 → 确认仍 PASS → Step C
 
 **C. 全量测试确认无回归**
+
 ```bash
 cd backend && uv run pytest -v
 cd frontend && npm test
 ```
-预期：全部 PASS
 
 **D. 原子提交**
+
 ```bash
 git add <changed-files>
 git commit -m "feat(task-NNN): <specific change description>"
 ```
 
-### TDD 例外处理
+### 4.9 主线程可见性 / Heartbeat
+
+每个被派发的 subagent，主线程跟踪 `dispatched_at` / `last_event_at` / `phase`。
+
+**Heartbeat 触发阈值（按风险分档）：**
+
+| Risk | Heartbeat | possibly stuck |
+|------|-----------|----------------|
+| L1 | 5 min | 10 min |
+| L2 | 8 min | 15 min |
+| L3 | 15 min | 25 min |
+
+均以 `last_event_at` 为基准。还在更新 → `active`；超 stuck 阈值且无新事件 → `possibly stuck`。
+
+**Heartbeat 输出：**
+
+```text
+Task task-NNN (Lk) still running: last event at HH:MM, current phase: <test|implementation|verification|review|unknown>.
+```
+
+**`tasks_in_flight` 持久化** — 写入状态文件 YAML 块；条目 `{ task_id, risk, dispatched_at, last_event_at, phase, status }`；写盘时机：phase 转换或 status 变更（≥ 30 s 防抖）。
+
+**Phase 推断：**
+
+| 最近事件 | Phase |
+|---|---|
+| 写或运行预期失败测试 | `test` |
+| 编辑生产文件 | `implementation` |
+| 运行 targeted / regression 测试 | `verification` |
+| 调用 review agent 或处理其输出 | `review` |
+| 无可识别事件 | `unknown` |
+
+**Claude Code 事件日志查找：**
+1. 起点：`~/.claude/projects/<project-session>/`
+2. 检查 `subagents/*.jsonl`
+3. worktree：检查 `~/.claude/projects/*--worktrees-<worktree-name>/<session-id>/subagents/*.jsonl`
+4. 按任务标题 / id / 派发 prompt 前 120 字符匹配
+5. log mtime 即 `last_event_at`
+
+**possibly stuck 触发动作（不可只报告）：**
+1. 自动尝试一次：kill 该 subagent，按原 packet 重新派发一次。
+2. 二次仍 `possibly stuck` → 🔴 停下，汇总最后一份 `tasks_in_flight` 快照，请用户决策（重试 / 放弃 / 降级到主线程）。
+3. 永远不要让 stuck subagent 在后台继续而主线程跑别的任务，先隔离再继续。
+
+### 4.10 Review 政策（按风险触发）
+
+| Level | Spec review | Quality review | Drift / Gatekeeper |
+|---|---|---|---|
+| L0 | 无 | 无 | 仅最终 |
+| L1 | 批次摘要 review，按下文规则采样 | 批次一次 | 仅最终 |
+| L2 | 任务后一次 | 批次后一次 | 批次 + 最终 |
+| L3 | 任务后 | 任务后 | 任务 + 最终 |
+
+**L1 采样规则：**
+
+1. 完成的 L1 任务按 touched top-level 模块/路由目录分组。
+2. **每个被触及的模块取 1 个采样**（diff 最大的那个任务）。无总 cap。
+3. 批次触及模块数 > 6 → 先把批次拆成 ≤ 6 模块的子批次。
+4. 任一采样出现 HIGH 阻断 → 把该模块的剩余 L1 任务全部 review 完再继续。
+5. 全部采样通过 → 未被采样的 L1 任务交给最终 Gatekeeper + health 兜底。
+6. **空批次：** 批次中无 L1 任务 → 跳过本步。
+
+**Finding 处理：**
+
+| Finding | 行为 |
+|---|---|
+| CRITICAL / HIGH | 必须先修 |
+| MEDIUM 正确性 / 数据丢失 / 安全 / 性能 | 必须先修 |
+| MEDIUM 可维护性 / 命名 / 局部结构 | 推到批次 review，除非阻碍清晰度 |
+| LOW | 记录不阻断 |
+| Reviewer 主张与代码证据冲突 | 在代码中核对；不成立 → 记入误报，不进修复循环 |
+
+**有界 review 循环：**
+
+1. 第一次 review 按风险触发。
+2. 有阻断 finding → 修 + 必要时加失败测试。
+3. 复审一次。
+4. 第二次复审仍有阻断 HIGH/CRITICAL → 🔴 暂停升级。
+5. MEDIUM/LOW 第二次仍存在 → 转批次 review，除非影响正确性或数据安全。
+
+避免无限 review-fix-review，又保留对真问题的 stop-the-line。
+
+### 4.11 误报记录（state file 唯一权威）
+
+误报全部写入状态文件 `false_positives: []`，batch summary 只引用不复制。
+
+**Schema：**
+
+```yaml
+- task: task-NNN
+  finding_id: <reviewer 给的 id 或简短 slug>
+  severity: HIGH | MEDIUM | LOW
+  reviewer_claim: <一行总结 reviewer 说法>
+  evidence:
+    path: <absolute path>
+    lines: <start>-<end>
+    note: <为什么 reviewer 是错的>
+  recorded_at: <ISO timestamp>
+```
+
+batch summary 引用格式：`False positive: task-NNN/<finding_id> (see state file)`，仅此而已。
+
+### 4.12 L3 独立审计（强制）
+
+L3 任务 review 通过后，**强制**派发独立 audit subagent，针对触发分级的具体信号设计 prompt（金融/数学 → 数值正确性审计；auth → 权限边界审计；migrations → 数据完整性审计）。审计**只读**，产出 sidecar：
+
+```
+docs/state/audits/<slug>/audit-task-NNN.md
+```
+
+`<slug>` 与状态文件 slug 相同。审计目录在 stage 7 ship 完成后由 `full-dev.md` 统一清理（`rm -rf docs/state/audits/${_SLUG}`）。
+
+### 4.13 TDD 例外处理
 
 | 场景 | 策略 |
 |------|------|
 | 遗留代码紧耦合 | 先加测试接缝，独立提交 |
 | 只能集成/手工复现 | 集成测试或 E2E + 记录手工步骤 |
 | 测试框架缺失 | 先搭建最小测试基础设施 |
-| 需要可测试性改造 | 将改造作为前置任务 |
+| 需要可测试性改造 | 改造作为前置任务 |
 
 底线：不能自动化测试时，commit message 标注 `[manual-verify]`。
 
-### Gatekeeper 批次间偏差检测
+### 4.14 上限前换向规则（第 3 次尝试强制换方向）
 
-每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent，对比代码实现范围与设计文档声明范围。
+前 2 次 FAIL 在同一方向，第 3 次（最后一次）必须显式换方向：
+- 重读 BDD 场景和 in-scope 文件，找被忽略的前提
+- 组合之前 near-miss 的半对尝试
+- 换算法 / 数据结构 / 接口边界
+- commit message 标注：`[pivot] 放弃方向 X，转向方向 Y，理由：<依据>`
+
+换向后仍 FAIL → 标 `[TODO]` 跳过。
+
+**Red-Green 边界：**
+- impl `[TODO]` → 配对 test 标 `[TODO-blocked: impl-NNN]` 不执行
+- test 自身写错（非 impl 问题） → 修测试，不计入 impl FAIL 次数
+- 区分不出 test/impl 哪侧错 → 先重读 BDD 澄清预期
+
+### 4.15 Gatekeeper 偏差检测
+
+每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent。
 
 - sha 丢失兜底（rebase/squash）：兜底到 `git merge-base HEAD main`
 - `DEVIATION > 0` → 🔴 暂停，**只允许修代码**；改文档须降级回阶段 1
@@ -218,21 +422,7 @@ git commit -m "feat(task-NNN): <specific change description>"
 
 **门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`。
 
-**🔄 上限前换向规则（第 3 次尝试强制换方向）：**
-前 2 次 FAIL 在同一方向上，第 3 次（最后一次）**必须显式换方向**后再尝试：
-- 重读任务 BDD 场景和 in-scope 文件，寻找被忽略的前提
-- 组合之前 near-miss 的半对尝试（两次都"部分成立"时，交集处常是真因）
-- 更激进的实现方向：换算法、换数据结构、换接口边界
-- commit message 标注：`[pivot] 放弃方向 X，转向方向 Y，理由：<依据>`
-
-换向后仍 FAIL 才标记 `[TODO]` 跳过。
-
-**Red-Green 配对的边界处理：**
-- **impl 任务被标记 `[TODO]`** → 其配对的 test 任务标记为 `[TODO-blocked: impl-NNN]`，不执行（测试无法验证未实现的功能）
-- **test 任务失败**（测试本身写错而非 impl 问题）→ 修复测试，不计入 impl 的 FAIL 次数，两者 FAIL 计数独立
-- **无法区分 test 还是 impl 的问题** → 优先重读 BDD 场景澄清预期，再决定修哪侧
-
-### Gatekeeper 最终检查（阶段 4 结束前，必跑）
+### 4.16 Gatekeeper 最终检查（阶段 4 结束前，必跑）
 
 全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。`DEVIATION > 0` 仍触发 🔴 暂停。
 

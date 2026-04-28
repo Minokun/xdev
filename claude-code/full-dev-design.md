@@ -276,6 +276,7 @@ ls src/<planned-dir>/           # 确认关键路径存在
 - **BDD 驱动** — 每个任务内嵌 Given/When/Then 场景，意图自洽，执行者无需猜测
 - **Red-Green 配对** — 每个功能拆为 test + impl 两个任务，共享 NNN 编号前缀
 - **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
+- **风险分级** — 每个任务必填 `risk` + `risk_reason`，驱动实现阶段的 review 深度（详见 `full-dev-impl.md` 阶段 4）
 
 ### 任务格式
 
@@ -299,6 +300,8 @@ Then 返回 200 状态码和有效的 JWT token
 **涉及文件：** src/auth/login.test.ts
 **验证命令：** npm test src/auth/login.test.ts
 **预期：** FAIL（测试先于实现，应失败）
+**risk:** L2
+**risk_reason:** auth boundary, JWT contract
 **依赖：** 无
 
 ---
@@ -310,8 +313,21 @@ Then 返回 200 状态码和有效的 JWT token
 **涉及文件：** src/auth/login.ts
 **验证命令：** npm test src/auth/login.test.ts
 **预期：** PASS
+**risk:** L2
+**risk_reason:** auth boundary, JWT contract
 **依赖：** task-001-login-test
 ```
+
+**风险等级取值：**
+
+| Level | 触发信号 |
+|---|---|
+| L0 | 文档 / 注释 / 配置 / 不改公共行为 |
+| L1 | 单模块特性逻辑、清晰测试、无共享契约/持久化 |
+| L2 | 共享契约、API 路由、跨模块工具、序列化、缓存契约 |
+| L3 | 金融/数学、安全、auth、权限、持久化、迁移、并发、部署基础设施 |
+
+> 不确定时**选高一级**。无明显信号时默认 L2，并在 `risk_reason` 标记 `inferred default`。
 
 ### 依赖规则
 
@@ -338,9 +354,10 @@ Subagent B — 依赖图检查
   输出：依赖图可视化 + 问题列表
 
 Subagent C — 任务完整性与 BDD 质量检查
-  目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令
+  目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令、**risk + risk_reason**
         ② BDD 质量：Given 必须有具体输入值，Then 必须有可断言的输出（状态码/字段/数值），禁止模糊表述（如"系统正常"/"成功"）
-  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表
+        ③ 风险字段校验：`risk` ∈ {L0, L1, L2, L3}；`risk_reason` 非空；缺任一字段视为 HIGH 必须修复
+  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表 + 风险字段缺失/非法的任务列表
 ```
 
 **汇总规则（所有 subagent 完成后）：**
@@ -373,9 +390,19 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 - **设计文件：** ${_DESIGN_FILE}
 - **计划文件：** ${_PLAN_FILE}
 - **更新时间：** $(date '+%Y-%m-%d %H:%M')
+
+## stage 4 data
+
+\`\`\`yaml
+tasks_in_flight: []
+false_positives: []
+risk_inferred: []
+\`\`\`
 STATEOF
 mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 ```
+
+> `## stage 4 data` 下的 fenced YAML 块由 `full-dev-impl.md` 阶段 4 在派发 subagent 时读写。设计阶段先把 schema 占好，避免 impl 阶段再追加导致竞争。
 
 🟡 通知用户：`设计阶段会话状态已写入 ${_STATE_FILE}`
 

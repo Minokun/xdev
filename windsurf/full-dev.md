@@ -386,6 +386,7 @@ ls src/<planned-dir>/           # 确认关键路径存在
 - **BDD 驱动** — 每个任务内嵌 Given/When/Then 场景，意图自洽，执行者无需猜测
 - **Red-Green 配对** — 每个功能拆为 test + impl 两个任务，共享 NNN 编号前缀
 - **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
+- **风险分级** — 每个任务必填 `risk` + `risk_reason`（L0/L1/L2/L3），驱动阶段 4 的 review 深度；不确定选高一级，无明显信号默认 L2
 
 ### 任务格式
 
@@ -414,6 +415,8 @@ Then 返回 200 状态码和有效的 JWT token
 - 期望退出码：1（FAIL）
 - 输出必须包含：`FAIL` 或 `Error: Cannot find module`
 - 输出不得包含：`SyntaxError`（语法错误不算有效 FAIL）
+**risk:** L2
+**risk_reason:** auth boundary, JWT contract
 **依赖：** 无
 
 ---
@@ -430,6 +433,8 @@ Then 返回 200 状态码和有效的 JWT token
 - 期望退出码：0（PASS）
 - 输出必须包含：`1 passed`
 - 额外断言（可选）：`curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/login -d '{"user":"test","pass":"test"}'` 返回 `200` 或 `401`
+**risk:** L2
+**risk_reason:** auth boundary, JWT contract
 **依赖：** task-001-login-test
 ```
 
@@ -459,7 +464,7 @@ Then 返回 200 状态码和有效的 JWT token
 ```
 Subagent A — 覆盖检查：每个功能点是否都有对应的 test + impl 配对
 Subagent B — 依赖图检查：依赖标注是否正确、有无循环依赖
-Subagent C — 任务完整性与 BDD 质量检查：① 每个任务是否包含 BDD 场景、文件列表、验证命令、通过条件；② BDD 质量：Given 必须有具体输入值，Then 必须有可断言的输出（状态码/字段/数值），禁止模糊表述；③ 通过条件可推导性：「输出必须包含」的文本片段能否从验证命令的实际输出中推导？不能推导的标记为 HIGH 问题
+Subagent C — 任务完整性与 BDD 质量检查：① 每个任务是否包含 BDD 场景、文件列表、验证命令、通过条件、**risk + risk_reason**；② BDD 质量：Given 必须有具体输入值，Then 必须有可断言的输出（状态码/字段/数值），禁止模糊表述；③ 通过条件可推导性：「输出必须包含」的文本片段能否从验证命令的实际输出中推导？不能推导的标记为 HIGH 问题；④ 风险字段校验：`risk` ∈ {L0, L1, L2, L3}；`risk_reason` 非空；缺任一字段视为 HIGH 必须修复
 ```
 
 **汇总规则（所有 subagent 完成后）：**
@@ -491,9 +496,19 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 - **设计文件：** ${_DESIGN_FILE}
 - **计划文件：** ${_PLAN_FILE}
 - **更新时间：** $(date '+%Y-%m-%d %H:%M')
+
+## stage 4 data
+
+\`\`\`yaml
+tasks_in_flight: []
+false_positives: []
+risk_inferred: []
+\`\`\`
 STATEOF
 mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 ```
+
+> `## stage 4 data` 下的 fenced YAML 块由阶段 4 在派发 subagent 时读写，设计阶段先把 schema 占好。
 
 ---
 
@@ -510,134 +525,16 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 
 > **状态更新：** 阶段开始时，更新状态文件「当前阶段」为 `4（TDD 实现循环）`。
 
-### 4.0 任务依赖分析
+> **阶段 4 详细规则请遵循 `full-dev-impl.md` 阶段 4。** 该文件是唯一权威，包含风险分级、路径预检、窄执行器 task packet、派发策略（小批次快路径 + 冲突矩阵）、共享测试文件契约、NEEDS_RECLASSIFY 通道、主线程可见性（heartbeat / possibly stuck）、L1 采样、有界 review 循环、误报 schema、L3 独立审计、Graphify 正交声明。本文件不重复上述规则。
 
-读取实现计划中所有任务的依赖标注（阶段 3.2 产出），构建依赖图：
+> 推荐联调读法：先读本阶段下方的 Gatekeeper 偏差检测节（`claude-code/full-dev.md` 是其唯一权威），再跳到 `full-dev-impl.md` 读阶段 4 的其他子节。
 
-**判断规则：**
-- 任务 B 依赖任务 A：B 需要读取 A 写入的文件 | B 测试 A 实现的接口 | B 在 A 的基础上扩展
-- 任务 B 独立于 A：B 修改不同模块/文件 | B 的测试不依赖 A 的输出
+### 4.0 阶段 4 启动 checklist
 
-🟡 输出分组结果，通知用户，继续执行。
-
-> **注意：** 不确定依赖关系时，保守归入串行。宁可少并行，不要产生冲突。
-
-### 4.1 执行模式优先级
-
-| 优先级 | 模式 | 触发条件 |
-|--------|------|---------|
-| 1 | **Red-Green 配对** | 批次含同 NNN 的 test + impl 任务对 |
-| 2 | **并行执行** | 批次内任务互相独立（不同文件/模块）|
-| 3 | **串行** | 最后手段：批次内有不可拆分的文件冲突 |
-
-### 并行前接口契约冻结
-
-启动任何并行执行前，提取所有跨任务接口，冻结为约定：
-
-| 接口 | 定义方任务 | 消费方任务 | 契约（字段 / 签名 / schema） |
-|------|----------|----------|--------------------------|
-| ... | task-NNN | task-MMM | ... |
-
-> **规则：** 定义方不得在并行执行中单方面修改已冻结契约。消费方按契约编写，不做假设。
-> **仅一个任务涉及某接口时**：无需冻结，正常并行。
-
-**Red-Green 配对执行：**
-
-```
-Agent A（test）→ 只写失败测试 → 运行验证命令确认 FAIL → 提交测试文件
-                                                          ↓ Red 确认后
-Agent B（impl）→ 只写最小实现 → 用通过条件逐项验收（PASS）→ 全量测试确认无回归 → 原子提交
-
-多个配对 → 不同配对可同时并行
-```
-
-### 4.2 批次化执行
-
-按批次顺序执行：
-- **批次内**：同时启动所有任务，每个 subagent 独立执行 TDD 循环
-- **批次间**：串行——前一批次全量测试通过后再进入下一批次
-- **冲突处理**：批次后全量测试失败 →
-  1. 逐一运行各任务验证命令，定位失败任务
-  2. `git diff HEAD~N -- <affected-files>` 确认哪些任务修改了相同文件
-  3. 对冲突任务执行 `git revert` 回滚提交
-  4. 将冲突任务归入新批次，串行重做
-
-> 任务 ≤ 3 个或全部有依赖时，退化为串行执行。
-
-每个任务执行以下 TDD 循环：
-
-**步骤 A：写失败测试**
-运行任务中指定的验证命令，预期：FAIL
-用通过条件逐项验收：退出码 ✓ | 输出必须包含 ✓ | 输出不得包含 ✓
-**不得提交除非通过条件全部满足。**
-
-**步骤 B：写最小实现使测试通过**
-```bash
-# 运行同一测试
-cd backend && uv run pytest tests/<test_file>.py::<test_name> -v
-```
-预期：PASS
-
-**步骤 B.5：共享模块影响范围检查（条件触发）**
-
-触发判断：修改的文件是否被 ≥ 2 个外部模块引用（工具函数 / 基类 / 核心接口）？
-
-```bash
-# Python 项目
-grep -r "from <module_path> import\|import <module_name>" src/ -l
-# TypeScript 项目
-grep -r "from '.*<module_name>'\|require('.*<module_name>')" src/ --include="*.ts" -l
-```
-
-- ✅ 未被外部引用 → 跳过，直接进入步骤 C
-- ⚠️ 有外部引用 → 将识别出的上游调用方测试文件追加到验证范围，确认它们在修改后仍 PASS，再进入步骤 C
-
-**步骤 C：运行完整测试套件确认无回归**
-```bash
-# 后端全量测试
-cd backend && uv run pytest -v
-# 前端全量测试
-cd frontend && npm test
-```
-预期：全部 PASS
-
-**步骤 C.5：通过条件终验**
-运行验证命令，逐项核对通过条件：退出码 ✓ | 输出必须包含 ✓ | 额外断言 ✓（如有）
-**不得提交除非通过条件全部满足。**
-
-**步骤 D：原子提交**
-```bash
-git add <changed-files>
-git commit -m "feat(task-NNN): <specific change description>"
-```
-
-### 4.3 TDD 例外处理
-
-不是所有代码都能直接写单元测试，遇到以下场景时按对应策略处理：
-
-| 场景 | 策略 | 示例 |
-|------|------|------|
-| 遗留代码紧耦合，难以测试 | 先加测试接缝（extract method / inject dependency），作为独立提交 | 改造 `fetch_data()` 支持注入 mock client |
-| 问题只能通过集成/手工复现 | 写集成测试或 E2E 测试 + 记录手工验证步骤 | WebSocket 重连、浏览器兼容性 |
-| 测试框架缺失 | 先搭建最小测试基础设施，作为独立提交 | 添加 pytest fixture、配置 vitest |
-| 需要可测试性改造 | 将改造作为前置任务，与功能分开提交 | 拆分巨型函数、解耦数据库依赖 |
-
-**底线：** 不能写自动化测试时，必须记录手工验证步骤并在 commit message 中标注 `[manual-verify]`。
-
-### 4.4 上限前换向规则（第 3 次尝试强制换方向）
-
-单个任务连续 2 次 FAIL 在同一方向上，第 3 次（最后一次）**必须显式换方向**后再尝试：
-- 重读任务 BDD 场景和 in-scope 文件，寻找被忽略的前提
-- 组合之前 near-miss 的半对尝试（两次都"部分成立"时，交集处常是真因）
-- 更激进的实现方向：换算法、换数据结构、换接口边界
-- commit message 标注：`[pivot] 放弃方向 X，转向方向 Y，理由：<依据>`
-
-换向后仍 FAIL 才标记 `[TODO]` 跳过（见失败回路表）。
-
-**Red-Green 配对的边界处理：**
-- **impl 任务被标记 `[TODO]`** → 其配对的 test 任务标记为 `[TODO-blocked: impl-NNN]`，不执行（测试无法验证未实现的功能）
-- **test 任务失败**（测试本身写错而非 impl 问题）→ 修复测试，不计入 impl 的 FAIL 次数，两者 FAIL 计数独立
-- **无法区分 test 还是 impl 的问题** → 优先重读 BDD 场景澄清预期，再决定修哪侧
+1. 读取状态文件 `## stage 4 data` 下的 fenced YAML 块；不存在则先追加 schema（`tasks_in_flight: []`、`false_positives: []`、`risk_inferred: []`）。
+2. 按 `full-dev-impl.md` 阶段 4 执行风险校验、依赖分析、派发、并行 / 串行、review、L3 audit。
+3. 每个批次后回到下方的 Gatekeeper 偏差检测节跳转。
+4. 全部任务完成后走下方的 Gatekeeper 最终检查。
 
 ### 4.5 Gatekeeper 批次间偏差检测
 
@@ -655,6 +552,7 @@ git commit -m "feat(task-NNN): <specific change description>"
 - 所有测试通过（后端 + 前端）
 - 每个功能点有对应测试
 - **Gatekeeper 最终 drift-check**（不受双阈值限制，无 impl 提交则跳过）
+- 单个任务 3 次 FAIL → 跳过并标记 `[TODO]`
 
 ---
 
@@ -730,11 +628,13 @@ ship 内置：预检查 → 合并主分支 → 运行测试 → AI 测试覆盖
 
 **→ 调用 skill：`land-and-deploy`**
 
-**发布完成后，删除状态文件：**
+**发布完成后，删除状态文件 + L3 audit 目录：**
 
 ```bash
 sed -i '' 's/^## xdev 会话状态/## xdev 会话状态\n- **已完成：** true/' "${_STATE_FILE}" 2>/dev/null || true
+# 删除状态文件 + audit sidecar 目录
 rm -f "${_STATE_FILE}"
+rm -rf "docs/state/audits/${_SLUG}"
 ```
 
 ---
