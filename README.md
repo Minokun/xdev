@@ -129,17 +129,19 @@ Stage 1: Requirement exploration (brainstorming / office-hours)
 Stage 2: Plan review — parallel subagents (eng + design + devex + ceo as needed)
 Stage 3: TDD implementation plan (writing-plans) with dependency annotations
          ── handoff point (optional, for cross-tool split) ──
-Stage 4: Implementation — parallel task batches based on dependency graph
+Stage 4: Implementation — risk-gated parallel batches (L0–L3) + heartbeat + L3 audit
 Stage 5+6: Quality + QA (parallel) — review(cond.) ‖ cso --diff(cond.) ‖ health ‖ qa ‖ design-review
 Stage 7: Release — 7.1 ship (includes pre-landing review + auto document-release) → 7.2 land-and-deploy (optional)
 Stage 8: Learning (learn — conditional trigger)
 ```
 
-### Three built-in reliability features
+### Four built-in reliability features
 
 **Session recovery** — Every workflow writes a state file to `docs/state/` at stage 3 and updates it at each subsequent stage. If a session is interrupted mid-way, the next invocation detects the file, runs a 3-way validation (branch match, HEAD still in history, plan file exists), and resumes from the last completed stage instead of restarting from scratch. State files are gitignored and deleted automatically after a successful ship.
 
 **Structured pass criteria** — Every task in the stage-3 plan now carries a machine-checkable `pass criteria` block: the exact verification command, expected exit code, required output strings, and optional extra assertions (e.g. a `curl` probe). Subagents may not commit unless all criteria pass. Subagent C validates that the "must-contain" string is actually derivable from the verification command's real output.
+
+**Risk-gated stage 4** — Every task in the stage-3 plan carries a `risk` classification (L0 trivial / L1 local / L2 cross-module / L3 critical) that drives stage 4 orchestration: executor packets are narrowed per risk level, reviews are sampled (L1 per-module) or mandatory (L2/L3), L3 tasks get an independent audit subagent writing sidecars to `docs/state/audits/<slug>/`, and subagent progress is tracked by a risk-aware heartbeat (L1 5/10min, L2 8/15min, L3 15/25min) that kills and re-dispatches possibly-stuck runs before escalating to the user. Cuts typical stage 4 wall time ~90min → 45–60min while preserving quality gates on shared/auth/finance-sensitive code.
 
 **Codebase snapshot (`/xdev:map`)** — Run once when you first enter an unfamiliar repo. xdev scans the directory tree and source files, writes a snapshot to `docs/state/codebase-snapshot.md` (gitignored), and subsequent `full-dev` invocations read it for instant project context. The snapshot includes a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off.
 
