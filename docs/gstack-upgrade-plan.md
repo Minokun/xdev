@@ -193,7 +193,7 @@ stage 总数仍为 8（5+6 算一个，stage 7 内部两步不单独计数）。
 
 **Skill 编排总览图更新（追加新节点）：**
 ```
-office-hours / superpowers:brainstorm
+office-hours / superpowers:brainstorming
     ↓（条件）design-consultation
     ↓
 [ui-ux-pro-max / frontend-design]  ← 条件触发（涉及 UI 时）

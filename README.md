@@ -224,7 +224,8 @@ Please install xdev and its dependencies for me:
    Run: /plugin install superpowers@claude-plugins-official
 
 2. Install gstack:
-   Run: git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
+   Claude Code: run `git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`
+   Codex/OpenCode/Cursor/Windsurf/other agents: run `git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack && cd ~/gstack && ./setup --host <agent>` (for example: `./setup --host codex`)
 
 3. Install ui-ux-pro-max (UI/UX design skill):
    Claude Code: run these two commands:
@@ -232,7 +233,7 @@ Please install xdev and its dependencies for me:
      /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
    Windsurf/Cursor/other: run:
      npm install -g uipro-cli
-     uipro init --ai windsurf   (or: cursor / codex / opencode)
+     uipro init --ai windsurf   (or: cursor / codex / opencode / all)
 
 4. Optional: install Graphify for deep project understanding:
    Run: uv tool install graphifyy
@@ -266,18 +267,25 @@ superpowers provides the `brainstorming` skill used in xdev (lightweight require
 
 ### Step 2 — Install gstack
 
-gstack provides the core engineering skills used by xdev: `investigate`, `health`, `qa`, `ship`, `learn`, `browse`, `writing-plans`, `office-hours`, `plan-eng-review`, `plan-design-review`, `plan-devex-review`, `plan-ceo-review`.
+gstack provides the core engineering skills used by xdev: `office-hours`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `plan-devex-review`, `design-consultation`, `review`, `cso`, `health`, `qa`, `qa-only`, `design-review`, `devex-review`, `browse`, `investigate`, `ship`, `land-and-deploy`, `canary`, `autoplan`, `learn`.
 
 **Requirements:** Git, [Bun v1.0+](https://bun.sh)
 
+**Claude Code:**
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
 cd ~/.claude/skills/gstack && ./setup
 ```
 
+**Codex / OpenCode / Cursor / Windsurf / other supported agents:**
+```bash
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
+cd ~/gstack && ./setup --host codex   # or: opencode / cursor / windsurf / factory / slate / hermes / kiro
+```
+
 ### Step 2.5 — Install ui-ux-pro-max
 
-`ui-ux-pro-max` provides end-to-end UI/UX design support (competitor references, interaction design, component specs). Used in `full-dev` / `full-dev-design` stage 1.5 when building new products or complex UIs.
+`ui-ux-pro-max` provides end-to-end UI/UX design support: design-system generation, product-type reasoning, style/color/typography search, interaction guidance, and stack-specific UI rules. Used in `full-dev` / `full-dev-design` stage 1.5 when building new products or complex UIs.
 
 **Claude Code (marketplace):**
 ```
@@ -285,17 +293,16 @@ cd ~/.claude/skills/gstack && ./setup
 /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
 ```
 
-**Windsurf / Cursor / other (CLI — recommended):**
+**Codex / Windsurf / Cursor / OpenCode / other agents (CLI — recommended):**
 ```bash
 npm install -g uipro-cli
-uipro init --ai windsurf   # or: cursor / codex / opencode / all
+uipro init --ai codex      # or: claude / windsurf / cursor / opencode / all
 ```
 
-**Global install (available across all projects):**
+**Update an existing CLI install:**
 ```bash
 npm install -g uipro-cli
-uipro init --ai claude --global   # Claude Code
-uipro init --ai windsurf --global # Windsurf
+uipro update --ai codex    # or your assistant target
 ```
 
 ### Step 2.6 — Install Graphify (optional, recommended for deep project understanding)
@@ -402,7 +409,7 @@ cd ~/.claude/skills/xdev && git pull
 
 | Skill | Source | Used in |
 |-------|--------|---------|
-| `superpowers:brainstorm` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design stage 1 (simple features) |
+| `superpowers:brainstorming` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design stage 1 (simple features) |
 | `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design stage 1 (large features) |
 | `design-consultation` | gstack | full-dev / full-dev-design stage 1.1 (new product with no design system) |
 | `plan-eng-review` | gstack | full-dev stage 2 (always) |
@@ -414,6 +421,7 @@ cd ~/.claude/skills/xdev && git pull
 | `health` | gstack | full-dev, bugfix S3, iterate |
 | `qa` | gstack | full-dev, bugfix S3 (UI), iterate |
 | `design-review` | gstack | full-dev stage 5+6 (UI changes), bugfix S3 (UI) |
+| `devex-review` | gstack | full-dev stage 5+6 (API / CLI / SDK changes) |
 | `review` | gstack | full-dev stage 5+6 (conditional: new deps / arch changes / security) |
 | `cso` | gstack | full-dev stage 5+6 (conditional: auth / payment / PII / secrets) |
 | `browse` | gstack | bugfix S2 UI verification |
@@ -422,7 +430,7 @@ cd ~/.claude/skills/xdev && git pull
 | `learn` | gstack | full-dev, bugfix S3 |
 | `graphify` CLI | [Graphify](https://github.com/safishamsi/graphify) (`graphifyy` package) | optional deep project context for full-dev / full-dev-design / bugfix S3 |
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
-| `frontend-design` | Claude official | full-dev / full-dev-design stage 1.5 (single page / small components) |
+| `frontend-design` | [Anthropic skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design) / locally installed skill | full-dev / full-dev-design stage 1.5 (single page / small components) |
 
 > xdev degrades gracefully if individual skills are missing — the workflow file will call the skill and it simply won't execute if not installed.
 

@@ -225,8 +225,8 @@ git add docs/plans/ && git commit -m "docs: add design for <feature>"
 
 | 场景 | 调用 skill | 原因 |
 |------|-----------|------|
-| 全新产品 / 大模块 / 复杂交互设计 | **→ `ui-ux-pro-max`** | 端到端 UI/UX 设计，含竞品参考、交互方案、完整组件规范 |
-| 单页面 / 少量组件 / 功能增强 | **→ `frontend-design`** | Claude 官方前端设计助手，快速产出组件结构与样式规范 |
+| 全新产品 / 大模块 / 复杂交互设计 | **→ `ui-ux-pro-max`** | 端到端 UI/UX 设计，含设计系统生成、产品类型推理、交互方案、技术栈规则 |
+| 单页面 / 少量组件 / 功能增强 | **→ `frontend-design`** | Anthropic frontend-design skill，快速产出有审美方向的组件结构与样式规范 |
 
 > **降级规则：** 优先使用已安装的 skill。两者均未安装 → 跳过此步骤，在设计文档中手动补充 UI 描述后继续。
 
@@ -562,6 +562,8 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 
 > **UI 改动判定：** 改动文件含 `.tsx` / `.vue` / `.jsx` / `.css` / `.scss` / `.html`，或改动了前端路由配置、影响页面渲染逻辑 → 视为涉及 UI，触发 qa 和 design-review。
 
+> **DX 改动判定：** 改动公开 API、CLI、SDK、插件协议、配置 schema、错误信息、安装/上手文档或开发者工作流 → 触发 devex-review。
+
 > **review 触发判定（命中任一则触发）：** 新引入第三方库/依赖（非版本升级）| 跨模块架构变更（新增模块、修改核心接口/基类）| auth/安全敏感代码改动 | 首次引入新设计模式或并发/事务模式
 
 > **cso 触发判定（命中任一则触发）：** 认证/登录/SSO/OAuth | 支付/计费/订阅 | PII 数据处理 | 文件上传/下载 | Webhook 接收端 | Secret/API Key 管理 | 权限边界变更
@@ -575,6 +577,7 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 | `health` | **必选**（所有场景） |
 | `qa` | 条件（涉及 UI） |
 | `design-review` | 条件（涉及 UI） |
+| `devex-review` | 条件（涉及 API / CLI / SDK / 开发者工作流） |
 
 **典型场景：**
 
@@ -584,6 +587,7 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 - **→ 调用 skill：`health`**
 - **→ 调用 skill：`qa`**（先启动 `./start.sh all`）
 - **→ 调用 skill：`design-review`**
+- **→ 调用 skill：`devex-review`**（涉及 API / CLI / SDK / 开发者工作流时）
 
 涉及 UI，无安全敏感，无架构变更：
 - **→ 调用 skill：`health`**
@@ -594,13 +598,14 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 - **→ 调用 skill：`review`**
 - **→ 调用 skill：`cso`**（`/cso --diff`）
 - **→ 调用 skill：`health`**
+- 涉及 API / CLI / SDK / 开发者工作流时，加 **→ skill：`devex-review`**
 
 不涉及 UI，普通功能迭代：
 - 只调用 **→ skill：`health`**（单任务不值得开 subagent）
 
 汇总：所有 skill 完成后，发现问题立即修复，每个修复单独提交。
 
-**门禁：** review 无 [ASK] 未处理项（review 触发时）+ cso 无 HIGH 安全问题（cso 触发时）+ health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题（涉及 UI）+ 无 HIGH 视觉问题（涉及 UI）
+**门禁：** review 无 [ASK] 未处理项（review 触发时）+ cso 无 HIGH 安全问题（cso 触发时）+ health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题（涉及 UI）+ 无 HIGH 视觉问题（涉及 UI）+ devex-review 无 HIGH 摩擦点（涉及开发者体验）
 
 ---
 
@@ -693,7 +698,7 @@ rm -rf "docs/state/audits/${_SLUG}"
 └──────────────────────────┘                   │
     │                                          │
     ▼                                          │
-[review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review]  ← 并行（qa/design-review 仅涉及 UI；review/cso 条件触发）
+[review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review ‖ devex-review]  ← 并行（qa/design-review 仅涉及 UI；devex-review 仅涉及开发者体验；review/cso 条件触发）
     │                                          │
     ▼                                          │
 [ship] ──→ pre-landing review + 版本 + PR + document-release（内置）

@@ -128,8 +128,8 @@ git add docs/plans/ && git commit -m "docs: add design for <feature>"
 
 | 场景 | 调用 skill | 原因 |
 |------|-----------|------|
-| 全新产品 / 大模块 / 复杂交互设计 | **→ `ui-ux-pro-max`** | 端到端 UI/UX 设计，含竞品参考、交互方案、完整组件规范 |
-| 单页面 / 少量组件 / 功能增强 | **→ `frontend-design`** | Claude 官方前端设计助手，快速产出组件结构与样式规范 |
+| 全新产品 / 大模块 / 复杂交互设计 | **→ `ui-ux-pro-max`** | 端到端 UI/UX 设计，含设计系统生成、产品类型推理、交互方案、技术栈规则 |
+| 单页面 / 少量组件 / 功能增强 | **→ `frontend-design`** | Anthropic frontend-design skill，快速产出有审美方向的组件结构与样式规范 |
 
 > **降级规则：** 优先使用已安装的 skill。两者均未安装 → 跳过此步骤，在设计文档中手动补充 UI 描述后继续。
 
