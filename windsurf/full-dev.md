@@ -603,9 +603,19 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 不涉及 UI，普通功能迭代：
 - 只调用 **→ skill：`health`**（单任务不值得开 subagent）
 
-汇总：所有 skill 完成后，发现问题立即修复，每个修复单独提交。
+汇总：所有 skill 完成后，先按下面的结果矩阵分类，再决定修复、降级或阻塞；发现本次改动引入的问题立即修复，每个修复单独提交。
 
-**门禁：** review 无 [ASK] 未处理项（review 触发时）+ cso 无 HIGH 安全问题（cso 触发时）+ health 评分 >= 7/10 + 无 CRITICAL/HIGH 未修复 QA 问题（涉及 UI）+ 无 HIGH 视觉问题（涉及 UI）+ devex-review 无 HIGH 摩擦点（涉及开发者体验）
+**结果矩阵：**
+
+| 结果 | 判定 | 动作 |
+|------|------|------|
+| PASS | 所有触发的 skill 完成，且无本次改动引入的阻塞问题 | 进入阶段 7 |
+| FIX_REQUIRED | 发现本次改动引入的 CRITICAL/HIGH QA、HIGH 视觉、安全 HIGH、review [ASK]、devex HIGH 或 health < 7 | 修复后重跑对应 skill，最多 2 轮 |
+| DEGRADED | 浏览器 QA 因缺少真实登录态、外部服务、第三方限制、预览环境不可用而无法完整覆盖；已验证可访问页面/API/构建/聚焦测试，且没有证据表明本次改动引入 CRITICAL/HIGH | 记录手工验证缺口和已完成证据，标记阶段 5+6 完成，进入阶段 7 |
+| BASELINE_DEBT | 全量测试或 health 被本分支之前已存在的问题阻塞；必须给出文件/测试名、失败原因、与本次 diff 无关的证据，并用聚焦测试/构建/diff-check 覆盖本次改动 | 记录 tech debt，不阻塞阶段 7；不得修无关旧问题，除非用户要求 |
+| BLOCKED | 无法区分失败是否由本次改动引入，或 2 轮后仍有本次改动相关 HIGH/CRITICAL | 暂停，请用户决策 |
+
+**门禁：** review 无未处理 [ASK]（触发时）+ cso 无本次改动引入的 HIGH（触发时）+ health 评分 >= 7/10 或明确 BASELINE_DEBT + 无本次改动引入的 CRITICAL/HIGH QA 问题（涉及 UI）+ 无本次改动引入的 HIGH 视觉问题（涉及 UI）+ devex-review 无本次改动引入的 HIGH 摩擦点（涉及开发者体验）。`DEGRADED` / `BASELINE_DEBT` 必须写入状态文件或最终汇总，包含：已跑命令、失败证据、为什么不属于本次改动、剩余手工验证项。
 
 ---
 
