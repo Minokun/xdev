@@ -1,0 +1,16 @@
+# macOS Finder metadata
+.DS_Store
+
+# Local working notes (per-developer)
+tasks/
+
+# xdev runtime caches written by workflows (per repo / per branch)
+docs/state/
+
+# Graphify output (graph.json, GRAPH_REPORT.md, manifest.json, cost.json)
+graphify-out/
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
