@@ -25,6 +25,10 @@ Just describe what you need — xdev classifies the complexity, picks the right 
 
 # Small tweak?
 /xdev:iterate  Reduce homepage load timeout from 5s to 3s
+
+# Need to understand the project, or audit it for hidden risks?
+/xdev:ask  How does the auth flow work?
+/xdev:ask  Audit this project — what risks should I worry about?
 ```
 
 > xdev auto-assesses severity → selects the right workflow → executes → verifies → ships. No hand-holding required.
@@ -105,19 +109,62 @@ This is **self-directed execution**, not blind script following. The AI reads co
 
 ## What's inside
 
-7 workflow files that cover the complete development lifecycle:
+6 workflow files that cover the complete development lifecycle:
 
 | Workflow | Claude Code | Windsurf | When to use | Target time |
 |----------|-------------|----------|-------------|------------|
-| **full-dev** | `/xdev:full-dev` | `/full-dev` | New feature, large refactor | Hours–days |
+| **full-dev** | `/xdev:full-dev` | `/full-dev` | New feature, large refactor, cross-module change | Hours–days |
 | **full-dev-design** | `/xdev:full-dev-design` | `/full-dev-design` | Design phase only — produces a plan and hands off to Codex for implementation | 1–4 hours |
 | **full-dev-impl** | `/xdev:full-dev-impl` | `/full-dev-impl` | Implementation phase only — reads the design plan and executes | Hours–days |
 | **bugfix** | `/xdev:bugfix` | `/bugfix` | Bug, crash, unexpected behavior | 15 min–90 min |
 | **iterate** | `/xdev:iterate` | `/iterate` | Small change, optimization, config tweak | 15–60 min |
-| **ask** | `/xdev:ask` | `/ask` | Project Q&A and latent-issue discovery (audit mode); top priority is "most current, most accurate answer" | 1–5 min |
-| **map** | `/xdev:map` | `/map` | Scan codebase and generate a snapshot for cold-start context | < 1 min |
+| **ask** | `/xdev:ask` | `/ask` | Read-only project Q&A or proactive audit; top priority is "most current, most accurate answer" | 1–5 min |
 
 > **Cross-tool handoff:** `full-dev-design` + `full-dev-impl` let you use the best model for each phase — plan with a powerful reasoning model (e.g. Opus), implement with a fast execution model (e.g. Codex). xdev handles the handoff automatically via a shared plan file.
+
+### Concrete scenarios — pick the right command
+
+Commands self-classify and degrade, so when in doubt just describe the goal. The list below is a quick mental model.
+
+**`/xdev:full-dev`** — anything with unknowns, multiple stakeholders, or cross-module impact.
+- Ship a new feature end-to-end: *"add a Subscriptions page with Stripe billing"*
+- Large refactor: *"migrate API routes from Express 3 to Express 5"*
+- Schema / contract changes that ripple: *"add `organization_id` to users + backfill + update all readers"*
+- Anything where you'd want CEO/Eng/Design/DevEx review *before* writing code
+
+**`/xdev:full-dev-design`** — design-only, hand off the plan to a different model/agent.
+- Plan with Opus / GPT-5, implement with Codex / a faster model
+- You want a TDD plan with risk-tagged tasks but won't write code yet
+- The design needs heavy review and your impl agent has a smaller context window
+
+**`/xdev:full-dev-impl`** — pick up an approved design plan and execute it.
+- Resume from a `docs/plans/<slug>.md` produced by `full-dev-design`
+- Multi-session work: design yesterday, implementation today
+- Want a fast execution model running against a pre-locked plan
+
+**`/xdev:bugfix`** — anything broken, crashing, or behaving wrong. Auto-tiers severity.
+- *S1 fast (≤ 15 min)*: obvious typo, off-by-one, missing import, single-line regression
+- *S2 standard (≤ 35 min)*: reproducible bug in one module — *"signup form rejects valid emails containing `+`"*
+- *S3 deep (≤ 90 min)*: cross-module / intermittent / auth- or payment-sensitive — *"checkout occasionally double-charges customers"*
+
+**`/xdev:iterate`** — small, in-scope tweak with no surprises. Auto-escalates if it grows.
+- Copy / timeout / threshold / log-level changes
+- Style polish on a single component
+- ≤ ~100 lines, no new deps, no API contract change. Out of scope → escalates to `full-dev`; bug discovered → escalates to `bugfix`.
+
+**`/xdev:ask`** — read-only Q&A and proactive audit. Never edits source, runs tests, or ships.
+
+![xdev /ask in action](./docs/assets/xdev-ask.png)
+
+- *Question mode* (with concrete anchors — file / function / route / business term):
+  - *"How does the login auth flow work end-to-end?"*
+  - *"If I add field X to model Y, what breaks?"*
+  - *"Where are the tests for the payment service, and which ones cover refunds?"*
+  - *"What does `services/billing/charger.ts` actually do?"*
+- *Audit mode* (no specific question — runs the 6-dimension health checklist):
+  - *"Audit this project — what risks should I worry about?"*
+  - Single-dimension focus: *"audit security"* / *"check test gaps"* / *"how's the architecture coupling?"*
+  - Returns 5–10 high-value findings with file/line evidence; suggests `/bugfix` or `/iterate` for any actual fixes.
 
 ---
 
@@ -144,7 +191,7 @@ Stage 8: Learning (learn — conditional trigger)
 
 **Risk-gated stage 4** — Every task in the stage-3 plan carries a `risk` classification (L0 trivial / L1 local / L2 cross-module / L3 critical) that drives stage 4 orchestration: executor packets are narrowed per risk level, reviews are sampled (L1 per-module) or mandatory (L2/L3), L3 tasks get an independent audit subagent writing sidecars to `docs/state/audits/<slug>/`, and subagent progress is tracked by a risk-aware heartbeat (L1 5/10min, L2 8/15min, L3 15/25min) that kills and re-dispatches possibly-stuck runs before escalating to the user. Cuts typical stage 4 wall time ~90min → 45–60min while preserving quality gates on shared/auth/finance-sensitive code.
 
-**Codebase snapshot (`/xdev:map`)** — Run once when you first enter an unfamiliar repo. xdev scans the directory tree and source files, writes a snapshot to `docs/state/codebase-snapshot.md` (gitignored), and subsequent `full-dev` invocations read it for instant project context. The snapshot includes a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off.
+**Auto codebase snapshot** — When a workflow needs basic project context (tech stack, directory layout, dev/test commands) and doesn't already have it, it runs a built-in shallow scan and writes the result to `docs/state/codebase-snapshot.md` (gitignored). Subsequent invocations read the snapshot for instant cold-start context. The snapshot carries a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off. There is no separate "map the project" command — the workflows decide when to run this themselves; for deeper questions use `/xdev:ask` or escalate to Graphify (Step 2.6).
 
 ### /bugfix — three-tier root-cause pipeline
 
@@ -166,7 +213,7 @@ Scope check (6 dimensions: lines / files / modules / deps / API / bug?)
   └── In scope    → TDD → health → ship
 ```
 
-### Project context resolution — `/map` vs Graphify
+### Project context resolution — auto snapshot vs Graphify
 
 xdev resolves project context **autonomously** at the start of every workflow. There is no separate "understand the project" command — the workflow self-classifies and picks the right depth.
 
@@ -178,7 +225,7 @@ Does the task need project-level understanding?
   ├── No → Level 0: skip scanning, use the prompt as-is
   └── Yes
        ├── Only basic structure / commands / test patterns
-       │     → Level 1: run /map snapshot logic, read docs/state/codebase-snapshot.md
+       │     → Level 1: run the built-in shallow scan, read docs/state/codebase-snapshot.md
        │
        └── Architecture / cross-module / call chains / design intent / global state
              ├── graphify-out/{graph.json, GRAPH_REPORT.md} fresh
@@ -198,7 +245,7 @@ Key rules:
 - **No auto-install, no auto-automation.** Workflows never run `graphify install`, `graphify watch`, or `graphify hook install`. Installation lives only in README Step 2.6 and runs on user request.
 - **Privacy gate.** First full initialization or any semantic refresh of docs/PDF/images/audio/video is 🔴 — the workflow must explain that semantic extraction can call the underlying model API and wait for confirmation. Code-only AST refresh is 🟡 (notify and continue).
 - **Token discipline.** Workflows read `GRAPH_REPORT.md` plus focused `graphify query "<question>" --graph graphify-out/graph.json` results. Full `graph.json` is never injected into context.
-- **Always degrade gracefully.** Missing Graphify, failed init, failed update, or stale snapshot all degrade to `/map` (or skip) and the workflow continues.
+- **Always degrade gracefully.** Missing Graphify, failed init, failed update, or stale snapshot all degrade to the Level-1 shallow scan (or skip) and the workflow continues.
 
 Per-workflow defaults:
 
@@ -222,7 +269,7 @@ git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
 ~/.claude/skills/xdev/bin/install.sh claude    # or: windsurf / windsurf --project
 ```
 
-Done. `/iterate`, `/map`, and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash.
+Done. `/iterate` and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash.
 
 ### Pick your install tier (choose what you need)
 
@@ -230,11 +277,11 @@ xdev itself is just workflow files; the heavy lifting is done by external skills
 
 | What you want to use | Install | Cumulative time |
 |----------------------|---------|-----------------|
-| `/iterate`, `/map`, `/ask` (rg mode) | **xdev itself** (required) | 1 min |
+| `/iterate`, `/ask` (rg mode) | **xdev itself** (required) | 1 min |
 | `/bugfix` full S1/S2/S3 triage | + **gstack** (Step 2) | +3 min |
 | `/full-dev` full pipeline (design + reviews + ship) | + **gstack** + **superpowers** (Steps 1 + 2) | +5 min |
 | `/full-dev` stage 1.5 visual design | + **ui-ux-pro-max** (Step 2.5) | +2 min |
-| `/ask` audit + `/full-dev` deep architecture | + **Graphify** (Step 2.6; installing it is treated as implicit authorization for LLM extraction) | +2 min |
+| `/ask` audit mode + `/full-dev` deep architecture | + **Graphify** (Step 2.6; installing it is treated as implicit authorization for LLM extraction) | +2 min |
 
 > **Graceful-degradation guarantee**: if a skill is missing, xdev silently skips the related stage instead of erroring. Start with the core and add deps as needed.
 
@@ -336,7 +383,7 @@ uipro update --ai codex    # or your assistant target
 
 Graphify provides the deep project context layer used when xdev needs architecture boundaries, cross-module relationships, call chains, design rationale, or global project-state judgment.
 
-Graphify is **optional**. If it is not installed, xdev workflows must fall back to `/map` and continue.
+Graphify is **optional**. If it is not installed, xdev workflows must fall back to the built-in Level-1 shallow scan and continue.
 
 **Requirements:** Python 3.10+.
 
@@ -369,9 +416,9 @@ For other supported agents, run `graphify --help` and choose the matching instal
 **Execution policy inside xdev workflows:**
 - Detect Graphify CLI with `command -v graphify` before query/update/check-update steps.
 - Never auto-install Graphify or run `graphify install` inside a normal workflow run.
-- If Graphify is missing, tell the user it is an optional enhancement and continue with `/map`.
+- If Graphify is missing, tell the user it is an optional enhancement and continue with the built-in Level-1 shallow scan.
 - If a graph already exists, prefer `graphify-out/GRAPH_REPORT.md` and focused `graphify query` output over reading the full `graph.json`.
-- Installing Graphify does not scan the project. First graph initialization is only triggered by xdev workflows when a Level 2 task needs deep architecture/call-chain context, `/map` is insufficient, and the current agent can run the Graphify skill pipeline.
+- Installing Graphify does not scan the project. First graph initialization is only triggered by xdev workflows when a Level 2 task needs deep architecture/call-chain context, the shallow snapshot is insufficient, and the current agent can run the Graphify skill pipeline.
 - For existing graphs, code-only refreshes may use `graphify check-update .` and `graphify update .`; semantic refreshes for docs/media/sensitive materials require user confirmation.
 - `command -v graphify` only proves the CLI exists; it is enough for existing graph queries and code-only updates, but not by itself enough to guarantee first full graph initialization.
 - Do not enable `graphify install`, `graphify watch`, `graphify hook install`, or other platform/persistent automation unless the user explicitly asks for it.
@@ -410,8 +457,8 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 Invoke with:
 
 ```
-Claude Code: /xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate    /xdev:ask    /xdev:map
-Windsurf:    /full-dev          /full-dev-design          /full-dev-impl          /bugfix          /iterate          /ask          /map
+Claude Code: /xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate    /xdev:ask
+Windsurf:    /full-dev          /full-dev-design          /full-dev-impl          /bugfix          /iterate          /ask
 ```
 
 **Updating xdev:**
@@ -421,7 +468,7 @@ cd ~/.claude/skills/xdev && git pull
 ```
 
 > Claude Code uses a directory symlink — `git pull` alone keeps it up to date; no need to re-run the install script.
-> Windsurf uses per-file symlinks. If a release adds a new workflow file (e.g. a newly added `ask.md`), re-run `bash ~/.claude/skills/xdev/bin/install.sh windsurf` to create the new symlinks.
+> Windsurf uses per-file symlinks. If a release adds or renames a workflow file, re-run `bash ~/.claude/skills/xdev/bin/install.sh windsurf` to refresh the symlinks.
 
 ### Skill dependency map
 
@@ -502,22 +549,20 @@ xdev/
 ├── README.zh.md           ← Chinese version
 ├── bin/                   ← Install scripts
 │   └── install.sh         ← Idempotent symlink installer
-├── windsurf/              ← Symlink to .windsurf/workflows/
+├── windsurf/              ← Source for .windsurf/workflows/ symlinks
 │   ├── full-dev.md
 │   ├── full-dev-design.md
 │   ├── full-dev-impl.md
 │   ├── bugfix.md
 │   ├── iterate.md
-│   ├── ask.md
-│   └── map.md
-└── claude-code/           ← Symlink to .claude/commands/xdev/ or ~/.claude/commands/xdev/
+│   └── ask.md
+└── claude-code/           ← Source for .claude/commands/xdev/ symlinks
     ├── full-dev.md
     ├── full-dev-design.md
     ├── full-dev-impl.md
     ├── bugfix.md
     ├── iterate.md
-    ├── ask.md
-    └── map.md
+    └── ask.md
 ```
 
 ---

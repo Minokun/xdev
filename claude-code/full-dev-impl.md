@@ -59,7 +59,7 @@ git pull
 实现阶段优先信任设计文档和实现计划。只有当交接产物不足以判断任务影响面、依赖关系或测试入口时，才自主补充项目上下文：
 
 - Level 0：实现计划包含精确文件路径、测试路径和接口契约 → 不额外扫描。
-- Level 1：缺少基础目录、命令或测试入口 → 自动执行 `/xdev:map` 扫描逻辑并读取 `docs/state/codebase-snapshot.md`。
+- Level 1：缺少基础目录、命令或测试入口 → 自动运行内置浅层扫描并读取 `docs/state/codebase-snapshot.md`。
 - Level 3：已有 Graphify 图谱且需要确认某条调用链/模块关系 → 使用 `graphify query` 获取小子图。
 - Level 2：实现中发现计划明显不足、涉及跨模块架构判断或需要重新理解设计意图 → 暂停当前实现路径，按 `/xdev:full-dev` 的 Graphify 生命周期和执行边界补图；必要时回到设计阶段。
 

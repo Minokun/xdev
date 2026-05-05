@@ -322,4 +322,3 @@ graphify query '用户登录 认证流程' --graph graphify-out/graph.json
 | 发现具体 bug / 异常行为 | `/bugfix` |
 | 用户接受建议要改代码（≤ 100 行） | `/iterate` |
 | 影响多个模块 / 改 API / schema / 引新依赖 | `/full-dev` |
-| 仅需浅层目录结构 / 开发命令 | `/map` |

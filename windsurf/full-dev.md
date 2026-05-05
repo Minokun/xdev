@@ -95,14 +95,14 @@ auto_execution_mode: 3
 
 如项目存在历史经验记录（`docs/learnings/` 或 learn skill 产出目录），读取最近 3-5 条与当前需求相关的记录，避免重复踩坑。
 
-### 项目上下文自动解析（map / Graphify 自主调度）
+### 项目上下文自动解析（自动快照 / Graphify 自主调度）
 
 不要要求用户单独执行"了解项目"命令。根据当前需求复杂度、影响范围、已有上下文和缓存新鲜度，自主选择上下文深度：
 
 | 层级 | 方式 | 适用场景 | 产物/读取 |
 |------|------|----------|-----------|
 | Level 0 | 不扫描 | 用户已给出明确文件/函数、简单文案或局部改动、当前上下文足够 | 直接继续 |
-| Level 1 | 快速 map | 缺少基础项目信息、需要技术栈/目录/开发命令/测试模式 | `docs/state/codebase-snapshot.md` |
+| Level 1 | 内置浅层扫描 | 缺少基础项目信息、需要技术栈/目录/开发命令/测试模式 | `docs/state/codebase-snapshot.md` |
 | Level 2 | 深度 Graphify | 需要整体项目状态、架构边界、跨模块关系、调用链、设计意图、全局风险判断 | `graphify-out/GRAPH_REPORT.md`；`graphify-out/graph.json` 仅作 query 输入 |
 | Level 3 | 定向 graph query | 已有图谱，当前任务需要聚焦某条流程/模块/概念关系 | `graphify query "<问题>" --graph graphify-out/graph.json` |
 
@@ -116,7 +116,7 @@ auto_execution_mode: 3
 └── 是
     ├── 只需要基础结构/命令/目录 → Level 1
     │   ├── 快照存在且有效 → 读取 docs/state/codebase-snapshot.md
-    │   └── 不存在或过期 → 自动执行 /map 的扫描逻辑，生成快照后读取
+    │   └── 不存在或过期 → 自动运行内置浅层扫描，生成快照后读取
     │
     └── 需要架构/关系/调用链/设计原因/全局状态 → Level 2/3
         ├── graphify-out/graph.json + GRAPH_REPORT.md 存在且有效 → 先读 GRAPH_REPORT.md，再按需 graphify query
@@ -138,7 +138,7 @@ auto_execution_mode: 3
 
 1. 当前任务已被判定为 Level 2，需要架构边界、跨模块关系、调用链、设计意图或全局风险判断。
 2. `graphify-out/GRAPH_REPORT.md` 或 `graphify-out/graph.json` 不存在，或存在但按新鲜度规则失效。
-3. `/map` 快照不足以支撑判断。
+3. 浅层快照不足以支撑判断。
 4. `command -v graphify` 成功。
 5. 当前 agent 环境可调度 Graphify skill pipeline；仅安装 CLI 不代表能首次完整建图。
 6. 通过隐私预检；若项目包含非代码文档、图片、PDF、音视频或可能敏感资料，必须先说明风险并等待用户确认。
@@ -159,7 +159,7 @@ auto_execution_mode: 3
 - `command -v graphify` 只证明 CLI 可用，可用于已有图谱 query 和代码 AST 更新；首次完整建图还需要当前 agent 可调度 Graphify skill pipeline。
 - 官方 PyPI 包名是 `graphifyy`，CLI 命令是 `graphify`；如需安装，只引用 README Step 2.6，不在普通工作流内展开安装命令。
 - 首次完整初始化或更新图谱前，若项目包含非代码文档、图片、PDF、音视频或可能敏感的工作资料：🔴 说明 Graphify 可能把非代码语义抽取内容发送到底层模型 API，等待用户确认。
-- 代码 AST 结构抽取、本地已有图谱查询、失败后降级到 `/map`：🟡 通知即继续。
+- 代码 AST 结构抽取、本地已有图谱查询、失败后降级到 Level-1 浅层扫描：🟡 通知即继续。
 - 不要把完整 `graph.json` 直接塞入上下文；优先读取 `GRAPH_REPORT.md`，再用 `graphify query` 获取与当前任务相关的小子图。
 
 ---
