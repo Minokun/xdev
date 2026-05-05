@@ -105,7 +105,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 
 ## What's inside
 
-6 workflow files that cover the complete development lifecycle:
+7 workflow files that cover the complete development lifecycle:
 
 | Workflow | Claude Code | Windsurf | When to use | Target time |
 |----------|-------------|----------|-------------|------------|
@@ -114,6 +114,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 | **full-dev-impl** | `/xdev:full-dev-impl` | `/full-dev-impl` | Implementation phase only — reads the design plan and executes | Hours–days |
 | **bugfix** | `/xdev:bugfix` | `/bugfix` | Bug, crash, unexpected behavior | 15 min–90 min |
 | **iterate** | `/xdev:iterate` | `/iterate` | Small change, optimization, config tweak | 15–60 min |
+| **ask** | `/xdev:ask` | `/ask` | Project Q&A and latent-issue discovery (audit mode); top priority is "most current, most accurate answer" | 1–5 min |
 | **map** | `/xdev:map` | `/map` | Scan codebase and generate a snapshot for cold-start context | < 1 min |
 
 > **Cross-tool handoff:** `full-dev-design` + `full-dev-impl` let you use the best model for each phase — plan with a powerful reasoning model (e.g. Opus), implement with a fast execution model (e.g. Codex). xdev handles the handoff automatically via a shared plan file.
@@ -208,43 +209,69 @@ Per-workflow defaults:
 | `/full-dev` | Adaptive Level 0–3 | Source of truth for the lifecycle and execution boundary |
 | `/full-dev-design` | Level 0/1, Level 2 when architecture judgment is needed | Defers to `/full-dev` lifecycle |
 | `/full-dev-impl` | Trusts the design plan; supplements with `graphify query` only when the plan is insufficient | Defers to `/full-dev` lifecycle |
+| `/ask` | Adaptive Level 1–3, with "most current, most accurate answer" as top priority; installed Graphify treated as implicit authorization | Fresh graph → query directly; code changes → 🟡 auto `graphify update .`; semantic changes or first-time build → 🟡 auto `graphify .`, transparently disclosing cost without re-confirming; user says "don't refresh / don't build" → skip immediately + `Unknowns` annotation |
 
 ---
 
 ## Installation
 
-### Option 0 — Let Claude Code install everything automatically (recommended)
+### TL;DR — install xdev itself in one line
 
-Paste the following prompt into any Claude Code session:
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
+~/.claude/skills/xdev/bin/install.sh claude    # or: windsurf / windsurf --project
+```
+
+Done. `/iterate`, `/map`, and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash.
+
+### Pick your install tier (choose what you need)
+
+xdev itself is just workflow files; the heavy lifting is done by external skills. Install only what you need:
+
+| What you want to use | Install | Cumulative time |
+|----------------------|---------|-----------------|
+| `/iterate`, `/map`, `/ask` (rg mode) | **xdev itself** (required) | 1 min |
+| `/bugfix` full S1/S2/S3 triage | + **gstack** (Step 2) | +3 min |
+| `/full-dev` full pipeline (design + reviews + ship) | + **gstack** + **superpowers** (Steps 1 + 2) | +5 min |
+| `/full-dev` stage 1.5 visual design | + **ui-ux-pro-max** (Step 2.5) | +2 min |
+| `/ask` audit + `/full-dev` deep architecture | + **Graphify** (Step 2.6; installing it is treated as implicit authorization for LLM extraction) | +2 min |
+
+> **Graceful-degradation guarantee**: if a skill is missing, xdev silently skips the related stage instead of erroring. Start with the core and add deps as needed.
+
+### Let Claude Code install everything (alternative)
+
+If you use Claude Code and want the AI to install everything in one shot, paste this into any Claude Code session:
 
 ```
 Please install xdev and its dependencies for me:
 
-1. Install superpowers (Claude Code plugin):
+1. xdev itself (required):
+   Run: git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
+   Then: ~/.claude/skills/xdev/bin/install.sh claude
+
+2. gstack (recommended — /bugfix full triage + /full-dev pipeline):
+   Run: git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
+
+3. superpowers (recommended — brainstorming + engineering skill suite):
    Run: /plugin install superpowers@claude-plugins-official
 
-2. Install gstack:
-   Claude Code: run `git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`
-   Codex/OpenCode/Cursor/Windsurf/other agents: run `git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack && cd ~/gstack && ./setup --host <agent>` (for example: `./setup --host codex`)
+4. ui-ux-pro-max (optional — UI/UX design skill):
+   Run: /plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
+   Then: /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
 
-3. Install ui-ux-pro-max (UI/UX design skill):
-   Claude Code: run these two commands:
-     /plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
-     /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
-   Windsurf/Cursor/other: run:
-     npm install -g uipro-cli
-     uipro init --ai windsurf   (or: cursor / codex / opencode / all)
-
-4. Optional: install Graphify for deep project understanding:
+5. Graphify (optional — deep project understanding):
    Run: uv tool install graphifyy
    Verify: graphify --help
    Note: the PyPI package is graphifyy; do not install the unrelated graphify package.
 
-5. Install xdev via symlink (so future updates only need a git pull):
-   Run: git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev && ln -s ~/.claude/skills/xdev/claude-code ~/.claude/commands/xdev
-
 After all steps complete, confirm the files are in place and tell me which xdev commands are now available.
 ```
+
+> The prompt above only covers Claude Code. Other agents should follow the per-step details below.
+
+---
+
+## Per-step details
 
 ### Step 1 — Install superpowers
 
@@ -349,54 +376,42 @@ For other supported agents, run `graphify --help` and choose the matching instal
 - `command -v graphify` only proves the CLI exists; it is enough for existing graph queries and code-only updates, but not by itself enough to guarantee first full graph initialization.
 - Do not enable `graphify install`, `graphify watch`, `graphify hook install`, or other platform/persistent automation unless the user explicitly asks for it.
 
-### Step 3 — Install xdev
+### Step 3 — Install xdev itself
 
-Clone to a fixed location, then symlink — this way `git pull` is all you need to update.
-
-**Option A — Windsurf (global, available in all projects)**
+Clone the repository to a fixed location:
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-# Symlink into Windsurf's global workflows directory
-ln -s ~/.claude/skills/xdev/windsurf/full-dev.md ~/.codeium/windsurf/windsurf/workflows/full-dev.md
-ln -s ~/.claude/skills/xdev/windsurf/full-dev-design.md ~/.codeium/windsurf/windsurf/workflows/full-dev-design.md
-ln -s ~/.claude/skills/xdev/windsurf/full-dev-impl.md ~/.codeium/windsurf/windsurf/workflows/full-dev-impl.md
-ln -s ~/.claude/skills/xdev/windsurf/bugfix.md ~/.codeium/windsurf/windsurf/workflows/bugfix.md
-ln -s ~/.claude/skills/xdev/windsurf/iterate.md ~/.codeium/windsurf/windsurf/workflows/iterate.md
-ln -s ~/.claude/skills/xdev/windsurf/map.md ~/.codeium/windsurf/windsurf/workflows/map.md
 ```
 
-> For project-level install (version-controlled with your repo), symlink into `.windsurf/workflows/` inside your project root instead.
-
-Invoke with:
-```
-/full-dev    /full-dev-design    /full-dev-impl    /bugfix    /iterate
-```
-
-**Option B — Claude Code (project-level)**
+Run the install script (idempotent — safe to re-run; creates, updates, and repairs symlinks):
 
 ```bash
-# Skip the clone if you already ran Option A or C
-git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-ln -s ~/.claude/skills/xdev/claude-code /path/to/your/project/.claude/commands/xdev
+# Claude Code (global)
+bash ~/.claude/skills/xdev/bin/install.sh claude
+
+# Windsurf (global)
+bash ~/.claude/skills/xdev/bin/install.sh windsurf
+
+# Windsurf (project-level — links into the current project's .windsurf/workflows/, version-controlled with your repo)
+cd /path/to/your/project
+bash ~/.claude/skills/xdev/bin/install.sh windsurf --project
+
+# Install for both agents at once
+bash ~/.claude/skills/xdev/bin/install.sh all
+
+# Preview without writing
+bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
+
+# Custom target directory (advanced)
+bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
 Invoke with:
-```
-/xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate
-```
 
-**Option C — Claude Code (global, available in all projects)**
-
-```bash
-# Skip the clone if you already ran Option A or B
-git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-ln -s ~/.claude/skills/xdev/claude-code ~/.claude/commands/xdev
 ```
-
-Invoke with:
-```
-/xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate
+Claude Code: /xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate    /xdev:ask    /xdev:map
+Windsurf:    /full-dev          /full-dev-design          /full-dev-impl          /bugfix          /iterate          /ask          /map
 ```
 
 **Updating xdev:**
@@ -404,6 +419,9 @@ Invoke with:
 ```bash
 cd ~/.claude/skills/xdev && git pull
 ```
+
+> Claude Code uses a directory symlink — `git pull` alone keeps it up to date; no need to re-run the install script.
+> Windsurf uses per-file symlinks. If a release adds a new workflow file (e.g. a newly added `ask.md`), re-run `bash ~/.claude/skills/xdev/bin/install.sh windsurf` to create the new symlinks.
 
 ### Skill dependency map
 
@@ -482,12 +500,15 @@ Corollary: when tightening a gate, first ask "is this mechanical or judgement?".
 xdev/
 ├── README.md              ← This file (English)
 ├── README.zh.md           ← Chinese version
+├── bin/                   ← Install scripts
+│   └── install.sh         ← Idempotent symlink installer
 ├── windsurf/              ← Symlink to .windsurf/workflows/
 │   ├── full-dev.md
 │   ├── full-dev-design.md
 │   ├── full-dev-impl.md
 │   ├── bugfix.md
 │   ├── iterate.md
+│   ├── ask.md
 │   └── map.md
 └── claude-code/           ← Symlink to .claude/commands/xdev/ or ~/.claude/commands/xdev/
     ├── full-dev.md
@@ -495,6 +516,7 @@ xdev/
     ├── full-dev-impl.md
     ├── bugfix.md
     ├── iterate.md
+    ├── ask.md
     └── map.md
 ```
 
