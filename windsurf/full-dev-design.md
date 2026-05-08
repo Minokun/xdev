@@ -403,12 +403,31 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 - **计划文件：** ${_PLAN_FILE}
 - **更新时间：** $(date '+%Y-%m-%d %H:%M')
 
+## Handoff Summary
+
+### Accomplished
+- 需求澄清、设计审查和实现计划已完成。
+
+### Left To Do
+- 使用 full-dev-impl 从阶段 4（TDD 实现循环）继续。
+
+### Key Decisions
+- 以设计文件中的 Intent Contract 和计划文件中的任务拆分为准。
+
+### Gotchas
+- 实现阶段不要自行扩展用户意图；发现计划缺口时先对齐设计文件和 Intent Contract。
+
+### Resume From
+- Next workflow: /full-dev-impl
+- Next phase: 4（TDD 实现循环）
+
 ## stage 4 data
 
 \`\`\`yaml
 tasks_in_flight: []
 false_positives: []
 risk_inferred: []
+mainline_checkpoints: []
 \`\`\`
 STATEOF
 mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"

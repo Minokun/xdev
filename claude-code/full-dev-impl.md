@@ -38,14 +38,33 @@ git pull
 ```
 找到匹配的状态文件？
 │
-├── 未找到 → 正常启动，读取 docs/plans/ 下最新的设计文档和实现计划
+├── 找到 → 执行三重校验（同 full-dev 前置逻辑）
+│   ├── 校验通过 → 将实际命中的状态文件路径保存为 `_STATE_FILE`，读取「Handoff Summary」（如存在）、「计划文件」、「完成阶段」和 `mainline_checkpoints`
+│   │             若「当前阶段」为 4 且存在 `mainline_checkpoints[-1].next_batch`，以该值作为阶段 4 内部恢复游标
+│   │             🟡 通知："检测到未完成的会话（功能：<slug>，已完成阶段：<N>），从阶段 <N+1> / <next_batch> 继续"
+│   │             （无 `next_batch` 时省略 `/ <next_batch>` 段，仅输出"从阶段 <N+1> 继续"）
+│   │             同时用 1-2 句话概括 Handoff 中的 Left To Do / Gotchas
+│   │             **跳转到对应阶段继续执行，跳过已完成阶段。**
+│   └── 校验失败（任一不匹配） → **改名隔离**为 `<原状态文件>.invalid-$(date +%Y%m%d-%H%M%S).md`（保留 Handoff / checkpoints 证据，便于诊断和手工恢复），在提示中说明失败原因；继续按下面「未找到」分支处理
 │
-└── 找到 → 执行三重校验（同 full-dev 前置逻辑）
-    ├── 校验通过 → 读取状态文件中的「计划文件」和「完成阶段」
-    │             🟡 通知："检测到未完成的会话（功能：<slug>，已完成阶段：<N>），从阶段 <N+1> 继续"
-    │             **跳转到对应阶段继续执行，跳过已完成阶段。**
-    └── 校验失败（任一不匹配） → 删除状态文件，正常读取 docs/plans/ 下最新文件
+└── 未找到 → 在 `docs/plans/` 下按下文规则推导 `<plan-slug>` 并定位设计文档与实现计划
+    ├── 都存在且设计文档含已确认的 `## Intent Contract`
+    │   → 🟡 通知："未找到状态文件，但已找到设计文档和实现计划（slug：<plan-slug>），将创建最小状态文件并从阶段 4 开始"
+    │     若 `docs/state/` 下存在同 slug 的 `*.invalid-*.md` 隔离备份，附加提示：
+    │       "检测到隔离备份 <path>，含上次会话的 Handoff Summary 和 mainline_checkpoints。
+    │        如需手工续传而非从头跑阶段 4，请审阅后把对应字段复制到新状态文件。"
+    │     按 `<branch>` + `<plan-slug>` 创建 `docs/state/full-dev--<branch>--<plan-slug>.md`（与合并流共用前缀，确保下次扫描可命中）：
+    │     写入「## xdev 会话状态」基本字段（功能=`<plan-slug>`、分支=`<branch>`、完成阶段=`1, 2, 3`、当前阶段=`4`、设计/计划文件路径）+ 空的 `## Handoff Summary` 占位 + 空 `## stage 4 data` YAML 块；不写 `锁定 HEAD`（auto-create 路径上用户可能已在分支上推进过代码，锁不代表「与设计同时刻」，合并流 / design 流才锁）；
+    │     保存路径为 `_STATE_FILE`，进入阶段 4
+    └── 缺失，或设计文档没有 `## Intent Contract`，或计划与设计 slug 不匹配
+        → 🔴 暂停：提示用户先运行 `/xdev:full-dev-design` 补齐设计文档（含 Intent Contract）和实现计划；不要自行构造意图或绕过设计阶段
 ```
+
+**`<plan-slug>` 推导规则（按顺序匹配，命中即停）：**
+
+1. `git diff --name-only main...HEAD -- docs/plans/` 取本分支新增/修改过的 `docs/plans/*.md`；过滤出形如 `YYYY-MM-DD-<slug>.md` 的实现计划（同目录下需存在 `YYYY-MM-DD-<slug>-design.md`），取最新一份的 `<slug>`。
+2. 若步骤 1 无唯一命中，🔴 暂停并列出 `docs/plans/` 下所有候选（`*-design.md` + 同 slug 计划），让用户显式指定 slug。不要根据分支名猜，避免静默选错计划。
+3. 命中后，对应设计文档路径为 `docs/plans/<date>-<slug>-design.md`，须同时存在并包含 `## Intent Contract`，否则按上文「缺失」分支处理。
 
 ### 读取交接产物
 
@@ -53,6 +72,8 @@ git pull
 1. `CLAUDE.md` — 项目架构和开发命令
 2. `docs/plans/` 下的设计文档（或状态文件中指定的设计文件）
 3. `docs/plans/` 下的实现计划（或状态文件中指定的计划文件）
+
+> 状态文件中的 `## Handoff Summary` 已在上一步「会话恢复检查」中读取，此处不重复读取。
 
 设计文档必须包含 `## Intent Contract` 章节。若缺失，暂停并要求回到 `/xdev:full-dev-design` 补充短合同并让用户确认；不要在实现阶段自行补写用户意图。
 
@@ -106,7 +127,7 @@ git pull
 
 ### 4.1 状态文件 YAML 块初始化
 
-阶段 4 启动时，确认状态文件 `docs/state/full-dev--<branch>--<slug>.md` 末尾存在 fenced YAML 块；不存在则追加：
+阶段 4 启动时，确认恢复检查中实际命中的 `_STATE_FILE` 末尾存在 fenced YAML 块；不存在则追加；若 YAML 块已存在但缺少下列字段，按空数组补齐。不要重新构造 `docs/state/full-dev--<branch>--<slug>.md`，因为拆分流会使用 `full-dev-design--<branch>--<slug>.md`：
 
 ````markdown
 ## stage 4 data
@@ -115,10 +136,32 @@ git pull
 tasks_in_flight: []
 false_positives: []
 risk_inferred: []
+mainline_checkpoints: []
 ```
 ````
 
-后续所有结构化数据（运行中任务、误报、风险推断）都写入该 YAML 块。**写盘节流：** 仅在 phase 转换或 status 变更时落盘；纯 `last_event_at` 更新留内存，最多 30 s 一次。原子写：临时文件 + `mv`，与主状态文件相同模式。
+后续所有结构化数据（运行中任务、误报、风险推断、主线检查点）都写入该 YAML 块。**写盘节流：** 仅在 phase 转换、status 变更或批次结束时落盘；纯 `last_event_at` 更新留内存，最多 30 s 一次。原子写：临时文件 + `mv`，与主状态文件相同模式。
+
+#### 4.1.1 主线控制者（Mainline Controller）
+
+阶段 4 中，主线程默认担任总控和监工：保持干净上下文，只读设计文档、Intent Contract、实现计划、Handoff Summary、任务状态和 subagent 回执。除小批次快路径外，主线程不直接扩写需求、不临时重做方案、不把大段代码上下文塞进自己上下文。
+
+主线程职责：
+
+1. 将实现计划拆成最小可验收 task packet，并把 Intent Contract 的相关片段放入 packet。
+2. 根据风险分级、冲突矩阵和依赖关系决定串行 / 并行 / teamagent 派发。
+3. 跟踪 `tasks_in_flight`、subagent phase、测试证据、提交 sha 和阻塞点。
+4. 每个批次结束后写入 `mainline_checkpoints`：`batch`、`tasks_done`、`evidence`、`intent_status`（`aligned` / `needs_review`）、`next_batch`。
+5. 同一时机刷新状态文件顶部的 `## Handoff Summary`：`Left To Do` 反映剩余批次/任务；`Gotchas` 追加本批次新增风险或回滚事件；`Resume From` 改为下一批次或下一阶段。`Accomplished` / `Key Decisions` 累积式更新。原子写（临时文件 + `mv`）。
+6. 中断恢复时，若 `mainline_checkpoints` 非空且最后一条有 `next_batch`，从该批次继续；若为空，则从实现计划首个未完成任务继续。
+7. 至少在 subagent 返回 `NEEDS_RECLASSIFY` / `BLOCKED`、Gatekeeper 报 `DEVIATION`、验证证据不满足通过条件、或计划与代码现实冲突时暂停并重新对齐用户目标。
+
+subagent / teamagent 职责边界：
+
+- implementation subagent 只执行单个 task packet；不得重新规划整条主线。
+- teamagent 可用于一组文件互不冲突、目标相同的任务，但必须共享同一份主线程生成的 task packet 模板和 Intent Contract 摘要。
+- 所有 subagent 输出都必须回到主线程汇总；是否继续、降级、返工或暂停，由主线程决定。
+- 主线程发现 drift 时优先收敛：缩小任务、补测试、请求用户确认；不要让 subagent 继续扩大范围。
 
 ### 4.2 路径预检（subagent 派发前必跑）
 

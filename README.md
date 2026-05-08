@@ -183,9 +183,11 @@ Stage 7: Release — 7.1 ship (includes pre-landing review + auto document-relea
 Stage 8: Learning (learn — conditional trigger)
 ```
 
-### Four built-in reliability features
+### Five built-in reliability features
 
-**Session recovery** — Every workflow writes a state file to `docs/state/` at stage 3 and updates it at each subsequent stage. If a session is interrupted mid-way, the next invocation detects the file, runs a 3-way validation (branch match, HEAD still in history, plan file exists), and resumes from the last completed stage instead of restarting from scratch. State files are gitignored and deleted automatically after a successful ship.
+**Session recovery** — Every workflow writes a state file to `docs/state/` at stage 3 and updates it at each subsequent stage. The state file embeds a `## Handoff Summary` block initialized at end of stage 3 and refreshed by the stage 4 mainline controller after every batch; stage 4 also records `mainline_checkpoints.next_batch`. If a session is interrupted mid-way, the next invocation detects the actual matched state file, runs a 3-way validation (branch match, HEAD still in history, plan file exists), reads the latest Handoff Summary, and resumes within stage 4 from `next_batch` when available instead of restarting from scratch. State files are gitignored and deleted automatically after a successful ship.
+
+**Mainline controller** — In stage 4 the main thread acts as supervisor: it keeps a clean context (only design doc, Intent Contract, plan, Handoff Summary, task status, subagent receipts), splits the plan into narrow task packets carrying the relevant Intent Contract excerpt, and dispatches them to TDD subagents / teamagents based on risk + conflict matrix + dependencies. Subagents only execute their assigned packet; all output flows back to the mainline for aggregation. The mainline updates `mainline_checkpoints` and refreshes the Handoff Summary on every batch boundary, and pauses to re-align on user intent whenever a subagent returns `NEEDS_RECLASSIFY` / `BLOCKED`, the Gatekeeper reports `DEVIATION`, evidence misses pass criteria, or the plan diverges from code reality. Prevents long-context drift and unilateral scope expansion.
 
 **Structured pass criteria** — Every task in the stage-3 plan now carries a machine-checkable `pass criteria` block: the exact verification command, expected exit code, required output strings, and optional extra assertions (e.g. a `curl` probe). Subagents may not commit unless all criteria pass. Subagent C validates that the "must-contain" string is actually derivable from the verification command's real output.
 
