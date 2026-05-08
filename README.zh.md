@@ -185,7 +185,7 @@ xdev 解决了这四个问题。
 
 ### 五项内置可靠性机制
 
-**会话恢复** —— 每个工作流在阶段 3 结束后写入状态文件到 `docs/state/`，并在后续各阶段更新。状态文件包含 `Handoff Summary`，并由阶段 4 主线控制者在每个批次边界刷新；同时记录 `mainline_checkpoints.next_batch`。会话中断后，下次调用时自动检测状态文件，通过三重校验（分支匹配、HEAD 在历史中、计划文件存在），读取最新 Handoff，并在阶段 4 内优先从 `next_batch` 继续，而非重头来过。状态文件加入 `.gitignore`，ship 完成后自动删除。
+**会话恢复** —— 每个工作流在阶段 3 结束后写入状态文件到 `docs/state/`，并在后续各阶段更新。状态文件包含 `Handoff Summary`，并由阶段 4 主线控制者在每个批次边界刷新；同时记录 `mainline_checkpoints.next_batch`。下次调用时按三分支策略恢复：(a) **状态文件存在且三重校验通过**（分支匹配、锁定的 HEAD 在历史中、计划文件存在）→ 在阶段 4 内优先从 `next_batch` 继续；(b) **校验失败**（如 rebase / squash 让 HEAD 失效）→ 改名为 `<file>.invalid-<ts>.md`（保留 Handoff 和 checkpoints 用于诊断，下次扫描自动忽略），落到分支 (c)；(c) **状态文件缺失但 `docs/plans/` 下有含 `## Intent Contract` 的设计文档和实现计划** → 自动创建最小状态文件（写入当前 HEAD），从阶段 4 开始。仅当设计 / 计划 / Intent Contract 缺失时才硬暂停。这样即使状态文件因 gitignore 在跨机器、clean checkout 或误删后丢失，也能自动恢复，同时守住 Intent Contract 红线。状态文件加入 `.gitignore`，ship 完成后自动删除。
 
 **结构化通过条件** —— 阶段 3 生成的每个任务都带有可机械校验的通过条件：精确的验证命令、期望退出码、必须包含的输出文本、以及可选的额外断言（如 `curl` 探针）。Subagent 提交前必须逐项验收，全部满足才能提交。Subagent C 在计划反思阶段额外校验"输出必须包含"的文本片段是否能从验证命令的实际输出中推导。
 
