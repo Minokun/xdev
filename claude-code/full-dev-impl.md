@@ -54,6 +54,8 @@ git pull
 2. `docs/plans/` 下的设计文档（或状态文件中指定的设计文件）
 3. `docs/plans/` 下的实现计划（或状态文件中指定的计划文件）
 
+设计文档必须包含 `## Intent Contract` 章节。若缺失，暂停并要求回到 `/xdev:full-dev-design` 补充短合同并让用户确认；不要在实现阶段自行补写用户意图。
+
 ### 项目上下文自动解析
 
 实现阶段优先信任设计文档和实现计划。只有当交接产物不足以判断任务影响面、依赖关系或测试入口时，才自主补充项目上下文：
@@ -67,6 +69,7 @@ git pull
 
 **启动验证：**
 - [ ] 能看到设计文档和实现计划
+- [ ] 设计文档包含已由用户确认的 `## Intent Contract`
 - [ ] 理解项目结构
 - [ ] 实现计划中的任务包含精确文件路径和代码
 
@@ -201,6 +204,8 @@ Repository root: <absolute path>
 Working directory: <absolute path>
 Risk level: L1 | L2 | L3
 Task id: task-NNN
+Intent Contract excerpt:
+- Must Have / Must Not / Done Means relevant to this task
 Allowed files:
 - <absolute path>
 Tests allowed:
@@ -216,6 +221,7 @@ Graphify context (可选，read-only):
 不得调用 planning skill。
 不得创建 planning 文件。
 不得编辑 allowed 之外的文件。
+不得新增违反 Must Not 的用户可见能力；如任务需要超出 Intent Contract，返回 NEEDS_RECLASSIFY。
 仅返回 status 和证据。
 ```
 
@@ -424,7 +430,7 @@ docs/state/audits/<slug>/audit-task-NNN.md
 
 ### 4.16 Gatekeeper 最终检查（阶段 4 结束前，必跑）
 
-全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。`DEVIATION > 0` 仍触发 🔴 暂停。
+全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。最终报告必须包含 `### Intent Check` 表；`DEVIATION > 0`、Must Have 无 pass/degraded 证据、或 Must Not 被违反，均触发 🔴 暂停。
 
 ---
 

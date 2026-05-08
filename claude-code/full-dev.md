@@ -193,7 +193,22 @@ argument-hint: <需求描述>
 - 产出设计文档到 `docs/plans/YYYY-MM-DD-<topic>-design.md`
 - 完成后提交：`git add docs/plans/ && git commit -m "docs: add design for <feature>"`
 
-**🔴 门禁：** 设计文档经用户确认后才进入下一阶段。
+设计文档必须包含短锚点章节：
+
+```markdown
+## Intent Contract
+
+### Must Have
+- IC-1: <用户必须能够...>
+
+### Must Not（约束方向，不约束深度）
+- IC-N1: <本次不新增...相关功能或接口>
+
+### Done Means
+- IC-D1: <可验证的完成标准；如需真实登录态则标 [degraded] 并写替代证据>
+```
+
+**🔴 门禁：** 设计文档经用户确认，且必须单独呈现 Intent Contract 三段供用户确认。Intent Guard 识别到 [推进] 信号即视为合同 confirmed；[调整] 则修改合同后重新确认。
 
 ### 1.1 设计系统（design-consultation，极窄触发）
 
@@ -591,18 +606,21 @@ DIFF_LINES=${DIFF_LINES:-0}
 **drift-check subagent 标准 prompt（保守输出原则）：**
 
 ```
-你是架构审查员，只读设计文档和 diff，不读整份代码库。
+你是架构审查员，只读 Intent Contract、设计文档辅助参考和 diff，不读整份代码库。
 
 输入：
-- 设计文件：<path>
+- Intent Contract：<path> 的 `## Intent Contract` 章节
+- 设计文件（完整，辅助参考）：<path>
 - 已完成任务列表：task-NNN-...
 - Diff：git diff ${LAST_GK_SHA}..HEAD
 
 判断原则（保守输出，噪声比漏报更糟糕）：
 1. 优先 [覆盖]：小型辅助函数（< 30 行、单一调用点、服务于某 task-NNN 主功能）视为实现细节，不报超纲
 2. [偏离] 要精确：必须能从 diff 指出"接口契约/数据流/模块边界"与文档不一致的具体 file:line
-3. [缺失] 要显式：只基于设计文档明确列出的功能 / checklist，不从"我觉得应该有"推断
+3. [缺失] 要显式：只基于 Intent Contract 的 Must Have / Done Means，不从"我觉得应该有"推断
 4. 不确定时默认 [覆盖]，不堆砌条目
+5. 工程自由度不报超纲：防御性编码、可观测性、安全加固、性能常识、触碰范围内 ≤10 行明显 bug 修复视为 [覆盖] 或 [加固]
+6. 用户可见新增能力必须有对应 IC：新路由、新公开 API endpoint、新菜单/页面入口、新公开返回字段、新 CLI flag/subcommand、新数据库表或公开字段；命中且无 IC → [超纲]
 
 输出格式（严格遵守，主线程按此解析）：
 
@@ -618,7 +636,14 @@ DIFF_LINES=${DIFF_LINES:-0}
 - task-NNN: 实现了 <功能>，设计文档未声明
 
 ### [缺失] <N>（MEDIUM）
-- 设计文档 <章节>: 声明的 <功能> 在已完成任务中无对应 impl
+- IC-<N> / IC-D<N>: 声明的 <功能/完成标准> 在已完成任务中无对应 impl 或验证证据
+
+### Intent Check（final 检查必填；批次检查可省略）
+| IC | Status | Evidence |
+|----|--------|----------|
+| IC-1 | pass | <测试/构建/QA/file 证据> |
+| IC-N1 | pass | <无对应用户可见新增能力或 no diff in ...> |
+| IC-D1 | degraded | <替代证据 + 未覆盖缺口> |
 
 <!-- gk-tally-start -->
 DEVIATION: <数字>
@@ -634,6 +659,8 @@ MISSING: <数字>
 | `DEVIATION > 0` | 🔴 暂停，Intent Guard 把关；**用户只能选"修代码"**；如需改设计文档必须显式降级回阶段 1 重审 |
 | `OUT_OF_SCOPE > 0` | 写入 sidecar，继续执行，阶段 5+6 `review` 统一判定 |
 | `MISSING > 0` | 检查是否系 `[TODO]` 跳过任务所致（正常）；否则提醒补任务 |
+| final 的 Intent Check 有 Must Have 无 pass/degraded 证据 | 🔴 暂停，补实现或补验证 |
+| final 的 Intent Check 有 Must Not 被违反 | 🔴 暂停，移除超纲改动或回用户确认更新合同 |
 | 全部为 0 | 记录最新 sha，继续下一批次 |
 
 **失败兜底：**

@@ -182,12 +182,27 @@ auto_execution_mode: 3
 - 提出 2-3 种实现方案，带权衡分析和推荐
 - 产出：`docs/plans/YYYY-MM-DD-<topic>-design.md`
 
+设计文档必须包含短锚点章节：
+
+```markdown
+## Intent Contract
+
+### Must Have
+- IC-1: <用户必须能够...>
+
+### Must Not（约束方向，不约束深度）
+- IC-N1: <本次不新增...相关功能或接口>
+
+### Done Means
+- IC-D1: <可验证的完成标准；如需真实登录态则标 [degraded] 并写替代证据>
+```
+
 ### 1.1 设计文档提交
 ```bash
 git add docs/plans/ && git commit -m "docs: add design for <feature>"
 ```
 
-**门禁：** 设计文档经用户确认后才进入下一阶段。
+**门禁：** 设计文档经用户确认，且必须单独呈现 Intent Contract 三段供用户确认。Intent Guard 识别到 [推进] 信号即视为合同 confirmed；[调整] 则修改合同后重新确认。
 
 ### 1.2 设计系统（design-consultation，极窄触发）
 
@@ -541,6 +556,7 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent。
 
 - sha 丢失兜底（rebase/squash）：兜底到 `git merge-base HEAD main`
+- drift-check 以设计文档的 `## Intent Contract` 章节为主锚点，完整设计文档只作辅助参考
 - `DEVIATION > 0` → 🔴 暂停，**只允许修代码**；改文档须降级回阶段 1
 - `OUT_OF_SCOPE` / `MISSING` → 写 sidecar，阶段 5+6 review 统一判定
 - subagent 失败 → 重试 1 次，再失败 WARN 降级不阻断
@@ -551,7 +567,7 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 - 所有计划中的任务标记为 DONE
 - 所有测试通过（后端 + 前端）
 - 每个功能点有对应测试
-- **Gatekeeper 最终 drift-check**（不受双阈值限制，无 impl 提交则跳过）
+- **Gatekeeper 最终 drift-check**（不受双阈值限制，无 impl 提交则跳过），并在报告中输出 `### Intent Check` 表
 - 单个任务 3 次 FAIL → 跳过并标记 `[TODO]`
 
 ---
