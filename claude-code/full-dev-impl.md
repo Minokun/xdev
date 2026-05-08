@@ -33,7 +33,7 @@ git pull
 
 ### 会话恢复检查
 
-在 `docs/state/` 下查找匹配的状态文件，匹配规则：文件名前缀 = `full-dev--<当前分支>--` 或 `full-dev-design--<当前分支>--`
+在 `docs/state/` 下查找匹配的状态文件，匹配规则：文件名前缀 = `full-dev--<当前分支>--` 或 `full-dev-design--<当前分支>--`、且文件名不含 `.invalid-`（`.invalid-*.md` 是隔离备份，不参与恢复扫描）
 
 ```
 找到匹配的状态文件？
@@ -54,7 +54,7 @@ git pull
     │       "检测到隔离备份 <path>，含上次会话的 Handoff Summary 和 mainline_checkpoints。
     │        如需手工续传而非从头跑阶段 4，请审阅后把对应字段复制到新状态文件。"
     │     按 `<branch>` + `<plan-slug>` 创建 `docs/state/full-dev--<branch>--<plan-slug>.md`（与合并流共用前缀，确保下次扫描可命中）：
-    │     写入「## xdev 会话状态」基本字段（功能=`<plan-slug>`、分支=`<branch>`、完成阶段=`1, 2, 3`、当前阶段=`4`、设计/计划文件路径）+ 空的 `## Handoff Summary` 占位 + 空 `## stage 4 data` YAML 块；不写 `锁定 HEAD`（auto-create 路径上用户可能已在分支上推进过代码，锁不代表「与设计同时刻」，合并流 / design 流才锁）；
+    │     写入「## xdev 会话状态」基本字段（功能=`<plan-slug>`、分支=`<branch>`、锁定的 HEAD=`$(git rev-parse HEAD)`、完成阶段=`1, 2, 3`、当前阶段=`4`、设计/计划文件路径）+ 空的 `## Handoff Summary` 占位 + 空 `## stage 4 data` YAML 块；
     │     保存路径为 `_STATE_FILE`，进入阶段 4
     └── 缺失，或设计文档没有 `## Intent Contract`，或计划与设计 slug 不匹配
         → 🔴 暂停：提示用户先运行 `/xdev:full-dev-design` 补齐设计文档（含 Intent Contract）和实现计划；不要自行构造意图或绕过设计阶段
