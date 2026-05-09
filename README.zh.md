@@ -187,6 +187,8 @@ xdev 解决了这四个问题。
 
 **会话恢复** —— 每个工作流在阶段 3 结束后写入状态文件到 `docs/state/`，并在后续各阶段更新。状态文件包含 `Handoff Summary`，并由阶段 4 主线控制者在每个批次边界刷新；同时记录 `mainline_checkpoints.next_batch`。下次调用时按三分支策略恢复：(a) **状态文件存在且三重校验通过**（分支匹配、锁定的 HEAD 在历史中、计划文件存在）→ 在阶段 4 内优先从 `next_batch` 继续；(b) **校验失败**（如 rebase / squash 让 HEAD 失效）→ 改名为 `<file>.invalid-<ts>.md`（保留 Handoff 和 checkpoints 用于诊断，下次扫描自动忽略），落到分支 (c)；(c) **状态文件缺失但 `docs/plans/` 下有含 `## Intent Contract` 的设计文档和实现计划** → 自动创建最小状态文件（写入当前 HEAD），从阶段 4 开始。仅当设计 / 计划 / Intent Contract 缺失时才硬暂停。这样即使状态文件因 gitignore 在跨机器、clean checkout 或误删后丢失，也能自动恢复，同时守住 Intent Contract 红线。状态文件加入 `.gitignore`，ship 完成后自动删除。
 
+**实施 worktree 守卫** —— xdev 在产生任何 commit（包括设计 / 视觉 / 计划）之前，就检查当前分支是否是仓库 base/default 分支（通常是 `main`/`master`）。若命中，就在隔离的 git worktree 中创建 `xdev-*` feature branch，并在 worktree 中继续整个流程。full-dev/full-dev-design 在前置守卫时执行（让阶段 1 的设计 commit 也落在 feature 分支上，而非 base）；bugfix/iterate 在流程开头执行。worktree 位置按顺序解析：已有且 ignore 的 `.worktrees/` → 已有且 ignore 的 `worktrees/` → `${XDEV_WORKTREE_ROOT}`（环境变量，可指向 SSD / 共享存储）→ `~/.config/xdev/worktrees/<project>/`（默认）。`ship` 成功后自动清理 worktree；阶段 7 保留最终兜底检查防止在 base 分支调用 `ship`。守卫同时会把根级 `.env*` / `.envrc` 拷到新 worktree，并提示首次跑测试前需重新执行 `uv sync` / `npm ci`（`git worktree add` 不会带上 gitignored 的构建产物）。
+
 **结构化通过条件** —— 阶段 3 生成的每个任务都带有可机械校验的通过条件：精确的验证命令、期望退出码、必须包含的输出文本、以及可选的额外断言（如 `curl` 探针）。Subagent 提交前必须逐项验收，全部满足才能提交。Subagent C 在计划反思阶段额外校验"输出必须包含"的文本片段是否能从验证命令的实际输出中推导。
 
 **主线控制者** —— 实现阶段由主线程担任总控和监工，保持干净上下文，依据 Intent Contract、设计文档、实现计划和 Handoff Summary 生成窄 task packet，再分配给 subagent / teamagent。Subagent 只执行被分配任务，所有回执回到主线程汇总，避免长上下文后偏离用户目标。

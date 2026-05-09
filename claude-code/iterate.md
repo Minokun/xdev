@@ -23,6 +23,51 @@ argument-hint: <改动描述>
 
 ---
 
+## 前置：实施 worktree 守卫
+
+`/xdev:iterate` 会直接修改代码。开始改动前，如果当前分支是 base/default（通常是 `main`/`master`），先进入隔离 worktree：
+
+```bash
+_ROOT=$(git rev-parse --show-toplevel)
+_BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+_BASE_BRANCH=${_BASE_BRANCH:-$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo main || echo master)}
+_CURRENT_BRANCH=$(git branch --show-current)
+
+if [ "$_CURRENT_BRANCH" = "$_BASE_BRANCH" ] || [ "$_CURRENT_BRANCH" = "main" ] || [ "$_CURRENT_BRANCH" = "master" ]; then
+  _IMPL_BRANCH="xdev-iterate-$(date +%Y%m%d-%H%M%S)"
+  _PROJECT=$(basename "$_ROOT")
+  if [ -d "$_ROOT/.worktrees" ] && git check-ignore -q "$_ROOT/.worktrees"; then
+    _WT_ROOT="$_ROOT/.worktrees"
+  elif [ -d "$_ROOT/worktrees" ] && git check-ignore -q "$_ROOT/worktrees"; then
+    _WT_ROOT="$_ROOT/worktrees"
+  else
+    _WT_ROOT="${XDEV_WORKTREE_ROOT:-$HOME/.config/xdev/worktrees/${_PROJECT}}"
+  fi
+  mkdir -p "$_WT_ROOT"
+  _IMPL_WORKTREE="${_WT_ROOT}/${_IMPL_BRANCH}"
+
+  if ! git worktree add "$_IMPL_WORKTREE" -b "$_IMPL_BRANCH"; then
+    echo "🔴 暂停：git worktree add 失败。诊断：git worktree list / df -h / ls -la \"$(dirname \"$_IMPL_WORKTREE\")\""
+    return 1 2>/dev/null || exit 1
+  fi
+
+  # 拷贝根级 ignored 本地配置到新 worktree。
+  for _envfile in .env .env.local .env.development .env.development.local .envrc; do
+    if [ -f "$_ROOT/$_envfile" ] && [ ! -f "$_IMPL_WORKTREE/$_envfile" ]; then
+      cp "$_ROOT/$_envfile" "$_IMPL_WORKTREE/$_envfile"
+    fi
+  done
+
+  cd "$_IMPL_WORKTREE"
+  echo "Implementation worktree: $_IMPL_WORKTREE"
+  echo "🟡 新 worktree 不含 gitignored 构建产物。首次跑测试前按需重装依赖（uv sync / npm ci）。"
+fi
+```
+
+> **目录：** 默认 `~/.config/xdev/worktrees/<project>/`；设 `XDEV_WORKTREE_ROOT=/path` 覆盖。ship 成功后会自动清理。
+
+---
+
 ## 前置：读取项目上下文
 
 读取 `CLAUDE.md` 了解项目架构、开发命令。
@@ -130,6 +175,17 @@ Commit type 规范：`fix:` / `feat:` / `perf:` / `refactor:` / `chore:`
 
 - 小改动：直接推送到分支
 - 较大改动：调用 ship skill 创建 PR
+
+**发布完成后，清理实施 worktree：**
+
+```bash
+if [ -n "${_IMPL_WORKTREE:-}" ] && [ -d "$_IMPL_WORKTREE" ]; then
+  _PARENT=$(dirname "$_IMPL_WORKTREE")
+  cd "$_PARENT" 2>/dev/null || cd "$HOME"
+  git worktree remove --force "$_IMPL_WORKTREE" 2>/dev/null || rm -rf "$_IMPL_WORKTREE"
+  echo "🟡 已清理实施 worktree：$_IMPL_WORKTREE"
+fi
+```
 
 ---
 
