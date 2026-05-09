@@ -62,9 +62,77 @@ git pull
 
 **`<plan-slug>` 推导规则（按顺序匹配，命中即停）：**
 
-1. `git diff --name-only main...HEAD -- docs/plans/` 取本分支新增/修改过的 `docs/plans/*.md`；过滤出形如 `YYYY-MM-DD-<slug>.md` 的实现计划（同目录下需存在 `YYYY-MM-DD-<slug>-design.md`），取最新一份的 `<slug>`。
-2. 若步骤 1 无唯一命中，🔴 暂停并列出 `docs/plans/` 下所有候选（`*-design.md` + 同 slug 计划），让用户显式指定 slug。不要根据分支名猜，避免静默选错计划。
-3. 命中后，对应设计文档路径为 `docs/plans/<date>-<slug>-design.md`，须同时存在并包含 `## Intent Contract`，否则按上文「缺失」分支处理。
+1. 若当前不在 base/default 分支：`git diff --name-only <base>...HEAD -- docs/plans/` 取本分支新增/修改过的 `docs/plans/*.md`；过滤出形如 `YYYY-MM-DD-<slug>.md` 的实现计划（同目录下需存在 `YYYY-MM-DD-<slug>-design.md`），取最新一份的 `<slug>`。
+2. 若当前仍在 base/default 分支（设计阶段允许这样）：扫描 `docs/plans/` 下最新的 `YYYY-MM-DD-<slug>.md` + `YYYY-MM-DD-<slug>-design.md` 配对，且设计文档必须包含 `## Intent Contract`。
+3. 若步骤 1/2 无唯一命中，🔴 暂停并列出 `docs/plans/` 下所有候选（`*-design.md` + 同 slug 计划），让用户显式指定 slug。不要根据分支名猜，避免静默选错计划。
+4. 命中后，对应设计文档路径为 `docs/plans/<date>-<slug>-design.md`，须同时存在并包含 `## Intent Contract`，否则按上文「缺失」分支处理。
+
+### 进入实施前 worktree 守卫
+
+`/xdev:full-dev-design` 可以留在当前 checkout；`/xdev:full-dev-impl` 开始写代码前必须进入隔离 worktree。会话恢复或计划定位完成后、读取交接产物前执行：
+
+```bash
+_ROOT=$(git rev-parse --show-toplevel)
+_BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+_BASE_BRANCH=${_BASE_BRANCH:-$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo main || echo master)}
+_CURRENT_BRANCH=$(git branch --show-current)
+
+if [ "$_CURRENT_BRANCH" = "$_BASE_BRANCH" ] || [ "$_CURRENT_BRANCH" = "main" ] || [ "$_CURRENT_BRANCH" = "master" ]; then
+  _OLD_BRANCH="$_CURRENT_BRANCH"
+  _IMPL_BRANCH=$(printf 'xdev-%s' "${_SLUG:-${_PLAN_SLUG:-impl-$(date +%Y%m%d-%H%M%S)}}" | tr -cs 'A-Za-z0-9._-' '-')
+  _IMPL_BRANCH=${_IMPL_BRANCH%-}
+  _PROJECT=$(basename "$_ROOT")
+  if [ -d "$_ROOT/.worktrees" ] && git check-ignore -q "$_ROOT/.worktrees"; then
+    _WT_ROOT="$_ROOT/.worktrees"
+  elif [ -d "$_ROOT/worktrees" ] && git check-ignore -q "$_ROOT/worktrees"; then
+    _WT_ROOT="$_ROOT/worktrees"
+  else
+    _WT_ROOT="${XDEV_WORKTREE_ROOT:-$HOME/.config/xdev/worktrees/${_PROJECT}}"
+  fi
+  mkdir -p "$_WT_ROOT"
+  _IMPL_WORKTREE="${_WT_ROOT}/${_IMPL_BRANCH}"
+
+  # 同 slug 悬挂检测：分支或目录已存在则提示并另起（附加时间戳），避免静默覆盖。
+  if [ -d "$_IMPL_WORKTREE" ] || git rev-parse --verify "$_IMPL_BRANCH" >/dev/null 2>&1; then
+    echo "🟡 发现同 slug 的既有分支/目录：$_IMPL_BRANCH"
+    echo "    如要续传上次会话，请手动 cd \"$_IMPL_WORKTREE\" 后重跑命令；"
+    echo "    本次另起新 worktree（追加时间戳）。"
+    _IMPL_BRANCH="${_IMPL_BRANCH}-$(date +%H%M%S)"
+    _IMPL_WORKTREE="${_WT_ROOT}/${_IMPL_BRANCH}"
+  fi
+
+  if ! git worktree add "$_IMPL_WORKTREE" -b "$_IMPL_BRANCH"; then
+    echo "🔴 暂停：git worktree add 失败。诊断：git worktree list / df -h / ls -la \"$(dirname \"$_IMPL_WORKTREE\")\""
+    return 1 2>/dev/null || exit 1
+  fi
+
+  # 设计阶段状态文件可能仍在原 checkout；实现阶段接管时迁移到 worktree。
+  # 使用 python3 跨平台地改名 + 更新「分支」字段，替代 BSD/GNU 不兼容的 sed -i。
+  if [ -n "${_STATE_FILE:-}" ] && [ -f "$_ROOT/$_STATE_FILE" ]; then
+    _NEW_STATE_FILE=$(python3 -c "import sys; print(sys.argv[1].replace('--'+sys.argv[2]+'--', '--'+sys.argv[3]+'--'))" "$_STATE_FILE" "$_OLD_BRANCH" "$_IMPL_BRANCH")
+    mkdir -p "$_IMPL_WORKTREE/$(dirname "$_NEW_STATE_FILE")"
+    mv "$_ROOT/$_STATE_FILE" "$_IMPL_WORKTREE/$_NEW_STATE_FILE"
+    python3 -c "import sys,pathlib; p=pathlib.Path(sys.argv[1]); p.write_text(p.read_text().replace('- **分支：** '+sys.argv[2], '- **分支：** '+sys.argv[3]))" "$_IMPL_WORKTREE/$_NEW_STATE_FILE" "$_OLD_BRANCH" "$_IMPL_BRANCH"
+    _STATE_FILE="$_NEW_STATE_FILE"
+  fi
+
+  # 拷贝根级 ignored 本地配置（.env*、.envrc）到新 worktree；node_modules/venv 等构建产物不拷。
+  for _envfile in .env .env.local .env.development .env.development.local .envrc; do
+    if [ -f "$_ROOT/$_envfile" ] && [ ! -f "$_IMPL_WORKTREE/$_envfile" ]; then
+      cp "$_ROOT/$_envfile" "$_IMPL_WORKTREE/$_envfile"
+      echo "  已拷贝 $_envfile → worktree"
+    fi
+  done
+
+  cd "$_IMPL_WORKTREE"
+  echo "Implementation worktree: $_IMPL_WORKTREE"
+  echo "🟡 新 worktree 不含 gitignored 构建产物。首次跑测试前按需重装依赖："
+  echo "    [ -f backend/pyproject.toml ] && (cd backend && uv sync)"
+  echo "    [ -f frontend/package.json ] && (cd frontend && npm ci)"
+fi
+```
+
+> **目录：** 默认 `~/.config/xdev/worktrees/<project>/`；设 `XDEV_WORKTREE_ROOT=/path` 覆盖（例如挂到 SSD 或共享存储）。项目内若已存在被 ignore 的 `.worktrees/` 或 `worktrees/` 则复用。
 
 ### 读取交接产物
 
@@ -516,17 +584,41 @@ Subagent B → 调用 skill: qa     （浏览器测试，先启动 ./start.sh al
 
 > **状态更新：** 如存在状态文件，更新「完成阶段」追加 `5+6`，「当前阶段」改为 `7（发布）`。
 
+### 7.0 发布前分支兜底
+
+`ship` 要求当前分支不是 base/default 分支。正常情况下，实施入口 worktree 守卫已经满足该条件；发布前只做兜底检查：
+
+```bash
+_BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+_BASE_BRANCH=${_BASE_BRANCH:-$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo main || echo master)}
+_CURRENT_BRANCH=$(git branch --show-current)
+
+if [ "$_CURRENT_BRANCH" = "$_BASE_BRANCH" ] || [ "$_CURRENT_BRANCH" = "main" ] || [ "$_CURRENT_BRANCH" = "master" ]; then
+  echo "🔴 暂停：当前仍在 base/default 分支（$_CURRENT_BRANCH），不能直接 ship。"
+  echo "    回到「进入实施前 worktree 守卫」创建 feature worktree 后，再进入阶段 7。"
+  return 1 2>/dev/null || exit 1
+fi
+```
+
 **→ 调用 skill：`ship`**
 
 ship skill 内置：合并主分支 → 全量测试 → pre-landing review → 版本管理 → PR 创建。
 
-**发布完成后，删除状态文件：**
+**发布完成后，删除状态文件 + 清理实施 worktree：**
 
 ```bash
-# 先标记已完成（防止删除前中断导致误恢复）
-sed -i '' 's/^## xdev 会话状态/## xdev 会话状态\n- **已完成：** true/' "${_STATE_FILE}" 2>/dev/null || true
-# 再删除
+# 先标记已完成（防止删除前中断导致误恢复）——跨平台 python3 替代 sed -i
+python3 -c "import sys,pathlib; p=pathlib.Path(sys.argv[1]); t=p.read_text(); p.write_text(t.replace('## xdev 会话状态', '## xdev 会话状态\n- **已完成：** true', 1) if '- **已完成：** true' not in t else t)" "${_STATE_FILE}" 2>/dev/null || true
+# 再删除状态文件
 rm -f "${_STATE_FILE}"
+
+# 清理实施 worktree（PR 已推送到远端，本地 worktree 无需保留）
+if [ -n "${_IMPL_WORKTREE:-}" ] && [ -d "$_IMPL_WORKTREE" ]; then
+  _ROOT=$(git -C "$_IMPL_WORKTREE" rev-parse --show-toplevel 2>/dev/null)
+  cd "${_ROOT%/*}" 2>/dev/null || cd "$HOME"
+  git worktree remove --force "$_IMPL_WORKTREE" 2>/dev/null || rm -rf "$_IMPL_WORKTREE"
+  echo "🟡 已清理实施 worktree：$_IMPL_WORKTREE（feature 分支保留在远端 PR 中，本地已合并后可 git branch -d）"
+fi
 ```
 
 ---

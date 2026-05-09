@@ -164,6 +164,54 @@ auto_execution_mode: 3
 
 ---
 
+## 前置：进入实施 worktree 守卫
+
+设计、视觉、计划、实现全流程都会产生 commit。若当前在 base/default 分支（`main`/`master`），先创建隔离 worktree，避免把 design/plan commit 直接落到 base 分支（远端通常受保护 + ship 时拒 PR）。恢复流（检测到状态文件）已在正确分支上，跳过本守卫。
+
+```bash
+_ROOT=$(git rev-parse --show-toplevel)
+_BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+_BASE_BRANCH=${_BASE_BRANCH:-$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo main || echo master)}
+_CURRENT_BRANCH=$(git branch --show-current)
+
+if [ -z "${_STATE_FILE:-}" ] && { [ "$_CURRENT_BRANCH" = "$_BASE_BRANCH" ] || [ "$_CURRENT_BRANCH" = "main" ] || [ "$_CURRENT_BRANCH" = "master" ]; }; then
+  # Stage 1 尚未定 slug，先用时间戳占位；Stage 3 写状态文件时会把真实 slug 一并写入。
+  _IMPL_BRANCH="xdev-full-dev-$(date +%Y%m%d-%H%M%S)"
+  _PROJECT=$(basename "$_ROOT")
+  if [ -d "$_ROOT/.worktrees" ] && git check-ignore -q "$_ROOT/.worktrees"; then
+    _WT_ROOT="$_ROOT/.worktrees"
+  elif [ -d "$_ROOT/worktrees" ] && git check-ignore -q "$_ROOT/worktrees"; then
+    _WT_ROOT="$_ROOT/worktrees"
+  else
+    _WT_ROOT="${XDEV_WORKTREE_ROOT:-$HOME/.config/xdev/worktrees/${_PROJECT}}"
+  fi
+  mkdir -p "$_WT_ROOT"
+  _IMPL_WORKTREE="${_WT_ROOT}/${_IMPL_BRANCH}"
+
+  if ! git worktree add "$_IMPL_WORKTREE" -b "$_IMPL_BRANCH"; then
+    echo "🔴 暂停：git worktree add 失败。诊断：git worktree list / df -h / ls -la \"$(dirname \"$_IMPL_WORKTREE\")\""
+    return 1 2>/dev/null || exit 1
+  fi
+
+  # 拷贝根级 ignored 本地配置到新 worktree。
+  for _envfile in .env .env.local .env.development .env.development.local .envrc; do
+    if [ -f "$_ROOT/$_envfile" ] && [ ! -f "$_IMPL_WORKTREE/$_envfile" ]; then
+      cp "$_ROOT/$_envfile" "$_IMPL_WORKTREE/$_envfile"
+    fi
+  done
+
+  cd "$_IMPL_WORKTREE"
+  echo "Implementation worktree: $_IMPL_WORKTREE"
+  echo "🟡 新 worktree 不含 gitignored 构建产物。首次跑测试前按需重装依赖（uv sync / npm ci）。"
+fi
+```
+
+> **目录：** 默认 `~/.config/xdev/worktrees/<project>/`；设 `XDEV_WORKTREE_ROOT=/path` 覆盖。项目内若已存在被 ignore 的 `.worktrees/` 或 `worktrees/` 则复用。
+>
+> **Stage 3 会把分支重命名为 `xdev-<slug>`：** Stage 3 写状态文件前，若分支名仍是 `xdev-full-dev-<ts>` 形式且此时已知 slug，会 `git branch -m` 重命名为 `xdev-<slug>`，让 PR 分支名更可读。
+
+---
+
 ## 阶段 1：需求构思与设计
 
 分析需求类型，选择对应 skill：
@@ -498,12 +546,25 @@ git add docs/plans/ && git commit -m "docs: add implementation plan for <feature
 
 ```bash
 mkdir -p docs/state
+# 若当前分支是前置守卫建的占位名（xdev-full-dev-<ts>），把它重命名为可读的 xdev-<slug>，让 PR 分支名有意义。
+_CURRENT_BRANCH=$(git branch --show-current)
+if [[ "$_CURRENT_BRANCH" =~ ^xdev-full-dev-[0-9]+-[0-9]+$ ]]; then
+  _RENAMED=$(printf 'xdev-%s' "${_SLUG}" | tr -cs 'A-Za-z0-9._-' '-')
+  _RENAMED=${_RENAMED%-}
+  if ! git rev-parse --verify "$_RENAMED" >/dev/null 2>&1; then
+    git branch -m "$_RENAMED"
+    echo "🟡 分支已重命名：$_CURRENT_BRANCH → $_RENAMED（worktree 目录名未变，不影响后续流程）"
+  fi
+fi
+_BRANCH=$(git branch --show-current)
+_HEAD=$(git rev-parse HEAD)
 _STATE_FILE="docs/state/full-dev--${_BRANCH}--${_SLUG}.md"
 cat > /tmp/xdev-state-tmp.md << STATEOF
 ## xdev 会话状态
 - **功能：** ${_SLUG}
 - **工作流：** full-dev
 - **分支：** ${_BRANCH}
+- **实现 worktree：** ${_IMPL_WORKTREE:-$(pwd)}
 - **锁定的 HEAD：** ${_HEAD}
 - **完成阶段：** 1, 2, 3
 - **当前阶段：** 4（TDD 实现循环）
@@ -660,6 +721,22 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 
 > **状态更新：** 更新状态文件「完成阶段」追加 `5+6`，「当前阶段」改为 `7（发布）`。
 
+### 7.0 发布前分支兜底
+
+`ship` 要求当前分支不是 base/default 分支。正常情况下，前置 worktree 守卫已经满足该条件；发布前只做兜底检查：
+
+```bash
+_BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+_BASE_BRANCH=${_BASE_BRANCH:-$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo main || echo master)}
+_CURRENT_BRANCH=$(git branch --show-current)
+
+if [ "$_CURRENT_BRANCH" = "$_BASE_BRANCH" ] || [ "$_CURRENT_BRANCH" = "main" ] || [ "$_CURRENT_BRANCH" = "master" ]; then
+  echo "🔴 暂停：当前仍在 base/default 分支（$_CURRENT_BRANCH），不能直接 ship。"
+  echo "    回到「前置：进入实施 worktree 守卫」创建 feature worktree 后，再进入阶段 7。"
+  return 1 2>/dev/null || exit 1
+fi
+```
+
 ### 7.1 发布（ship）
 
 🟢 `📍 [7/8] 发布 — 7.1 ship`
@@ -680,13 +757,22 @@ ship 内置：预检查 → 合并主分支 → 运行测试 → AI 测试覆盖
 
 **→ 调用 skill：`land-and-deploy`**
 
-**发布完成后，删除状态文件 + L3 audit 目录：**
+**发布完成后，删除状态文件 + L3 audit 目录 + 清理实施 worktree：**
 
 ```bash
-sed -i '' 's/^## xdev 会话状态/## xdev 会话状态\n- **已完成：** true/' "${_STATE_FILE}" 2>/dev/null || true
+# 先标记已完成（防止删除前中断导致误恢复）——跨平台 python3 替代 sed -i
+python3 -c "import sys,pathlib; p=pathlib.Path(sys.argv[1]); t=p.read_text(); p.write_text(t.replace('## xdev 会话状态', '## xdev 会话状态\n- **已完成：** true', 1) if '- **已完成：** true' not in t else t)" "${_STATE_FILE}" 2>/dev/null || true
 # 删除状态文件 + audit sidecar 目录
 rm -f "${_STATE_FILE}"
 rm -rf "docs/state/audits/${_SLUG}"
+
+# 清理实施 worktree（PR 已推送到远端，本地 worktree 无需保留）
+if [ -n "${_IMPL_WORKTREE:-}" ] && [ -d "$_IMPL_WORKTREE" ]; then
+  _PARENT=$(dirname "$_IMPL_WORKTREE")
+  cd "$_PARENT" 2>/dev/null || cd "$HOME"
+  git worktree remove --force "$_IMPL_WORKTREE" 2>/dev/null || rm -rf "$_IMPL_WORKTREE"
+  echo "🟡 已清理实施 worktree：$_IMPL_WORKTREE（feature 分支保留在远端 PR 中，本地合并后可 git branch -d）"
+fi
 ```
 
 ---
