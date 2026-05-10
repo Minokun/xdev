@@ -2,7 +2,7 @@
 
 > **Ship features, not ceremonies.** xdev is a set of production-grade AI workflow files for Windsurf and Claude Code that orchestrate the full development lifecycle — from brainstorming to production — with built-in quality gates, parallel execution, and tiered failure loops.
 
-English | [中文](./README.zh.md)
+English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
 
 ---
 

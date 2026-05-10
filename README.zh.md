@@ -2,7 +2,7 @@
 
 > **专注交付，而非仪式。** xdev 是一套面向 Windsurf 和 Claude Code 的生产级 AI 工作流文件，将完整开发生命周期（从需求到发布）的编排、质量门禁、并行执行和失败回路全部内置其中。
 
-[English](./README.md) | 中文
+[English](./README.md) | 中文 | [版本说明](./CHANGELOG.md)
 
 ---
 
