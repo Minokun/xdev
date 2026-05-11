@@ -9,6 +9,12 @@ argument-hint: <补充说明或留空>
 
 **确认策略：** 🔴必须确认（需重新设计、发布失败超限） | 🟡通知即继续（learn、计划偏离、并行分组结果） | 🟢自动继续（门禁通过、TDD 步骤）
 
+**自动完成不变量（硬约束，优先级高于 Intent Guard 通用兜底）：**
+- 只要状态文件显示未完成，或实现计划 / TaskList / `mainline_checkpoints.next_batch` 仍有剩余任务，主线程不得用 "Done" / "完成" / 阶段总结 / "还没有全部完成"等回答结束当前轮；必须继续调用工具执行下一任务或下一阶段。（subagent 回执里的 `DONE` status token 是合法内部信号，不在此限。）
+- 完成单个 task / 单个批次 / 单个阶段只允许作为中间进度更新；若下一步不触发本文明确的 🔴 门禁，立即继续。
+- 用户询问"完成了吗 / 为什么停 / 进度如何 / 还剩什么"等**纯状态问题**时，先用 1-2 句话回答状态，然后**立即继续执行剩余队列**；此条优先于 Intent Guard 的"疑问句先澄清"通用兜底，不得把状态问答当作流程终点。仅当问题带有 [调整] / [回退] / [新需求] 信号时才回到 Intent Guard 正常分类。
+- 只有全流程终止态达成（阶段 7 发布完成 → 阶段 8 触发条件已判定，触发则跑完 learn、未触发则显式跳过 → 清理状态文件 + 实施 worktree），或命中本文明确 🔴 暂停条件，才允许最终停轮。
+
 **HUD：** 每阶段开始输出 `📍 [N/5] 阶段名`
 
 **用户补充说明：** $ARGUMENTS
@@ -223,6 +229,7 @@ mainline_checkpoints: []
 5. 同一时机刷新状态文件顶部的 `## Handoff Summary`：`Left To Do` 反映剩余批次/任务；`Gotchas` 追加本批次新增风险或回滚事件；`Resume From` 改为下一批次或下一阶段。`Accomplished` / `Key Decisions` 累积式更新。原子写（临时文件 + `mv`）。
 6. 中断恢复时，若 `mainline_checkpoints` 非空且最后一条有 `next_batch`，从该批次继续；若为空，则从实现计划首个未完成任务继续。
 7. 至少在 subagent 返回 `NEEDS_RECLASSIFY` / `BLOCKED`、Gatekeeper 报 `DEVIATION`、验证证据不满足通过条件、或计划与代码现实冲突时暂停并重新对齐用户目标。
+8. **主线程上下文预算（防 auto-compact 动量丢失）：** 在**单个批次处理过程中**，主线程不得在自己上下文里 Read / Grep **业务源码**（不计 CLAUDE.md、设计文档、实现计划、状态文件、Handoff Summary、task packet 模板、Graphify 输出）超过 3 次；超过即说明 task packet 颗粒度过大，必须重新拆分并派发 subagent 执行，不要自己扛。每次 auto-compact 恢复后的**第一动作**必须是：读状态文件顶部 `## Handoff Summary` → 立即派发下一批 task packet（或恢复 `mainline_checkpoints[-1].next_batch`），**不得先回复进度总结、不得重新扫描项目、不得请示用户**；除非命中本文明确 🔴 暂停条件。
 
 subagent / teamagent 职责边界：
 
@@ -265,6 +272,8 @@ subagent / teamagent 职责边界：
 - 每个任务的「涉及文件」清单 ≤ 1 个
 - 每个任务的「测试文件」清单 ≤ 1 个
 - 无 L3 任务
+
+> **快路径不豁免 4.2 的 CWD/path collision 规则。** 主线程在快路径执行 `rg` / `grep` / `test -f` / 测试命令前，必须显式用绝对路径，或先 `pwd` 确认 shell cwd 就是 `git rev-parse --show-toplevel` 的输出；若 cwd 是 `<repo>/<X>`，路径不得再以 `<X>/` 开头（防 `backend/backend/...` 类漂移，尤其在 Claude Code Bash tool session cwd 持久化到子目录时）。
 
 #### 4.4.2 冲突矩阵（不在快路径时使用）
 
@@ -604,7 +613,24 @@ fi
 
 ship skill 内置：合并主分支 → 全量测试 → pre-landing review → 版本管理 → PR 创建。
 
-**发布完成后，删除状态文件 + 清理实施 worktree：**
+> **执行顺序（严格）：** ship 完成 → 阶段 8 触发判定（需要 worktree 内的 diff）→ 触发则跑 learn → 最后才清理状态文件和 worktree。**不得**在阶段 8 之前删除状态文件或 worktree，否则 learn 拿不到 diff 上下文。
+
+---
+
+## 阶段 8：经验沉淀
+
+> **状态更新：** 如存在状态文件，更新「完成阶段」追加 `7`，「当前阶段」改为 `8（经验沉淀）`。在 worktree 内评估；**禁止**此前清理 worktree 或状态文件。
+
+**跳过：** 改动 < 50 行且无新模式 | 纯样式/配置 | 已有类似记录
+**触发：** 新模式/反模式 | 踩坑有复用价值 | 性能可量化 | 架构偏离计划
+
+**→ 调用 skill：`learn`**（仅在触发时）
+
+---
+
+## 阶段 8 结束后：清理状态文件 + 实施 worktree
+
+阶段 8 完成（触发跑完 learn，或显式判定跳过）后再执行清理：
 
 ```bash
 # 先标记已完成（防止删除前中断导致误恢复）——跨平台 python3 替代 sed -i
@@ -620,15 +646,6 @@ if [ -n "${_IMPL_WORKTREE:-}" ] && [ -d "$_IMPL_WORKTREE" ]; then
   echo "🟡 已清理实施 worktree：$_IMPL_WORKTREE（feature 分支保留在远端 PR 中，本地已合并后可 git branch -d）"
 fi
 ```
-
----
-
-## 阶段 8：经验沉淀
-
-**跳过：** 改动 < 50 行且无新模式 | 纯样式/配置 | 已有类似记录
-**触发：** 新模式/反模式 | 踩坑有复用价值 | 性能可量化 | 架构偏离计划
-
-**→ 调用 skill：`learn`**（仅在触发时）
 
 ---
 
