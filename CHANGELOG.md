@@ -4,6 +4,24 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v2.0.3] - 2026-05-11
+
+### Added
+
+- Added Light Impact Gate to `/iterate`: each quick iteration now performs a bounded Step A anchor scan, escalates to a structured Impact Gate only when risk signals appear, and records an After Diff Gate before quality checks.
+- Added task-level Impact Gate requirements to `full-dev` planning: L2 tasks carry a simplified impact summary, L3 tasks carry the full template, and plan validation now treats missing Impact Gate data as a HIGH issue.
+- Added `Impact boundary` to `full-dev-impl` task packets so executors know the intended blast radius and must return `NEEDS_RECLASSIFY` when they discover out-of-bound impact.
+
+### Changed
+
+- Documented Light Impact Gate in both README files as a built-in lightweight precheck, not a GitNexus dependency or Graphify replacement.
+- Limited Risk trigger keyword scans to candidate files, anchor neighborhoods, and diff hunks to avoid false escalation from high-frequency repo documentation terms.
+- Clarified that `/ship` consumes prior After Diff Gate results instead of generating a new gate during release.
+
+### For contributors
+
+- See `docs/CHANGELOG.md` for the design rationale and why the implementation lives in `full-dev-design.md` + `full-dev-impl.md` rather than only `full-dev.md`.
+
 ## [v2.0.2] - 2026-05-11
 
 ### Fixed

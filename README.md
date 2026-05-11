@@ -195,6 +195,8 @@ Stage 8: Learning (learn — conditional trigger)
 
 **Risk-gated stage 4** — Every task in the stage-3 plan carries a `risk` classification (L0 trivial / L1 local / L2 cross-module / L3 critical) that drives stage 4 orchestration: executor packets are narrowed per risk level, reviews are sampled (L1 per-module) or mandatory (L2/L3), L3 tasks get an independent audit subagent writing sidecars to `docs/state/audits/<slug>/`, and subagent progress is tracked by a risk-aware heartbeat (L1 5/10min, L2 8/15min, L3 15/25min) that kills and re-dispatches possibly-stuck runs before escalating to the user. Cuts typical stage 4 wall time ~90min → 45–60min while preserving quality gates on shared/auth/finance-sensitive code.
 
+**Light Impact Gate** — Before and after code changes, xdev runs a lightweight impact precheck to map direct callers, likely affected workflows/docs/tests, risk triggers, escalation, validation, and unknowns. It uses bounded `rg`, `git diff`, nearby tests, and fresh Graphify query results when already available; it does **not** install GitNexus, build a new index, or auto-refresh Graphify. The goal is narrower than project understanding: catch blast radius before work starts, then turn the final diff into precise validation and sync checks.
+
 **Auto codebase snapshot** — When a workflow needs basic project context (tech stack, directory layout, dev/test commands) and doesn't already have it, it runs a built-in shallow scan and writes the result to `docs/state/codebase-snapshot.md` (gitignored). Subsequent invocations read the snapshot for instant cold-start context. The snapshot carries a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off. There is no separate "map the project" command — the workflows decide when to run this themselves; for deeper questions use `/xdev:ask` or escalate to Graphify (Step 2.6).
 
 ### /bugfix — three-tier root-cause pipeline
@@ -532,7 +534,7 @@ xdev uses two fundamentally different kinds of quality gates. Mixing them up is 
 
 - **Adjudicator**: an LLM or a human
 - **Signal**: semantic evaluation — two runs on the same input may differ slightly
-- **Examples**: `health ≥ 7/10`, `review` with no unresolved HIGH issues, `design-review` visual compliance, `plan-*-review` HIGH/MEDIUM count
+- **Examples**: `health ≥ 7/10`, `review` with no unresolved HIGH issues, `design-review` visual compliance, `plan-*-review` HIGH/MEDIUM count, Light Impact Gate escalation / unknowns analysis
 - **Rule**: rubrics and scores are acceptable **but the evaluation dimensions must be enumerated** (no opaque "overall good"). Each dimension passes independently — never average dimensions into a single comprehensive score.
 
 ### What not to do

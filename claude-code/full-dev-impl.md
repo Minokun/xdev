@@ -326,6 +326,11 @@ Risk level: L1 | L2 | L3
 Task id: task-NNN
 Intent Contract excerpt:
 - Must Have / Must Not / Done Means relevant to this task
+Impact boundary:
+- Direct callers: <from plan Impact Gate, or none found>
+- Risk triggers: <checked categories>
+- Allowed impact surface: <modules / workflows / docs / tests this task may touch>
+- Unknowns: <what the scan could not prove>
 Allowed files:
 - <absolute path>
 Tests allowed:
@@ -340,12 +345,14 @@ Graphify context (可选，read-only):
 - <path to focused graphify query output, omit if none>
 不得调用 planning skill。
 不得创建 planning 文件。
+不得超出 Impact boundary；发现边界外影响面，停止并返回 NEEDS_RECLASSIFY，附 file:line 证据。
 不得编辑 allowed 之外的文件。
 不得新增违反 Must Not 的用户可见能力；如任务需要超出 Intent Contract，返回 NEEDS_RECLASSIFY。
 仅返回 status 和证据。
 ```
 
 > Graphify context 只在主线程已有该任务对应的聚焦 `graphify query` 输出时附加；不在 executor 内部即兴生成。
+> Impact boundary 来自计划阶段的 Impact Gate。缺失时不得临时杜撰；L2/L3 任务缺失 Impact Gate 属于计划质量问题，先返回 `NEEDS_RECLASSIFY` 或回到计划修正。
 
 ### 4.7 NEEDS_RECLASSIFY 处理（风险升级通道）
 
@@ -535,7 +542,32 @@ docs/state/audits/<slug>/audit-task-NNN.md
 - test 自身写错（非 impl 问题） → 修测试，不计入 impl FAIL 次数
 - 区分不出 test/impl 哪侧错 → 先重读 BDD 澄清预期
 
-### 4.15 Gatekeeper 偏差检测
+### 4.15 Light Impact Gate — After Diff Gate
+
+每完成一个批次后、进入 batch review / Gatekeeper 前，主线程读取本批次 diff 并产出 After Diff Gate。全部任务完成后，再产出一次最终 After Diff Gate。`/ship` 只消费这些结论，不临时补跑。
+
+```markdown
+## Impact Gate — After Diff
+
+Changed files:
+- <from git diff --name-only for this batch or final diff>
+
+New / changed surface:
+- <commands / docs / exported symbols / workflow sections>
+
+Missed sync candidates:
+- <README / README.zh / install docs / tests / release notes>
+
+Validation delta:
+- <extra checks discovered after implementation>
+
+Decision:
+- <ready for quality phase | needs extra task | escalate>
+```
+
+扫描范围只限本批次 changed files 和 diff hunk。不要全仓扫描 risk keywords；若发现影响面超出任务 packet 的 Impact boundary，暂停该任务并走 `NEEDS_RECLASSIFY`。
+
+### 4.16 Gatekeeper 偏差检测
 
 每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent。
 
@@ -548,7 +580,7 @@ docs/state/audits/<slug>/audit-task-NNN.md
 
 **门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`。
 
-### 4.16 Gatekeeper 最终检查（阶段 4 结束前，必跑）
+### 4.17 Gatekeeper 最终检查（阶段 4 结束前，必跑）
 
 全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。最终报告必须包含 `### Intent Check` 表；`DEVIATION > 0`、Must Have 无 pass/degraded 证据、或 Must Not 被违反，均触发 🔴 暂停。
 

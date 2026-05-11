@@ -119,6 +119,74 @@ fi
 
 ---
 
+### 0.3 Light Impact Gate（轻量影响面预检）
+
+在阶段 0 范围判断之后、阶段 1 分析之前执行。目标是用一次限域搜索确认爆炸半径，避免小改误留在 `/xdev:iterate`。
+
+**Step A — 默认最小锚点扫描（每次必做，成本 ≤ 1 次 `rg`）**
+
+1. 从用户目标中提取文件名、符号名、命令名、配置 key。没有可搜索锚点时输出 `Anchors: none`，只沿用阶段 0 判断。
+2. 单锚点：`rg -n -F "<anchor>" .`；多锚点：去重写入临时 pattern file，用一次 `rg -n -F -f <pattern-file> .`。
+3. 排除 `.git/`、`node_modules/`、`.venv/`、`dist/`、`build/`、`graphify-out/`。
+4. 输出一行：`Anchors: <names>  Hits: <N files across M dirs>`。
+
+过泛锚点（少于 3 个字符、常见词如 `data` / `util` / `config`、或命中 ≥ 50 个文件）标记为 `broad anchor`，不因它单独升级。
+
+**Step B — 完整 Impact Gate（命中触发条件才做）**
+
+触发条件：
+- Step A 命中跨 2 个以上顶层目录或 ≥ 5 个文件
+- 改动目标是共享 util / service / config / workflow 协议
+- 用户要求改字段、返回结构、命令名、安装路径、超时 / 阈值
+- Risk triggers 在候选修改文件、锚点命中邻域或 diff 中命中
+
+Risk triggers（仅限域扫描，禁止全仓扫关键词）：
+
+| 类别 | 关键词 |
+|------|--------|
+| Public API / CLI / SDK | `api/`, `cli/`, `sdk/`, `endpoint`, `route`, `router`, `openapi`, `swagger`, `@command`, `argparse`, `click.command` |
+| Auth / permission | `token`, `session`, `permission`, `rbac`, `oauth`, `jwt`, `auth`, `login`, `signin`, `secret`, `apikey`, `api_key` |
+| Payment / financial | `price`, `amount`, `charge`, `invoice`, `stripe`, `paypal`, `refund`, `subtotal`, `currency`, `billing` |
+| Database schema | `migration`, `schema`, `alembic`, `prisma`, `drizzle`, `CREATE TABLE`, `ALTER TABLE`, `models.py`, `schema.sql` |
+| Installer / release / workflow | `install.sh`, `Dockerfile`, `pyproject.toml`, `package.json`, `release`, `CHANGELOG`, `.github/workflows`, `xdev:`, `/full-dev`, `/iterate` |
+| Cross-module | Step A 命中跨 ≥ 2 个顶层目录 |
+
+完整模板：
+
+```markdown
+## Impact Gate — Before Change
+
+Target:
+- <symbol / file / command / config key>
+
+Direct callers:
+- <file:line> <why relevant>
+
+Likely affected:
+- <module / workflow / docs / test entrypoint>
+
+Risk triggers:
+- [ ] Cross-module
+- [ ] Public API / CLI / SDK contract
+- [ ] Auth / permission / security
+- [ ] Payment / financial calculation
+- [ ] Database schema / migration
+- [ ] Installer / release / workflow protocol
+
+Escalation:
+- <stay in /xdev:iterate | switch to /project:bugfix | upgrade to /project:xdev:full-dev | add review/cso/devex-review>
+
+Suggested validation:
+- <command or manual probe>
+
+Unknowns:
+- <what rg / local reading cannot prove>
+```
+
+升级规则：跨模块或影响 API / CLI / SDK / schema / auth / payment / installer / workflow 协议 → 升级 `/project:xdev:full-dev`；发现实际是错误行为 → 切 `/project:bugfix`；查不到调用方但目标是共享文件 → 写 Unknowns，不得声称影响面为空。
+
+---
+
 ## 阶段 1：分析 + 找测试
 
 1. 分析改动影响范围
@@ -154,6 +222,31 @@ git commit -m "<type>: <description>"
 ```
 
 Commit type 规范：`fix:` / `feat:` / `perf:` / `refactor:` / `chore:`
+
+---
+
+### 2.5 Light Impact Gate — After Diff Gate
+
+阶段 2 完成后、阶段 3 质量检查前执行；`/ship` 只消费这里的结论，不临时补跑。
+
+```markdown
+## Impact Gate — After Diff
+
+Changed files:
+- <from git diff --name-only>
+
+New / changed surface:
+- <commands / docs / exported symbols / workflow sections>
+
+Missed sync candidates:
+- <README / README.zh / install docs / tests / release notes>
+
+Validation delta:
+- <extra checks discovered after implementation>
+
+Decision:
+- <ready for quality phase | needs extra task | escalate>
+```
 
 ---
 

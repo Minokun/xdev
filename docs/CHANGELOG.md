@@ -9,6 +9,33 @@
 
 ---
 
+## [unreleased] - 2026-05-11
+
+### Added — Light Impact Gate 轻量影响面预检
+
+**改动位置：**
+- `README.md` / `README.zh.md` — 解释 Light Impact Gate 是内置轻量预检，不是 GitNexus 依赖
+- `claude-code/iterate.md` / `windsurf/iterate.md` — 阶段 0 后新增 Step A / Step B，阶段 2 后新增 After Diff Gate
+- `claude-code/full-dev-design.md` / `windsurf/full-dev-design.md` — 阶段 3 任务模板新增 L2/L3 Impact Gate 要求
+- `claude-code/full-dev-impl.md` / `windsurf/full-dev-impl.md` — task packet 新增 `Impact boundary`，批次后新增 After Diff Gate
+- `claude-code/full-dev.md` / `windsurf/full-dev.md` — 只补指针，保持 `full-dev-impl.md` 是阶段 4 唯一权威
+
+**What landed：**
+1. **`/iterate` 两段式影响面预检**：每次默认做一次 Step A 锚点扫描；只有跨目录、共享模块、契约变化或限域 Risk trigger 命中时，才展开完整 Impact Gate。
+2. **限域 Risk trigger 扫描**：关键词只扫候选修改文件、锚点命中邻域和 diff hunk；禁止全仓扫 `auth` / `token` / `/full-dev` / `CHANGELOG` 这类高频词。
+3. **`full-dev-design` 计划阶段写入影响面**：L2 任务带 Direct callers + Risk triggers + Escalation；L3 任务带完整 Impact Gate；Subagent C 校验缺失项。
+4. **`full-dev-impl` 执行阶段消费影响边界**：task packet 新增 `Impact boundary`，executor 发现边界外影响必须停下并返回 `NEEDS_RECLASSIFY`。
+5. **After Diff Gate 留在 workflow 质量阶段**：`/iterate` 在阶段 3 前产出，`/full-dev-impl` 在批次后和最终产出；`/ship` 只消费，不临时补跑。
+
+**Rationale：** GitNexus 的价值在于“改之前知道爆炸半径”，但把 GitNexus 作为默认依赖会把窄场景收益扩散成安装和索引成本。本轮只吸收方法论：用 xdev 已有的 `rg`、`git diff`、邻近测试和可选新鲜 Graphify query 产出结构化影响面。关键实现点必须落在实际执行链上：split flow 会从 `full-dev-design.md` 直接进入 `full-dev-impl.md`，只改 `full-dev.md` 会被绕过。
+
+**What was tried first（放弃的方向）：**
+1. **把关键词清单只留在设计文档 `docs/plans/`** —— 放弃。理由：`docs/plans/` 被 gitignore，安装后的 workflow 不能假设能读取本地设计文档；第一阶段先内嵌到实际 workflow。
+2. **全仓 Risk trigger 关键词扫描** —— 放弃。理由：xdev 自身文档天然高频命中 `auth`、`token`、`/full-dev`、`CHANGELOG`，会把安全小改误升级。
+3. **让 `/ship` 重新生成 After Diff Gate** —— 放弃。理由：会和 README / CHANGELOG / document-release 检查重复；发布阶段应消费前序 workflow 的结论，而不是新增一个 late gate。
+
+---
+
 ## [unreleased] - 2026-04-19
 
 ### Changed — 第二轮全项落地（🟡/🟢 5 项收尾）
