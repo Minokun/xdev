@@ -4,6 +4,25 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v2.0.4] - 2026-05-11
+
+### Added
+
+- Added Codex CLI as a third install target alongside Claude Code and Windsurf. `bin/install.sh codex` simultaneously installs both Codex interfaces:
+  - **Custom Prompts**: per-file symlinks at `~/.codex/prompts/xdev-*.md` → invoke via `/prompts:xdev-full-dev` etc. (preserves `argument-hint`).
+  - **Skills**: generated `SKILL.md` wrappers at `~/.agents/skills/xdev-*/` → invoke via `$xdev-full-dev` or rely on Codex's implicit description matching. Wrappers are marked `<!-- xdev-generated -->` and regenerated idempotently on every install; the body delegates to the absolute path of the source workflow so a single `git pull` updates both interfaces.
+- `bin/install.sh` now accepts multiple agent targets in one call (e.g. `claude codex`, `windsurf codex`); `all` is a shorthand for `claude windsurf codex`.
+
+### Changed
+
+- `bin/install.sh --help` and both READMEs document the new `codex` target, the multi-select syntax, and a per-agent invocation table covering Claude Code, Windsurf, Codex prompts, and Codex skills.
+- `--target <path>` now explicitly errors when combined with `codex` (codex install has two fixed paths).
+
+### Notes
+
+- Codex's Custom Prompts surface is officially deprecated in favour of Skills, but still fully supported. xdev installs both so users can pick the explicit `/prompts:` path or the implicit-matching `$skill` path per task.
+- Windsurf source files are deliberately **not** unified with `claude-code/`. The two source trees have intentional content drift (frontmatter format, command self-references, `$ARGUMENTS` placeholder usage, project-context file naming). Codex was unifiable because it natively accepts Claude Code's frontmatter; Windsurf was not.
+
 ## [v2.0.3] - 2026-05-11
 
 ### Added

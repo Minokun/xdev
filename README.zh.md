@@ -449,22 +449,33 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf
 cd /path/to/your/project
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --project
 
-# 一次装两个 agent
-bash ~/.claude/skills/xdev/bin/install.sh all
+# Codex CLI（同时安装 custom prompts 和 skills，调用方式见下）
+bash ~/.claude/skills/xdev/bin/install.sh codex
+
+# 多选：任意组合（等价于 all 减去你不想装的）
+bash ~/.claude/skills/xdev/bin/install.sh claude codex
+bash ~/.claude/skills/xdev/bin/install.sh windsurf codex
+bash ~/.claude/skills/xdev/bin/install.sh all                # = claude windsurf codex
 
 # 预览不写入
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
 
-# 自定义目标目录（高级）
+# 自定义目标目录（高级；codex 不支持）
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
 调用方式：
 
 ```
-Claude Code: /xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate    /xdev:ask
-Windsurf:    /full-dev          /full-dev-design          /full-dev-impl          /bugfix          /iterate          /ask
+Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask
+Windsurf:        /full-dev               /full-dev-design               /full-dev-impl               /bugfix               /iterate               /ask
+Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask
+Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask
 ```
+
+> **Codex 安装结构。** 选 `codex` 会同时落两个入口，你按场景挑用即可：
+> - `~/.codex/prompts/xdev-*.md` —— 软链到 `claude-code/*.md`，用 `/prompts:xdev-<名字>` 显式调用（Codex 已标记 deprecated 但仍支持的 custom prompts 路径，保留 `argument-hint`）。
+> - `~/.agents/skills/xdev-*/SKILL.md` —— 安装时生成的薄壳（带 `<!-- xdev-generated -->` 标记，每次重装都会重写）。用 `$xdev-<名字>` 显式调用，或让 Codex 通过 description 隐式匹配。壳里指向同一个 `claude-code/*.md`，所以 `git pull` 一次就同时更新两个入口。
 
 **更新 xdev：**
 
@@ -473,7 +484,7 @@ cd ~/.claude/skills/xdev && git pull
 ```
 
 > Claude Code 用的是目录软链，`git pull` 后无需重跑安装脚本。
-> Windsurf 用的是逐文件软链；如果发布说明里有新增 / 改名的工作流文件，需重跑 `bash ~/.claude/skills/xdev/bin/install.sh windsurf` 刷新软链。
+> Windsurf 和 Codex 用的是逐文件软链（Codex 还附带生成的 `SKILL.md` 薄壳）；如果发布说明里有新增 / 改名 / 改 description 的工作流文件，请用相同的 agent 目标重跑安装脚本以刷新软链和重生成 skill 薄壳。
 
 ### Skill 来源对照表
 

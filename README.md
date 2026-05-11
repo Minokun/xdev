@@ -450,22 +450,33 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf
 cd /path/to/your/project
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --project
 
-# Install for both agents at once
-bash ~/.claude/skills/xdev/bin/install.sh all
+# Codex CLI (installs both custom prompts and skills — see below for invocation)
+bash ~/.claude/skills/xdev/bin/install.sh codex
+
+# Multi-select: pass any combination (these are equivalent to `all` minus what you skip)
+bash ~/.claude/skills/xdev/bin/install.sh claude codex
+bash ~/.claude/skills/xdev/bin/install.sh windsurf codex
+bash ~/.claude/skills/xdev/bin/install.sh all                # = claude windsurf codex
 
 # Preview without writing
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
 
-# Custom target directory (advanced)
+# Custom target directory (advanced; not supported with codex)
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
 Invoke with:
 
 ```
-Claude Code: /xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate    /xdev:ask
-Windsurf:    /full-dev          /full-dev-design          /full-dev-impl          /bugfix          /iterate          /ask
+Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask
+Windsurf:        /full-dev               /full-dev-design               /full-dev-impl               /bugfix               /iterate               /ask
+Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask
+Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask
 ```
+
+> **Codex install layout.** Picking the `codex` target installs both interfaces side-by-side so you can pick whichever fits the moment:
+> - `~/.codex/prompts/xdev-*.md` — symlinks to `claude-code/*.md`. Invoke explicitly with `/prompts:xdev-<name>` (Codex's deprecated-but-still-supported custom prompt path; preserves `argument-hint`).
+> - `~/.agents/skills/xdev-*/SKILL.md` — generated wrappers (regenerated on each install, marked with `<!-- xdev-generated -->`). Invoke explicitly with `$xdev-<name>` or rely on Codex's implicit description matching. The wrapper delegates to the same `claude-code/*.md` file, so a single `git pull` updates both surfaces.
 
 **Updating xdev:**
 
@@ -474,7 +485,7 @@ cd ~/.claude/skills/xdev && git pull
 ```
 
 > Claude Code uses a directory symlink — `git pull` alone keeps it up to date; no need to re-run the install script.
-> Windsurf uses per-file symlinks. If a release adds or renames a workflow file, re-run `bash ~/.claude/skills/xdev/bin/install.sh windsurf` to refresh the symlinks.
+> Windsurf and Codex use per-file symlinks (and Codex additionally has generated `SKILL.md` wrappers). If a release adds, renames, or rewords the description of a workflow file, re-run the install script with the same agent target(s) to refresh links and regenerate skill wrappers.
 
 ### Skill dependency map
 

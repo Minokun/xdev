@@ -9,7 +9,30 @@
 
 ---
 
-## [unreleased] - 2026-05-11
+## [v2.0.4] - 2026-05-11
+
+### Added — Codex CLI 接入（第三个安装目标）
+
+**改动位置：**
+- `bin/install.sh` — 新增 `install_codex` / `install_codex_prompts` / `install_codex_skills`；CLI 由单选改成多选；`all` 扩展为 claude+windsurf+codex
+- `README.md` / `README.zh.md` — 安装段落新增 codex 用法、多选示例、四行调用表、安装结构说明
+- `CHANGELOG.md` — v2.0.4 用户向 release notes
+
+**What landed：**
+1. **Custom Prompts 复用 claude-code/**：在 `~/.codex/prompts/` 下逐文件软链 `claude-code/*.md`，加 `xdev-` 前缀（Codex prompts 命名空间扁平且只扫顶层）。Codex 原生支持 `description + argument-hint` frontmatter，所以零改源文件。
+2. **Skills 生成壳**：在 `~/.agents/skills/xdev-<name>/` 下生成 `SKILL.md`，frontmatter 补 `name:`（skills 必填），description 从 claude-code 同名文件抽取，正文指向源文件绝对路径让 Codex 读原 workflow。带 `<!-- xdev-generated -->` 标记，幂等重写；用户自写的同名 SKILL.md 会被跳过并 warn。
+3. **multi-agent CLI**：`AGENT` 单值改 `AGENTS=()` 多值；`add_agent` 去重；`all` 展开为三目标。`--target` 配合 codex 显式报错（codex 有两个固定路径）。
+
+**What was tried first（放弃的方向）：**
+- **windsurf 同样复用 claude-code/**：被否决。两份源文件已有刻意分叉（frontmatter `auto_execution_mode` vs `argument-hint`、命令名 `/full-dev` vs `/xdev:full-dev`、`AGENTS.md` vs `CLAUDE.md` 提法、Intent Guard 文本繁简）。复用需要 install 时做 frontmatter 重写 + sed 替换 + 接受内容收敛，工作量大且有意分叉会丢。维护双源更便宜。
+- **Skills 直接软链 SKILL.md → claude-code/*.md**：被否决。Codex skills 强制要求 `name:` 字段而 claude-code frontmatter 没有；薄壳生成是补这一格的最小工作量方案。
+- **同时提供 codex-prompts / codex-skills 两个子目标**：被否决。两个入口面向同一组工作流，分开装会让用户多记一层 CLI 结构。统一在 `codex` 下一次到位。
+
+**Rationale：** xdev 的扩散瓶颈是“支持哪些 agent”，不是“工作流写得有多好”。Codex CLI 是当前主流第三家 AI 编辑器，原生 prompts/skills 机制足够承载 xdev 工作流；接入成本只有一个安装函数，不需要新源目录。把 codex 加进 install.sh 比单独发一份 codex-xdev 包更符合“orchestration, not reinvention”的核心。
+
+---
+
+## [v2.0.3] - 2026-05-11
 
 ### Added — Light Impact Gate 轻量影响面预检
 
