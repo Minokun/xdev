@@ -220,11 +220,12 @@ install_codex_skills() {
       echo "  + write $skill_md (delegates to $f)"
     else
       cat > "$skill_md" <<EOF
-<!-- xdev-generated -->
 ---
 name: xdev-$name
 description: $description
 ---
+
+<!-- xdev-generated -->
 
 This skill delegates to the xdev \`$name\` workflow.
 
