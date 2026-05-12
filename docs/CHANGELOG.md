@@ -30,6 +30,8 @@
 
 **Rationale：** xdev 的扩散瓶颈是“支持哪些 agent”，不是“工作流写得有多好”。Codex CLI 是当前主流第三家 AI 编辑器，原生 prompts/skills 机制足够承载 xdev 工作流；接入成本只有一个安装函数，不需要新源目录。把 codex 加进 install.sh 比单独发一份 codex-xdev 包更符合“orchestration, not reinvention”的核心。
 
+**Followup fix（v2.0.4 当天）：** 首版生成的 `SKILL.md` 把 `<!-- xdev-generated -->` 标记放在了 YAML frontmatter 之前，导致 Codex 的 frontmatter 解析器找不到起始符 `---`，6 个 xdev skill 被静默跳过加载——`/skills` 看得到 `gstack-*` / `superpowers` / `minimax-*` 但找不到 `xdev-*`。修复是把标记挪到 frontmatter 之后（`grep -q "^<!-- xdev-generated -->"` 仍能锚定行首识别幂等标记）。**教训：** Codex/Claude/各 agent 的 frontmatter 解析器对“第一行必须是 `---`”这条约定都很严格，注释、BOM、空行都会让 skill 静默失效；以后任何生成式安装都先用一个真实 agent 端到端验证一次，不要只看文件落地了就以为完事。
+
 ---
 
 ## [v2.0.3] - 2026-05-11

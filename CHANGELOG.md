@@ -18,6 +18,10 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 - `bin/install.sh --help` and both READMEs document the new `codex` target, the multi-select syntax, and a per-agent invocation table covering Claude Code, Windsurf, Codex prompts, and Codex skills.
 - `--target <path>` now explicitly errors when combined with `codex` (codex install has two fixed paths).
 
+### Fixed
+
+- Generated Codex `SKILL.md` files now place the `<!-- xdev-generated -->` marker **after** the YAML frontmatter. Codex's frontmatter parser requires `---` to be the first non-empty content; the previous layout caused all six xdev skills to be silently skipped on load. Re-run `bash bin/install.sh codex` to regenerate, then restart Codex to pick up the new files.
+
 ### Notes
 
 - Codex's Custom Prompts surface is officially deprecated in favour of Skills, but still fully supported. xdev installs both so users can pick the explicit `/prompts:` path or the implicit-matching `$skill` path per task.

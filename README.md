@@ -322,6 +322,7 @@ Please install xdev and its dependencies for me:
 1. xdev itself (required):
    Run: git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
    Then: ~/.claude/skills/xdev/bin/install.sh claude
+   (If I also use Codex CLI or Windsurf, replace `claude` with any combination, e.g. `claude codex`, `windsurf codex`, or `all`.)
 
 2. gstack (recommended — /bugfix full triage + /full-dev pipeline):
    Run: git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
