@@ -486,21 +486,27 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
-#### Windows（Git Bash）
+#### Windows（原生，通过 Git Bash）
 
-`bin/install.sh` 在 Windows 下可以直接通过 **Git Bash**（[Git for Windows](https://gitforwindows.org/) 自带）跑。两个前置条件：
+xdev 直接装到**原生 Windows** 的 Codex CLI / Claude Code / Windsurf 下——目录结构和 macOS/Linux 一致，只是放在 `%USERPROFILE%` 下。安装脚本是 bash 写的，所以从 **Git Bash** 跑（一次性配好，[Git for Windows](https://gitforwindows.org/) 自带）。**不走 WSL**。
 
-1. **打开开发者模式**，让非管理员用户能创建 symlink：
+一次性配置：
+
+1. 装 Git for Windows（自带 Git Bash），如果还没装的话。
+2. 打开 **开发者模式**，让非管理员用户能创建 symlink：
    `设置 → 系统 → 开发者选项 → 开发人员模式 → 开`（Windows 10 1607+ / Windows 11）。
-   未开启时 `ln -s` 会退化成复制甚至直接失败。
-2. **必须用 Git Bash**（不要在 cmd.exe / PowerShell 里跑）。上面所有示例直接照抄：
+   未开启时 `ln -s` 会退化为复制甚至失败。
 
-   ```bash
-   git clone --depth 1 https://github.com/Minokun/xdev.git "$USERPROFILE/.claude/skills/xdev"
-   bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" claude codex
-   ```
+然后在 Git Bash 里：
 
-各 agent 在 Windows 上的目标路径（脚本里的 `~` 会解析成 `%USERPROFILE%`）：
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git "$USERPROFILE/.claude/skills/xdev"
+bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" codex          # 只装 Codex
+bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" claude codex   # 多选
+bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" all
+```
+
+落地路径就是各 agent 在 Windows 上原本就在读的位置：
 
 | Agent | Windows 路径 |
 |---|---|
@@ -508,8 +514,6 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 | Windsurf | `%USERPROFILE%\.codeium\windsurf\windsurf\workflows\` |
 | Codex prompts | `%USERPROFILE%\.codex\prompts\` |
 | Codex skills | `%USERPROFILE%\.agents\skills\` |
-
-> **WSL 替代方案**：如果你主要用 WSL，Linux 流程原封不动可用——但 xdev 会装进 WSL 文件系统，**Windows 原生 agent**（Codex CLI for Windows、Claude Code for Windows、Windsurf for Windows）看不到它。给原生 Windows agent 用就走 Git Bash；只有当你的 AI 工具也运行在 WSL 里时才走 WSL 方案。
 
 > 暂未提供原生 PowerShell 安装器。如果你需要 `pwsh bin/install.ps1`，欢迎开 issue 反馈。
 

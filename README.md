@@ -487,21 +487,26 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
-#### Windows (Git Bash)
+#### Windows (native, via Git Bash)
 
-The same `bin/install.sh` works on Windows under **Git Bash** (bundled with [Git for Windows](https://gitforwindows.org/)). Two prerequisites:
+xdev installs directly against **native Windows** Codex CLI / Claude Code / Windsurf — same per-agent paths as macOS/Linux, just under `%USERPROFILE%`. The installer is bash-only, so you run it from **Git Bash** (one-time, ships with [Git for Windows](https://gitforwindows.org/)). No WSL involved.
 
-1. **Enable Developer Mode** so non-admin users can create symlinks:
-   `Settings → System → For developers → Developer Mode → On` (Windows 10 1607+ / Windows 11).
-   Without this, `ln -s` will fall back to copying or fail.
-2. **Run from Git Bash** (not cmd.exe / PowerShell). All examples above translate directly:
+One-time setup:
 
-   ```bash
-   git clone --depth 1 https://github.com/Minokun/xdev.git "$USERPROFILE/.claude/skills/xdev"
-   bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" claude codex
-   ```
+1. Install Git for Windows if you don't already have it (gives you Git Bash).
+2. Enable **Developer Mode** so non-admin users can create symlinks:
+   `Settings → System → For developers → Developer Mode → On` (Windows 10 1607+ / Windows 11). Without this, `ln -s` falls back to copying or fails.
 
-Targets land in the same per-agent locations Codex/Claude Code/Windsurf expect on Windows (resolved from `~`):
+Then in Git Bash:
+
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git "$USERPROFILE/.claude/skills/xdev"
+bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" codex          # Codex only
+bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" claude codex   # multi-select
+bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" all
+```
+
+Targets land in the standard Windows locations the agents already read from:
 
 | Agent | Windows path |
 |---|---|
@@ -509,8 +514,6 @@ Targets land in the same per-agent locations Codex/Claude Code/Windsurf expect o
 | Windsurf | `%USERPROFILE%\.codeium\windsurf\windsurf\workflows\` |
 | Codex prompts | `%USERPROFILE%\.codex\prompts\` |
 | Codex skills | `%USERPROFILE%\.agents\skills\` |
-
-> **WSL alternative.** If you primarily use WSL, the Linux flow works as-is — but xdev will be installed inside the WSL filesystem, and native-Windows agents (Codex CLI for Windows, Claude Code for Windows, Windsurf for Windows) won't see it. Use Git Bash for native-Windows agents; use WSL only if your AI tools also run inside WSL.
 
 > No native PowerShell installer is shipped today. If `pwsh bin/install.ps1` would meaningfully improve your flow, please open an issue.
 
