@@ -283,7 +283,7 @@ Per-workflow defaults:
 | `/full-dev` | Adaptive Level 0–3 | Source of truth for the lifecycle and execution boundary |
 | `/full-dev-design` | Level 0/1, Level 2 when architecture judgment is needed | Defers to `/full-dev` lifecycle |
 | `/full-dev-impl` | Trusts the design plan; supplements with `graphify query` only when the plan is insufficient | Defers to `/full-dev` lifecycle |
-| `/ask` | Adaptive Level 1–3, with "most current, most accurate answer" as top priority; installed Graphify treated as implicit authorization | Fresh graph → query directly; code changes → 🟡 auto `graphify update .`; semantic changes or first-time build → 🟡 auto `graphify .`, transparently disclosing cost without re-confirming; user says "don't refresh / don't build" → skip immediately + `Unknowns` annotation |
+| `/ask` | Adaptive Level 1–3, with "most current, most accurate answer" as top priority; installed Graphify treated as implicit authorization | Fresh graph → query directly; code changes → 🟡 auto `graphify update .`; semantic changes or first-time build → 🟡 auto-invoke the Graphify skill pipeline (`/graphify`, LLM-backed full pipeline; **the `graphify` CLI has no full-build equivalent**), transparently disclosing cost without re-confirming; user says "don't refresh / don't build" → skip immediately + `Unknowns` annotation |
 
 ---
 

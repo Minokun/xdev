@@ -25,7 +25,7 @@ auto_execution_mode: 3
 - 读文件、`rg`、读取 `graphify-out/`、`graphify query`、`graphify check-update .`
 - 为“答案正确性”所必须的图谱写操作（🟡 自动，仅披露代价，不二次确认）：
   - 代码刷新 `graphify update .`（本地 AST，无 LLM 调用）
-  - 语义重抽取与首次建图 `graphify .`（调 LLM API）
+  - 语义重抽取与首次建图：`/graphify` agent slash 入口（调 LLM API；**CLI 无等价命令**——`graphify update .` 只刷新代码 AST，`graphify add <url>` 只加单个文件，全量语义建图必须经由 Graphify skill pipeline）
 
 **禁止**：
 - 修改源码、运行 `pytest` / `npm test` / 构建 / 迁移脚本
@@ -148,7 +148,7 @@ graphify update .
 1. **透明披露**（不阻塞）：在 TL;DR 列出信号 D 中的语义文件清单（top 10）+ 估算代价：
    - 成本估算：参考 `cost.json` 历史 run 的 token 均值 × 本次变化文件总字节数的近似比例（或直接提示“估算参考 `cost.json` 历史”让用户自查）
    - 时延估算：参考历史 run 的 wall time / 文件数的比例
-2. **自动执行全量刷新**：`graphify .`（含语义重抽取，调 LLM API）→ query → 回答
+2. **自动执行全量刷新**：调用 `/graphify` skill pipeline（含语义重抽取，调 LLM API）→ query → 回答；**CLI 无等价命令**，若当前 agent 不支持 slash 触发则降级步骤 4
 3. 执行失败 → 重试 1 次 → 仍失败降级步骤 4，在 `Unknowns` 说明原因
 
 用户随时可通过 Intent Guard（后文）“别刷新” / “快给答案” 取消。
@@ -177,7 +177,7 @@ graphify update .
      | head -20
    ```
 2. 在 TL;DR 输出明显提示：“首次建图（约 ~N 分钟，调 LLM API），将抽取以下非代码资料：<top 10 清单>。如需中断请下一条消息说‘别建图’”
-3. **自动调用 Graphify skill pipeline**建图（当前 agent 可调度时）；否则通知“当前环境仅 CLI 可用，请手动运行 `graphify .`”，本次降级步骤 4
+3. **自动调用 Graphify skill pipeline 建图**（当前 agent 可调度 `/graphify` slash 时）；否则通知“当前环境仅 graphify CLI 可用，CLI 没有完整建图入口（只能 `graphify update .` 刷新代码或 `graphify add <url>` 单条加资料），本次跳过建图”，降级步骤 4
 4. 建图成功 → query → 回答；失败 → 降级步骤 4，在 `Unknowns` 说明原因（常见原因：API key 未配 / 额度超限 / 网络不通，参考 README Step 2.6）
 
 用户随时可通过 Intent Guard（后文）“别建图” 取消。

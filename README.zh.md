@@ -283,7 +283,7 @@ xdev **不需要单独的"了解项目"命令**。每个工作流启动时会根
 | `/full-dev` | 自适应 Level 0–3 | 生命周期与执行边界的“源”规则 |
 | `/full-dev-design` | Level 0/1，需要架构判断时进 Level 2 | 委托给 `/full-dev` 生命周期 |
 | `/full-dev-impl` | 默认信任设计计划，不足时再补 `graphify query` | 委托给 `/full-dev` 生命周期 |
-| `/ask` | 自适应 Level 1–3，以"答案最新最准"为最高原则；用户已装 Graphify 视为隐式授权 | 图谱新鲜 → 直接 query；代码变化 → 🟡 自动 `graphify update .`；语义变化或首次建图 → 🟡 自动 `graphify .`，仅透明披露代价不二次确认；用户显式说"别刷新/别建图" → 立即跳过 + `Unknowns` 标注 |
+| `/ask` | 自适应 Level 1–3，以"答案最新最准"为最高原则；用户已装 Graphify 视为隐式授权 | 图谱新鲜 → 直接 query；代码变化 → 🟡 自动 `graphify update .`；语义变化或首次建图 → 🟡 自动调用 Graphify skill pipeline（`/graphify`，含 LLM 语义抽取的完整 pipeline；**`graphify` CLI 没有完整建图入口**），仅透明披露代价不二次确认；用户显式说"别刷新/别建图" → 立即跳过 + `Unknowns` 标注 |
 
 ---
 
