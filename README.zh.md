@@ -486,6 +486,33 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
+#### Windows（Git Bash）
+
+`bin/install.sh` 在 Windows 下可以直接通过 **Git Bash**（[Git for Windows](https://gitforwindows.org/) 自带）跑。两个前置条件：
+
+1. **打开开发者模式**，让非管理员用户能创建 symlink：
+   `设置 → 系统 → 开发者选项 → 开发人员模式 → 开`（Windows 10 1607+ / Windows 11）。
+   未开启时 `ln -s` 会退化成复制甚至直接失败。
+2. **必须用 Git Bash**（不要在 cmd.exe / PowerShell 里跑）。上面所有示例直接照抄：
+
+   ```bash
+   git clone --depth 1 https://github.com/Minokun/xdev.git "$USERPROFILE/.claude/skills/xdev"
+   bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" claude codex
+   ```
+
+各 agent 在 Windows 上的目标路径（脚本里的 `~` 会解析成 `%USERPROFILE%`）：
+
+| Agent | Windows 路径 |
+|---|---|
+| Claude Code | `%USERPROFILE%\.claude\commands\xdev\` |
+| Windsurf | `%USERPROFILE%\.codeium\windsurf\windsurf\workflows\` |
+| Codex prompts | `%USERPROFILE%\.codex\prompts\` |
+| Codex skills | `%USERPROFILE%\.agents\skills\` |
+
+> **WSL 替代方案**：如果你主要用 WSL，Linux 流程原封不动可用——但 xdev 会装进 WSL 文件系统，**Windows 原生 agent**（Codex CLI for Windows、Claude Code for Windows、Windsurf for Windows）看不到它。给原生 Windows agent 用就走 Git Bash；只有当你的 AI 工具也运行在 WSL 里时才走 WSL 方案。
+
+> 暂未提供原生 PowerShell 安装器。如果你需要 `pwsh bin/install.ps1`，欢迎开 issue 反馈。
+
 调用方式：
 
 ```
