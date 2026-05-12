@@ -4,6 +4,43 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v2.0.4] - 2026-05-11
+
+### Added
+
+- Added Codex CLI as a third install target alongside Claude Code and Windsurf. `bin/install.sh codex` simultaneously installs both Codex interfaces:
+  - **Custom Prompts**: per-file symlinks at `~/.codex/prompts/xdev-*.md` → invoke via `/prompts:xdev-full-dev` etc. (preserves `argument-hint`).
+  - **Skills**: generated `SKILL.md` wrappers at `~/.agents/skills/xdev-*/` → invoke via `$xdev-full-dev` or rely on Codex's implicit description matching. Wrappers are marked `<!-- xdev-generated -->` and regenerated idempotently on every install; the body delegates to the absolute path of the source workflow so a single `git pull` updates both interfaces.
+- `bin/install.sh` now accepts multiple agent targets in one call (e.g. `claude codex`, `windsurf codex`); `all` is a shorthand for `claude windsurf codex`.
+
+### Changed
+
+- `bin/install.sh --help` and both READMEs document the new `codex` target, the multi-select syntax, and a per-agent invocation table covering Claude Code, Windsurf, Codex prompts, and Codex skills.
+- `--target <path>` now explicitly errors when combined with `codex` (codex install has two fixed paths).
+
+### Notes
+
+- Codex's Custom Prompts surface is officially deprecated in favour of Skills, but still fully supported. xdev installs both so users can pick the explicit `/prompts:` path or the implicit-matching `$skill` path per task.
+- Windsurf source files are deliberately **not** unified with `claude-code/`. The two source trees have intentional content drift (frontmatter format, command self-references, `$ARGUMENTS` placeholder usage, project-context file naming). Codex was unifiable because it natively accepts Claude Code's frontmatter; Windsurf was not.
+
+## [v2.0.3] - 2026-05-11
+
+### Added
+
+- Added Light Impact Gate to `/iterate`: each quick iteration now performs a bounded Step A anchor scan, escalates to a structured Impact Gate only when risk signals appear, and records an After Diff Gate before quality checks.
+- Added task-level Impact Gate requirements to `full-dev` planning: L2 tasks carry a simplified impact summary, L3 tasks carry the full template, and plan validation now treats missing Impact Gate data as a HIGH issue.
+- Added `Impact boundary` to `full-dev-impl` task packets so executors know the intended blast radius and must return `NEEDS_RECLASSIFY` when they discover out-of-bound impact.
+
+### Changed
+
+- Documented Light Impact Gate in both README files as a built-in lightweight precheck, not a GitNexus dependency or Graphify replacement.
+- Limited Risk trigger keyword scans to candidate files, anchor neighborhoods, and diff hunks to avoid false escalation from high-frequency repo documentation terms.
+- Clarified that `/ship` consumes prior After Diff Gate results instead of generating a new gate during release.
+
+### For contributors
+
+- See `docs/CHANGELOG.md` for the design rationale and why the implementation lives in `full-dev-design.md` + `full-dev-impl.md` rather than only `full-dev.md`.
+
 ## [v2.0.2] - 2026-05-11
 
 ### Fixed

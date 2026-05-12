@@ -9,6 +9,56 @@
 
 ---
 
+## [v2.0.4] - 2026-05-11
+
+### Added — Codex CLI 接入（第三个安装目标）
+
+**改动位置：**
+- `bin/install.sh` — 新增 `install_codex` / `install_codex_prompts` / `install_codex_skills`；CLI 由单选改成多选；`all` 扩展为 claude+windsurf+codex
+- `README.md` / `README.zh.md` — 安装段落新增 codex 用法、多选示例、四行调用表、安装结构说明
+- `CHANGELOG.md` — v2.0.4 用户向 release notes
+
+**What landed：**
+1. **Custom Prompts 复用 claude-code/**：在 `~/.codex/prompts/` 下逐文件软链 `claude-code/*.md`，加 `xdev-` 前缀（Codex prompts 命名空间扁平且只扫顶层）。Codex 原生支持 `description + argument-hint` frontmatter，所以零改源文件。
+2. **Skills 生成壳**：在 `~/.agents/skills/xdev-<name>/` 下生成 `SKILL.md`，frontmatter 补 `name:`（skills 必填），description 从 claude-code 同名文件抽取，正文指向源文件绝对路径让 Codex 读原 workflow。带 `<!-- xdev-generated -->` 标记，幂等重写；用户自写的同名 SKILL.md 会被跳过并 warn。
+3. **multi-agent CLI**：`AGENT` 单值改 `AGENTS=()` 多值；`add_agent` 去重；`all` 展开为三目标。`--target` 配合 codex 显式报错（codex 有两个固定路径）。
+
+**What was tried first（放弃的方向）：**
+- **windsurf 同样复用 claude-code/**：被否决。两份源文件已有刻意分叉（frontmatter `auto_execution_mode` vs `argument-hint`、命令名 `/full-dev` vs `/xdev:full-dev`、`AGENTS.md` vs `CLAUDE.md` 提法、Intent Guard 文本繁简）。复用需要 install 时做 frontmatter 重写 + sed 替换 + 接受内容收敛，工作量大且有意分叉会丢。维护双源更便宜。
+- **Skills 直接软链 SKILL.md → claude-code/*.md**：被否决。Codex skills 强制要求 `name:` 字段而 claude-code frontmatter 没有；薄壳生成是补这一格的最小工作量方案。
+- **同时提供 codex-prompts / codex-skills 两个子目标**：被否决。两个入口面向同一组工作流，分开装会让用户多记一层 CLI 结构。统一在 `codex` 下一次到位。
+
+**Rationale：** xdev 的扩散瓶颈是“支持哪些 agent”，不是“工作流写得有多好”。Codex CLI 是当前主流第三家 AI 编辑器，原生 prompts/skills 机制足够承载 xdev 工作流；接入成本只有一个安装函数，不需要新源目录。把 codex 加进 install.sh 比单独发一份 codex-xdev 包更符合“orchestration, not reinvention”的核心。
+
+---
+
+## [v2.0.3] - 2026-05-11
+
+### Added — Light Impact Gate 轻量影响面预检
+
+**改动位置：**
+- `README.md` / `README.zh.md` — 解释 Light Impact Gate 是内置轻量预检，不是 GitNexus 依赖
+- `claude-code/iterate.md` / `windsurf/iterate.md` — 阶段 0 后新增 Step A / Step B，阶段 2 后新增 After Diff Gate
+- `claude-code/full-dev-design.md` / `windsurf/full-dev-design.md` — 阶段 3 任务模板新增 L2/L3 Impact Gate 要求
+- `claude-code/full-dev-impl.md` / `windsurf/full-dev-impl.md` — task packet 新增 `Impact boundary`，批次后新增 After Diff Gate
+- `claude-code/full-dev.md` / `windsurf/full-dev.md` — 只补指针，保持 `full-dev-impl.md` 是阶段 4 唯一权威
+
+**What landed：**
+1. **`/iterate` 两段式影响面预检**：每次默认做一次 Step A 锚点扫描；只有跨目录、共享模块、契约变化或限域 Risk trigger 命中时，才展开完整 Impact Gate。
+2. **限域 Risk trigger 扫描**：关键词只扫候选修改文件、锚点命中邻域和 diff hunk；禁止全仓扫 `auth` / `token` / `/full-dev` / `CHANGELOG` 这类高频词。
+3. **`full-dev-design` 计划阶段写入影响面**：L2 任务带 Direct callers + Risk triggers + Escalation；L3 任务带完整 Impact Gate；Subagent C 校验缺失项。
+4. **`full-dev-impl` 执行阶段消费影响边界**：task packet 新增 `Impact boundary`，executor 发现边界外影响必须停下并返回 `NEEDS_RECLASSIFY`。
+5. **After Diff Gate 留在 workflow 质量阶段**：`/iterate` 在阶段 3 前产出，`/full-dev-impl` 在批次后和最终产出；`/ship` 只消费，不临时补跑。
+
+**Rationale：** GitNexus 的价值在于“改之前知道爆炸半径”，但把 GitNexus 作为默认依赖会把窄场景收益扩散成安装和索引成本。本轮只吸收方法论：用 xdev 已有的 `rg`、`git diff`、邻近测试和可选新鲜 Graphify query 产出结构化影响面。关键实现点必须落在实际执行链上：split flow 会从 `full-dev-design.md` 直接进入 `full-dev-impl.md`，只改 `full-dev.md` 会被绕过。
+
+**What was tried first（放弃的方向）：**
+1. **把关键词清单只留在设计文档 `docs/plans/`** —— 放弃。理由：`docs/plans/` 被 gitignore，安装后的 workflow 不能假设能读取本地设计文档；第一阶段先内嵌到实际 workflow。
+2. **全仓 Risk trigger 关键词扫描** —— 放弃。理由：xdev 自身文档天然高频命中 `auth`、`token`、`/full-dev`、`CHANGELOG`，会把安全小改误升级。
+3. **让 `/ship` 重新生成 After Diff Gate** —— 放弃。理由：会和 README / CHANGELOG / document-release 检查重复；发布阶段应消费前序 workflow 的结论，而不是新增一个 late gate。
+
+---
+
 ## [unreleased] - 2026-04-19
 
 ### Changed — 第二轮全项落地（🟡/🟢 5 项收尾）

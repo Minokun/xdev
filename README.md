@@ -195,6 +195,8 @@ Stage 8: Learning (learn — conditional trigger)
 
 **Risk-gated stage 4** — Every task in the stage-3 plan carries a `risk` classification (L0 trivial / L1 local / L2 cross-module / L3 critical) that drives stage 4 orchestration: executor packets are narrowed per risk level, reviews are sampled (L1 per-module) or mandatory (L2/L3), L3 tasks get an independent audit subagent writing sidecars to `docs/state/audits/<slug>/`, and subagent progress is tracked by a risk-aware heartbeat (L1 5/10min, L2 8/15min, L3 15/25min) that kills and re-dispatches possibly-stuck runs before escalating to the user. Cuts typical stage 4 wall time ~90min → 45–60min while preserving quality gates on shared/auth/finance-sensitive code.
 
+**Light Impact Gate** — Before and after code changes, xdev runs a lightweight impact precheck to map direct callers, likely affected workflows/docs/tests, risk triggers, escalation, validation, and unknowns. It uses bounded `rg`, `git diff`, nearby tests, and fresh Graphify query results when already available; it does **not** install GitNexus, build a new index, or auto-refresh Graphify. The goal is narrower than project understanding: catch blast radius before work starts, then turn the final diff into precise validation and sync checks.
+
 **Auto codebase snapshot** — When a workflow needs basic project context (tech stack, directory layout, dev/test commands) and doesn't already have it, it runs a built-in shallow scan and writes the result to `docs/state/codebase-snapshot.md` (gitignored). Subsequent invocations read the snapshot for instant cold-start context. The snapshot carries a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off. There is no separate "map the project" command — the workflows decide when to run this themselves; for deeper questions use `/xdev:ask` or escalate to Graphify (Step 2.6).
 
 ### /bugfix — three-tier root-cause pipeline
@@ -448,22 +450,33 @@ bash ~/.claude/skills/xdev/bin/install.sh windsurf
 cd /path/to/your/project
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --project
 
-# Install for both agents at once
-bash ~/.claude/skills/xdev/bin/install.sh all
+# Codex CLI (installs both custom prompts and skills — see below for invocation)
+bash ~/.claude/skills/xdev/bin/install.sh codex
+
+# Multi-select: pass any combination (these are equivalent to `all` minus what you skip)
+bash ~/.claude/skills/xdev/bin/install.sh claude codex
+bash ~/.claude/skills/xdev/bin/install.sh windsurf codex
+bash ~/.claude/skills/xdev/bin/install.sh all                # = claude windsurf codex
 
 # Preview without writing
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
 
-# Custom target directory (advanced)
+# Custom target directory (advanced; not supported with codex)
 bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
 ```
 
 Invoke with:
 
 ```
-Claude Code: /xdev:full-dev    /xdev:full-dev-design    /xdev:full-dev-impl    /xdev:bugfix    /xdev:iterate    /xdev:ask
-Windsurf:    /full-dev          /full-dev-design          /full-dev-impl          /bugfix          /iterate          /ask
+Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask
+Windsurf:        /full-dev               /full-dev-design               /full-dev-impl               /bugfix               /iterate               /ask
+Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask
+Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask
 ```
+
+> **Codex install layout.** Picking the `codex` target installs both interfaces side-by-side so you can pick whichever fits the moment:
+> - `~/.codex/prompts/xdev-*.md` — symlinks to `claude-code/*.md`. Invoke explicitly with `/prompts:xdev-<name>` (Codex's deprecated-but-still-supported custom prompt path; preserves `argument-hint`).
+> - `~/.agents/skills/xdev-*/SKILL.md` — generated wrappers (regenerated on each install, marked with `<!-- xdev-generated -->`). Invoke explicitly with `$xdev-<name>` or rely on Codex's implicit description matching. The wrapper delegates to the same `claude-code/*.md` file, so a single `git pull` updates both surfaces.
 
 **Updating xdev:**
 
@@ -472,7 +485,7 @@ cd ~/.claude/skills/xdev && git pull
 ```
 
 > Claude Code uses a directory symlink — `git pull` alone keeps it up to date; no need to re-run the install script.
-> Windsurf uses per-file symlinks. If a release adds or renames a workflow file, re-run `bash ~/.claude/skills/xdev/bin/install.sh windsurf` to refresh the symlinks.
+> Windsurf and Codex use per-file symlinks (and Codex additionally has generated `SKILL.md` wrappers). If a release adds, renames, or rewords the description of a workflow file, re-run the install script with the same agent target(s) to refresh links and regenerate skill wrappers.
 
 ### Skill dependency map
 
@@ -532,7 +545,7 @@ xdev uses two fundamentally different kinds of quality gates. Mixing them up is 
 
 - **Adjudicator**: an LLM or a human
 - **Signal**: semantic evaluation — two runs on the same input may differ slightly
-- **Examples**: `health ≥ 7/10`, `review` with no unresolved HIGH issues, `design-review` visual compliance, `plan-*-review` HIGH/MEDIUM count
+- **Examples**: `health ≥ 7/10`, `review` with no unresolved HIGH issues, `design-review` visual compliance, `plan-*-review` HIGH/MEDIUM count, Light Impact Gate escalation / unknowns analysis
 - **Rule**: rubrics and scores are acceptable **but the evaluation dimensions must be enumerated** (no opaque "overall good"). Each dimension passes independently — never average dimensions into a single comprehensive score.
 
 ### What not to do

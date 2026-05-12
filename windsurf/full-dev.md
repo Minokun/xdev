@@ -456,6 +456,7 @@ ls src/<planned-dir>/           # 确认关键路径存在
 - **Red-Green 配对** — 每个功能拆为 test + impl 两个任务，共享 NNN 编号前缀
 - **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
 - **风险分级** — 每个任务必填 `risk` + `risk_reason`（L0/L1/L2/L3），驱动阶段 4 的 review 深度；不确定选高一级，无明显信号默认 L2
+- **Impact Gate 指针** — 任务级 Impact Gate 字段遵循 `full-dev-design.md` 阶段 3；阶段 4 执行边界写入 `full-dev-impl.md` task packet 的 `Impact boundary`。本文件不重复模板。
 
 ### 任务格式
 
@@ -628,7 +629,7 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 
 > **状态更新：** 阶段开始时，更新状态文件「当前阶段」为 `4（TDD 实现循环）`。
 
-> **阶段 4 详细规则请遵循 `full-dev-impl.md` 阶段 4。** 该文件是唯一权威，包含风险分级、路径预检、窄执行器 task packet、派发策略（小批次快路径 + 冲突矩阵）、共享测试文件契约、NEEDS_RECLASSIFY 通道、主线程可见性（heartbeat / possibly stuck）、L1 采样、有界 review 循环、误报 schema、L3 独立审计、Graphify 正交声明。本文件不重复上述规则。
+> **阶段 4 详细规则请遵循 `full-dev-impl.md` 阶段 4。** 该文件是唯一权威，包含风险分级、路径预检、窄执行器 task packet、Impact boundary、批次级 After Diff Gate、派发策略（小批次快路径 + 冲突矩阵）、共享测试文件契约、NEEDS_RECLASSIFY 通道、主线程可见性（heartbeat / possibly stuck）、L1 采样、有界 review 循环、误报 schema、L3 独立审计、Graphify 正交声明。本文件不重复上述规则。
 
 > 推荐联调读法：先读本阶段下方的 Gatekeeper 偏差检测节（`claude-code/full-dev.md` 是其唯一权威），再跳到 `full-dev-impl.md` 读阶段 4 的其他子节。
 

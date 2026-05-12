@@ -292,6 +292,7 @@ ls src/<planned-dir>/           # 确认关键路径存在
 - **Red-Green 配对** — 每个功能拆为 test + impl 两个任务，共享 NNN 编号前缀
 - **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
 - **风险分级** — 每个任务必填 `risk` + `risk_reason`，驱动实现阶段的 review 深度（详见 `full-dev-impl.md` 阶段 4）
+- **Impact Gate** — L2/L3 任务必须带影响面预检；L2 用简化版，L3 用完整模板，结果会进入实现阶段 task packet 的 `Impact boundary`
 
 ### 任务格式
 
@@ -317,6 +318,10 @@ Then 返回 200 状态码和有效的 JWT token
 **预期：** FAIL（测试先于实现，应失败）
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
+**Impact Gate:** L2 简化版
+- Direct callers: <file:line or none found>
+- Risk triggers: Public API / Auth
+- Escalation: full-dev L2, add devex-review if public contract changes
 **依赖：** 无
 
 ---
@@ -330,6 +335,10 @@ Then 返回 200 状态码和有效的 JWT token
 **预期：** PASS
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
+**Impact Gate:** L2 简化版
+- Direct callers: <file:line or none found>
+- Risk triggers: Public API / Auth
+- Escalation: full-dev L2, add devex-review if public contract changes
 **依赖：** task-001-login-test
 ```
 
@@ -343,6 +352,26 @@ Then 返回 200 状态码和有效的 JWT token
 | L3 | 金融/数学、安全、auth、权限、持久化、迁移、并发、部署基础设施 |
 
 > 不确定时**选高一级**。无明显信号时默认 L2，并在 `risk_reason` 标记 `inferred default`。
+
+**Impact Gate 强度：**
+
+| Level | Impact Gate 要求 |
+|---|---|
+| L0 | 不做；文档 / 注释 / 纯配置且不改公共行为 |
+| L1 | 默认不做；如修改共享文件，升级为 L2 简化版 |
+| L2 | 简化版：Direct callers + Risk triggers + Escalation |
+| L3 | 完整版：Target + Direct callers + Likely affected + Risk triggers + Escalation + Suggested validation + Unknowns |
+
+Risk triggers 关键词清单必须内嵌在计划生成上下文中，不能只引用设计文档。扫描只限候选修改文件、锚点命中邻域和后续 diff，禁止全仓关键词扫描。
+
+| 类别 | 关键词 |
+|------|--------|
+| Public API / CLI / SDK | `api/`, `cli/`, `sdk/`, `endpoint`, `route`, `router`, `openapi`, `swagger`, `@command`, `argparse`, `click.command` |
+| Auth / permission | `token`, `session`, `permission`, `rbac`, `oauth`, `jwt`, `auth`, `login`, `signin`, `secret`, `apikey`, `api_key` |
+| Payment / financial | `price`, `amount`, `charge`, `invoice`, `stripe`, `paypal`, `refund`, `subtotal`, `currency`, `billing` |
+| Database schema | `migration`, `schema`, `alembic`, `prisma`, `drizzle`, `CREATE TABLE`, `ALTER TABLE`, `models.py`, `schema.sql` |
+| Installer / release / workflow | `install.sh`, `Dockerfile`, `pyproject.toml`, `package.json`, `release`, `CHANGELOG`, `.github/workflows`, `xdev:`, `/full-dev`, `/iterate` |
+| Cross-module | 锚点命中跨 ≥ 2 个顶层目录 |
 
 ### 依赖规则
 
@@ -372,7 +401,8 @@ Subagent C — 任务完整性与 BDD 质量检查
   目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令、**risk + risk_reason**
         ② BDD 质量：Given 必须有具体输入值，Then 必须有可断言的输出（状态码/字段/数值），禁止模糊表述（如"系统正常"/"成功"）
         ③ 风险字段校验：`risk` ∈ {L0, L1, L2, L3}；`risk_reason` 非空；缺任一字段视为 HIGH 必须修复
-  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表 + 风险字段缺失/非法的任务列表
+        ④ Impact Gate 校验：L2 必须有简化版，L3 必须有完整版，缺失视为 HIGH 必须修复
+  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表 + 风险字段缺失/非法的任务列表 + Impact Gate 缺失/强度错误列表
 ```
 
 **汇总规则（所有 subagent 完成后）：**
