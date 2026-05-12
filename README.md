@@ -14,7 +14,26 @@ English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
 
 ## Quick Start
 
-Just describe what you need — xdev classifies the complexity, picks the right path, executes, verifies, and ships.
+### 1. Install (one minute)
+
+Clone xdev once, then pick your agent target(s) — multi-select supported:
+
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
+
+# Pick one — or pass several at once
+bash ~/.claude/skills/xdev/bin/install.sh claude         # Claude Code
+bash ~/.claude/skills/xdev/bin/install.sh windsurf       # Windsurf
+bash ~/.claude/skills/xdev/bin/install.sh codex          # Codex CLI (prompts + skills)
+bash ~/.claude/skills/xdev/bin/install.sh claude codex   # multi-select
+bash ~/.claude/skills/xdev/bin/install.sh all            # claude + windsurf + codex
+```
+
+That's enough to use `/iterate` and `/ask` (rg mode) immediately. Heavier commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills — see [Installation](#installation) for the per-tier setup. xdev **degrades gracefully** when optional skills are missing.
+
+### 2. Just describe what you need
+
+xdev classifies the complexity, picks the right path, executes, verifies, and ships.
 
 ```
 # Found a bug?
@@ -30,6 +49,8 @@ Just describe what you need — xdev classifies the complexity, picks the right 
 /xdev:ask  How does the auth flow work?
 /xdev:ask  Audit this project — what risks should I worry about?
 ```
+
+> Examples above use the Claude Code prefix. On Windsurf drop the `xdev:` prefix (`/full-dev …`); on Codex use `/prompts:xdev-full-dev …` or `$xdev-full-dev …`.
 
 > xdev auto-assesses severity → selects the right workflow → executes → verifies → ships. No hand-holding required.
 

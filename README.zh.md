@@ -14,7 +14,26 @@
 
 ## 快速上手
 
-告诉 xdev 你要做什么——它自动判断复杂度、选路径、执行、验证、发布，不需要手把手引导。
+### 1. 安装（一分钟）
+
+克隆 xdev，按你用的 agent 选一个或多个目标（支持多选）：
+
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
+
+# 任选其一，也可一次装多个
+bash ~/.claude/skills/xdev/bin/install.sh claude         # Claude Code
+bash ~/.claude/skills/xdev/bin/install.sh windsurf       # Windsurf
+bash ~/.claude/skills/xdev/bin/install.sh codex          # Codex CLI（prompts + skills 一起装）
+bash ~/.claude/skills/xdev/bin/install.sh claude codex   # 多选
+bash ~/.claude/skills/xdev/bin/install.sh all            # claude + windsurf + codex
+```
+
+装完即可使用 `/iterate` 和 `/ask`（rg 模式）。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 体检）需要额外 skill，见下方 [安装](#安装) 章节按需补装。缺 skill 时 xdev **优雅降级**到可运行子集，不会崩。
+
+### 2. 直接描述你要做什么
+
+xdev 自动判断复杂度、选路径、执行、验证、发布，不需要手把手引导。
 
 ```
 # 发现了 bug？
@@ -30,6 +49,8 @@
 /xdev:ask  这个项目的鉴权流程怎么走的？
 /xdev:ask  帮我体检一下，有哪些隐患？
 ```
+
+> 上面用的是 Claude Code 前缀。Windsurf 去掉 `xdev:` 前缀（`/full-dev …`）；Codex 用 `/prompts:xdev-full-dev …` 或 `$xdev-full-dev …`。
 
 > xdev 自动评估严重程度 → 选择对应工作流 → 执行 → 验证 → 发布。
 
