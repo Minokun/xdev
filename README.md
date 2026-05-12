@@ -293,7 +293,7 @@ Per-workflow defaults:
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-~/.claude/skills/xdev/bin/install.sh claude    # or: windsurf / windsurf --project
+~/.claude/skills/xdev/bin/install.sh claude    # or: windsurf / codex / "claude codex" / "all"
 ```
 
 Done. `/iterate` and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash.

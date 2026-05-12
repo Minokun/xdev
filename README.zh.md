@@ -293,7 +293,7 @@ xdev **不需要单独的"了解项目"命令**。每个工作流启动时会根
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-~/.claude/skills/xdev/bin/install.sh claude    # 或：windsurf / windsurf --project
+~/.claude/skills/xdev/bin/install.sh claude    # 或：windsurf / codex / "claude codex" / "all"
 ```
 
 完事。`/iterate` 和 `/ask`（rg 模式）已经能用。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 的体检模式）需要额外 skill，但缺 skill 时 xdev **优雅降级**到能运行的子集，不会崩。
