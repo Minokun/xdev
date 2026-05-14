@@ -19,7 +19,7 @@ argument-hint: <补充说明或留空>
 - 在阶段 4 任意**纯文本回复**、阶段总结、"下一步..." 说明或 `end_turn` 之前，主线程必须检查 TaskList / TaskUpdate 状态与 `_STATE_FILE` 的 `## stage 4 data`：若存在 `pending` / `in_progress` 任务、`next_action` 仍指向 task/batch/retry/review/audit，或本批次还有未完成任务，**禁止 text-only end_turn**；必须 tail-call 一个会推进流程的工具调用（例如读取目标文件、运行 focused test、派发 subagent、编辑状态文件或执行下一任务）。
 - 禁止模式：`TaskUpdate(status="in_progress", description="...下一步继续 X...")` → 纯文本总结 → `end_turn`。`TaskUpdate` 不是完成边界；更新后必须立即执行 description / `next_action` 指向的下一步，除非同时命中本文明确 🔴 暂停条件。
 - 批次中途只完成一部分任务时，先把已完成任务写入 `_STATE_FILE.stage 4 data.task_state`，并把 `next_action` 改成**精确的剩余 task / focused command**；该状态落盘仍是中间步骤，不允许作为停轮理由。
-- 批次完成、focused tests 通过、review/audit 通过、commit 成功、或到达 "implementation checkpoint" 都不是终止态。禁止以 "I’m at the next implementation checkpoint now" / "到下一个检查点" / "下一批继续" 等 checkpoint 话术结束当前轮；必须先刷新 `_STATE_FILE` 的 `task_state`、`receipt_log`、`mainline_checkpoints`、`next_action`，然后立即执行下一批/下一 task 的第一个工具调用。
+- 批次完成、focused tests 通过、review/audit 通过、commit 成功、或到达 "implementation checkpoint" 都不是终止态。禁止以 "I’m at the next implementation checkpoint now" / "到下一个检查点" / "下一批继续" 等 checkpoint 话术结束当前轮；必须先刷新 `_STATE_FILE` 的 `task_state`、`receipt_log`、`mainline_checkpoints`、`next_action`，然后立即执行下一批/下一 task 的第一个工具调用，除非同时命中本文明确 🔴 暂停条件。
 - 若上下文即将压缩，最后一个可控动作也必须是写入精确 `next_action` 后继续发起下一步工具调用；自动压缩恢复后的第一动作继续遵循 4.1.1 的恢复规则。
 
 **HUD：** 每阶段开始输出 `📍 [N/5] 阶段名`
@@ -242,7 +242,7 @@ mainline_checkpoints: []
 7. 所有状态写入都由 controller merge 完成：worker 只返回 receipt，不能直接编辑 `stage 4 data`；`next_action` 是恢复时的单一真相。
 8. 收到 receipt 后先校验 `ATTEMPT_ID` 是否仍是 active attempt；迟到 receipt 只写 `receipt_log` diagnostics，不覆盖当前 `task_state`。
 9. 至少在 subagent 返回 `NEEDS_RECLASSIFY`、策略预算耗尽、当前 batch 剩余任务全部 blocked / escalation、Gatekeeper 报 `DEVIATION`、验证证据不满足通过条件、或计划与代码现实冲突时暂停并重新对齐用户目标。
-10. **批次 checkpoint 后续航规则：** 每个批次完成 focused tests / review / commit 后，主线程必须在同一轮先完成状态落盘，再立即 tail-call 下一批或下一阶段的首个工具调用；不得把 checkpoint、commit sha、测试通过摘要、或“下一步 task-XXX”作为最终回复。
+10. **批次 checkpoint 后续航规则：** 每个批次完成 focused tests / review / commit 后，主线程必须在同一轮先完成状态落盘，再立即 tail-call 下一批或下一阶段的首个工具调用；不得把 checkpoint、commit sha、测试通过摘要、或“下一步 task-XXX”作为最终回复。仅当同时命中本文明确 🔴 暂停条件时才允许停轮。
 11. **主线程上下文预算（防 auto-compact 动量丢失）：** 在**单个批次处理过程中**，主线程不得在自己上下文里 Read / Grep **业务源码**（不计 CLAUDE.md、设计文档、实现计划、状态文件、Handoff Summary、task packet 模板、Graphify 输出）超过 3 次；超过即说明 task packet 颗粒度过大，必须重新拆分并派发 subagent 执行，不要自己扛。每次 auto-compact 恢复后的**第一动作**必须是：读状态文件顶部 `## Handoff Summary` 和 `## stage 4 data` 的 `next_action` → 立即派发下一批 task packet（或恢复 `mainline_checkpoints[-1].next_batch`），**不得先回复进度总结、不得重新扫描项目、不得请示用户**；除非命中本文明确 🔴 暂停条件。
 
 subagent / teamagent 职责边界：
