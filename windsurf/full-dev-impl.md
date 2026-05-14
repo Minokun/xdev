@@ -24,10 +24,11 @@ description: 完整开发-实现阶段 — TDD 执行 + health + QA + ship + lea
 - 只有全流程终止态达成（阶段 7 发布完成 → 阶段 8 触发条件已判定，触发则跑完 learn、未触发则显式跳过 → 清理状态文件 + 实施 worktree），或命中本文明确 🔴 暂停条件，才允许最终停轮。
 
 **停轮前自检（防 text-only end_turn）：**
-- 在阶段 4 任意**纯文本回复**、阶段总结、"下一步..." 说明或 `end_turn` 之前，主线程必须检查 TaskList / TaskUpdate 状态与 `_STATE_FILE` 的 `## stage 4 data`：若存在 `pending` / `in_progress` 任务、`next_action` 仍指向 task/batch/retry/review/audit，或本批次还有未完成任务，**禁止 text-only end_turn**；必须 tail-call 一个会推进流程的工具调用（例如读取目标文件、运行 focused test、派发 subagent、编辑状态文件或执行下一任务）。
+- 在阶段 4-8 任意**纯文本回复**、阶段总结、"下一步..." 说明或 `end_turn` 之前，主线程必须检查 TaskList / TaskUpdate 状态、后台 shell / Bash task 状态与 `_STATE_FILE` 的 `## stage 4 data`：若存在 `pending` / `in_progress` 任务、`next_action` 仍指向 task/batch/retry/review/audit/health/qa/ship/learn，或本批次/本阶段还有未完成任务，**禁止 text-only end_turn**；必须 tail-call 一个会推进流程的工具调用（例如读取目标文件、运行 focused test、轮询后台测试、派发 subagent、编辑状态文件、处理 health/qa 结果或执行下一任务）。
 - 禁止模式：`TaskUpdate(status="in_progress", description="...下一步继续 X...")` → 纯文本总结 → `end_turn`。`TaskUpdate` 不是完成边界；更新后必须立即执行 description / `next_action` 指向的下一步，除非同时命中本文明确 🔴 暂停条件。
 - 批次中途只完成一部分任务时，先把已完成任务写入 `_STATE_FILE.stage 4 data.task_state`，并把 `next_action` 改成**精确的剩余 task / focused command**；该状态落盘仍是中间步骤，不允许作为停轮理由。
 - 批次完成、focused tests 通过、review/audit 通过、commit 成功、或到达 "implementation checkpoint" 都不是终止态。禁止以 "I’m at the next implementation checkpoint now" / "到下一个检查点" / "下一批继续" 等 checkpoint 话术结束当前轮；必须先刷新 `_STATE_FILE` 的 `task_state`、`receipt_log`、`mainline_checkpoints`、`next_action`，然后立即执行下一批/下一 task 的第一个工具调用，除非同时命中本文明确 🔴 暂停条件。
+- 后台 shell / Bash task 是未完成工作。收到 `backgroundTaskId`、"Running in the background"、"1 shell still running" 或命令 timeout 后自动后台化时，禁止回复“完成后会继续处理结果”并停轮；必须持续轮询后台输出直到进程终止，然后按结果矩阵处理 PASS / FIX_REQUIRED / BASELINE_DEBT / BLOCKED。
 - 若上下文即将压缩，最后一个可控动作也必须是写入精确 `next_action` 后继续发起下一步工具调用；自动压缩恢复后的第一动作继续遵循 4.1.1 的恢复规则。
 
 ## Intent Guard（全流程生效，完整协议见 claude-code/full-dev.md）
@@ -665,6 +666,8 @@ Decision:
 ## 阶段 5 + 6：质量检查 & QA（并行执行）
 
 > **状态更新：** 如存在状态文件，更新「完成阶段」追加 `4`，「当前阶段」改为 `5+6（质量检查 & QA）`。
+
+**阶段 5/6 续航硬约束：** 完整测试、health、qa、review、design-review、devex-review 或任何 Bash 命令一旦进入后台，主线程必须轮询到终态并分类处理；不得以“正在后台运行，完成后会继续处理结果”作为最终回复。若结果 PASS，立即进入阶段 7；若失败，按结果矩阵修复或标记 BASELINE_DEBT / BLOCKED。
 
 两个 skill 互不依赖，并行调用：
 
