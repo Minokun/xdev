@@ -23,6 +23,12 @@ description: 完整开发-实现阶段 — TDD 执行 + health + QA + ship + lea
 - 用户询问"完成了吗 / 为什么停 / 进度如何 / 还剩什么"等**纯状态问题**时，先用 1-2 句话回答状态，然后**立即继续执行剩余队列**；此条优先于 Intent Guard 的"疑问句先澄清"通用兜底，不得把状态问答当作流程终点。仅当问题带有 [调整] / [回退] / [新需求] 信号时才回到 Intent Guard 正常分类。
 - 只有全流程终止态达成（阶段 7 发布完成 → 阶段 8 触发条件已判定，触发则跑完 learn、未触发则显式跳过 → 清理状态文件 + 实施 worktree），或命中本文明确 🔴 暂停条件，才允许最终停轮。
 
+**停轮前自检（防 text-only end_turn）：**
+- 在阶段 4 任意**纯文本回复**、阶段总结、"下一步..." 说明或 `end_turn` 之前，主线程必须检查 TaskList / TaskUpdate 状态与 `_STATE_FILE` 的 `## stage 4 data`：若存在 `pending` / `in_progress` 任务、`next_action` 仍指向 task/batch/retry/review/audit，或本批次还有未完成任务，**禁止 text-only end_turn**；必须 tail-call 一个会推进流程的工具调用（例如读取目标文件、运行 focused test、派发 subagent、编辑状态文件或执行下一任务）。
+- 禁止模式：`TaskUpdate(status="in_progress", description="...下一步继续 X...")` → 纯文本总结 → `end_turn`。`TaskUpdate` 不是完成边界；更新后必须立即执行 description / `next_action` 指向的下一步，除非同时命中本文明确 🔴 暂停条件。
+- 批次中途只完成一部分任务时，先把已完成任务写入 `_STATE_FILE.stage 4 data.task_state`，并把 `next_action` 改成**精确的剩余 task / focused command**；该状态落盘仍是中间步骤，不允许作为停轮理由。
+- 若上下文即将压缩，最后一个可控动作也必须是写入精确 `next_action` 后继续发起下一步工具调用；自动压缩恢复后的第一动作继续遵循 4.1.1 的恢复规则。
+
 ## Intent Guard（全流程生效，完整协议见 claude-code/full-dev.md）
 
 - 进入 🔴 门禁前必须判断最近一条用户消息意图

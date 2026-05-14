@@ -4,6 +4,13 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [Unreleased] - 2026-05-14
+
+### Fixed
+
+- Hardened `full-dev-impl` against text-only mid-batch stops. Stage 4 now has a required pre-end-turn self-check: if TaskList / TaskUpdate or `stage 4 data.next_action` still points at unfinished work, the mainline must tail-call the next tool instead of ending with a progress summary such as "下一步继续 task-007".
+- Required partial-batch progress to be mirrored into `_STATE_FILE.stage 4 data.task_state` and a precise remaining `next_action`, so recovery and auto-compact do not lose the exact next task.
+
 ## [v2.0.4] - 2026-05-11
 
 ### Added

@@ -9,6 +9,33 @@
 
 ---
 
+## [Unreleased] - 2026-05-14
+
+### Fixed — Stage 4 text-only 停轮漏洞
+
+**改动位置：**
+- `claude-code/full-dev-impl.md` / `windsurf/full-dev-impl.md` — 自动完成不变量下新增「停轮前自检」
+- `CHANGELOG.md` — 用户向 release notes
+
+**事故证据：**
+- Claude Code stock-analysis 会话 `25340085-b875-4816-8038-1ae791d84641` 在 2026-05-14 06:33:35 把 TaskUpdate `11` 保持为 `in_progress`，描述写明“下一步继续 task-007 drawdown/cooldown”。
+- 2026-05-14 06:34:04 主线程直接发出纯文本总结并 `end_turn`：`已继续 batch-2... 下一步继续 task-007...`。
+- 任务系统仍显示 `status: in_progress`，状态文件也仍处于阶段 4；因此这不是完成态、不是工具错误、不是 subagent stuck，而是主线程把 focused checks 通过误当成了可停轮边界。
+
+**What landed：**
+1. **停轮前自检**：阶段 4 任意纯文本回复、阶段总结、"下一步..." 说明或 `end_turn` 前，必须检查 TaskList / TaskUpdate 与 `_STATE_FILE.stage 4 data`。
+2. **禁止 TaskUpdate → summary → end_turn**：`TaskUpdate(status="in_progress", "...下一步继续 X...")` 后必须立即执行 X 对应工具调用，除非命中明确 🔴 暂停。
+3. **批次内部分完成也落状态**：已完成子任务写入 `task_state`，`next_action` 改成精确剩余 task / focused command；状态落盘仍只是中间动作，不是停轮理由。
+4. **compact 前保持推进**：上下文即将压缩时，最后一个可控动作也必须写入精确 next_action 并继续发起下一步工具；恢复后仍按 controller 规则立即执行。
+
+**What was tried first（为什么 v2.0.2 不够）：**
+- v2.0.2 已禁止用 "Done/完成/阶段总结" 在未完成时收尾，也要求状态问题回答后继续；但真实失败文本没有使用 "完成" 作为终止语，而是“已继续...下一步继续...”。这绕开了词面规则。
+- 原规则强调 batch 边界和 auto-compact 恢复，却没有把 Claude Code 的 TaskUpdate / TaskList 工具状态纳入停轮判定。实际停轮发生在 `TaskUpdate(in_progress)` 之后，因此必须把任务工具状态变成 pre-end-turn gate。
+
+**Rationale：** xdev 的执行目标是 controller 持续推进到终止态。只靠自然语言“不应停止”太软；必须把“是否允许停轮”改成可机械检查的状态门：TaskList / TaskUpdate / `_STATE_FILE.next_action` 任一显示仍有工作，就不能 text-only end_turn。
+
+---
+
 ## [v2.0.4] - 2026-05-11
 
 ### Added — Codex CLI 接入（第三个安装目标）
