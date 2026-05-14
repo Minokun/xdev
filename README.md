@@ -54,6 +54,22 @@ xdev classifies the complexity, picks the right path, executes, verifies, and sh
 
 > xdev auto-assesses severity → selects the right workflow → executes → verifies → ships. No hand-holding required.
 
+### Optional: pair a strong main model with lightweight subagents
+
+xdev makes heavy use of Claude Code subagents for independent reviews and implementation batches. For the best cost/performance balance, run the main conversation on your strongest model and route subagents through Claude Code's `haiku` alias:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_MODEL": "gpt-5.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-5.4",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+  }
+}
+```
+
+With this setup, the main thread keeps the higher-reasoning model for planning, orchestration, and final judgment, while every spawned subagent defaults to `haiku` (mapped here to `gpt-5.4`). This is especially effective in xdev because subagents handle many bounded, parallel tasks; sending those to the lighter model can substantially reduce token spend while preserving the stronger model for the decisions that matter most.
+
 ---
 
 ## Why xdev?

@@ -54,6 +54,22 @@ xdev 自动判断复杂度、选路径、执行、验证、发布，不需要手
 
 > xdev 自动评估严重程度 → 选择对应工作流 → 执行 → 验证 → 发布。
 
+### 可选：主模型 + 轻量子代理模型搭配
+
+xdev 会大量使用 Claude Code subagent 来并行执行独立审查和实现批次。为了获得更好的成本 / 效果平衡，推荐主对话使用最强模型，子代理统一走 Claude Code 的 `haiku` 别名：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_MODEL": "gpt-5.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-5.4",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+  }
+}
+```
+
+这样配置后，主线程继续使用更强推理模型负责规划、编排和最终判断；所有新派发的 subagent 默认使用 `haiku`，并由这里的 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 映射到 `gpt-5.4`。这很适合 xdev：大量子代理任务本身边界清晰、可并行、上下文较窄，把它们交给轻量模型可以大幅减少 token 消耗，同时把最强模型留给真正需要判断力的环节。
+
 ---
 
 ## 为什么用 xdev？

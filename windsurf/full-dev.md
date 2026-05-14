@@ -457,6 +457,7 @@ ls src/<planned-dir>/           # 确认关键路径存在
 - **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
 - **风险分级** — 每个任务必填 `risk` + `risk_reason`（L0/L1/L2/L3），驱动阶段 4 的 review 深度；不确定选高一级，无明显信号默认 L2
 - **Impact Gate 指针** — 任务级 Impact Gate 字段遵循 `full-dev-design.md` 阶段 3；阶段 4 执行边界写入 `full-dev-impl.md` task packet 的 `Impact boundary`。本文件不重复模板。
+- **Controller-first 指针** — 阶段 3 产出的任务必须能直接转成 controller packet，显式声明 `CWD`、`ALLOWED_FILES`、`SUCCESS_CHECK`、`DO_NOT_DO`、`IF_BLOCKED`；阶段 4 的 packet / receipt 细则只在 `full-dev-impl.md` 维护
 
 ### 任务格式
 
@@ -478,7 +479,13 @@ When 提交正确的用户名和密码
 Then 返回 200 状态码和有效的 JWT token
 
 **涉及文件：** src/auth/login.test.ts
+**CWD：** /abs/path/to/repo/src/auth
+**ALLOWED_FILES：**
+- /abs/path/to/repo/src/auth/login.test.ts
 **验证命令：** npm test src/auth/login.test.ts
+**SUCCESS_CHECK：**
+- cwd: /abs/path/to/repo/src/auth
+- cmd: npm test src/auth/login.test.ts
 **预期：** FAIL（测试先于实现，应失败）
 **通过条件：**
 - 验证命令：`npm test src/auth/login.test.ts`
@@ -487,6 +494,12 @@ Then 返回 200 状态码和有效的 JWT token
 - 输出不得包含：`SyntaxError`（语法错误不算有效 FAIL）
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
+**DO_NOT_DO：**
+- 不要修改认证生产代码
+- 不要新增计划外公开接口
+**IF_BLOCKED：**
+- 返回结构化 receipt；不要自行扩展范围
+**verifier：** 非默认；若测试文件触及共享认证契约，则在 impl 完成后派 verifier
 **依赖：** 无
 
 ---
@@ -496,7 +509,14 @@ Then 返回 200 状态码和有效的 JWT token
 **BDD 场景：**（同 task-001-login-test）
 
 **涉及文件：** src/auth/login.ts
+**CWD：** /abs/path/to/repo/src/auth
+**ALLOWED_FILES：**
+- /abs/path/to/repo/src/auth/login.ts
+- /abs/path/to/repo/src/auth/login.test.ts
 **验证命令：** npm test src/auth/login.test.ts
+**SUCCESS_CHECK：**
+- cwd: /abs/path/to/repo/src/auth
+- cmd: npm test src/auth/login.test.ts
 **预期：** PASS
 **通过条件：**
 - 验证命令：`npm test src/auth/login.test.ts`
@@ -505,6 +525,12 @@ Then 返回 200 状态码和有效的 JWT token
 - 额外断言（可选）：`curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/login -d '{"user":"test","pass":"test"}'` 返回 `200` 或 `401`
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
+**DO_NOT_DO：**
+- 不要新增计划外路由
+- 不要修改无关 admin / billing 文件
+**IF_BLOCKED：**
+- 返回结构化 receipt，并附根因、下一步建议和禁止重复事项
+**verifier：** 若实现以 `done_with_concerns` 收尾，或跨模块改动认证契约，则必须派 verifier
 **依赖：** task-001-login-test
 ```
 
@@ -592,9 +618,11 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 
 ### Key Decisions
 - 以设计文件中的 Intent Contract 和计划文件中的任务拆分为准。
+- 阶段 4 的状态落盘只能由 controller merge 完成；worker 只通过 receipt 回报。
 
 ### Gotchas
 - 实现阶段不要自行扩展用户意图；发现计划缺口时先对齐设计文件和 Intent Contract。
+- `next_action` 是恢复时的单一真相；`mainline_checkpoints` 只作为批次 diagnostics 与 resume 辅助。
 
 ### Resume From
 - Next workflow: /full-dev 或 /full-dev-impl
@@ -603,7 +631,11 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 ## stage 4 data
 
 \`\`\`yaml
+controller_mode: pending_dispatch
+next_action: start first task packet
 tasks_in_flight: []
+task_state: {}
+receipt_log: []
 false_positives: []
 risk_inferred: []
 mainline_checkpoints: []
@@ -612,7 +644,7 @@ STATEOF
 mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 ```
 
-> `## stage 4 data` 下的 fenced YAML 块由阶段 4 在派发 subagent 时读写，设计阶段先把 schema 占好。
+> `## stage 4 data` 下的 fenced YAML 块由阶段 4 的 controller 读写，阶段 3 先把 schema 占好；worker 只通过 receipt 回报，不直接写状态文件。
 
 ---
 
@@ -629,13 +661,15 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 
 > **状态更新：** 阶段开始时，更新状态文件「当前阶段」为 `4（TDD 实现循环）`。
 
-> **阶段 4 详细规则请遵循 `full-dev-impl.md` 阶段 4。** 该文件是唯一权威，包含风险分级、路径预检、窄执行器 task packet、Impact boundary、批次级 After Diff Gate、派发策略（小批次快路径 + 冲突矩阵）、共享测试文件契约、NEEDS_RECLASSIFY 通道、主线程可见性（heartbeat / possibly stuck）、L1 采样、有界 review 循环、误报 schema、L3 独立审计、Graphify 正交声明。本文件不重复上述规则。
+> **Controller-first 指针：** 阶段 4 由主线程担任 controller，worker 只返回 receipt；恢复先看状态文件中的 `next_action`，不是回放对话；暂停条件收窄到设计阻塞、预算耗尽、整批 blocked / escalation 或用户决策门禁。
+>
+> **阶段 4 详细规则请遵循 `full-dev-impl.md` 阶段 4。** 该文件是唯一权威，包含风险分级、路径预检、窄执行器 task packet、receipt contract、旧 token 映射、controller-owned merge、Impact boundary、批次级 After Diff Gate、派发策略（小批次快路径 + 冲突矩阵）、共享测试文件契约、NEEDS_RECLASSIFY 通道、主线程可见性（heartbeat / possibly stuck）、L1 采样、有界 review 循环、误报 schema、L3 独立审计、Graphify 正交声明。本文件不重复上述规则。
 
 > 推荐联调读法：先读本阶段下方的 Gatekeeper 偏差检测节（`claude-code/full-dev.md` 是其唯一权威），再跳到 `full-dev-impl.md` 读阶段 4 的其他子节。
 
 ### 4.0 阶段 4 启动 checklist
 
-1. 读取状态文件 `## stage 4 data` 下的 fenced YAML 块；不存在则先追加 schema（`tasks_in_flight: []`、`false_positives: []`、`risk_inferred: []`）。
+1. 读取状态文件 `## stage 4 data` 下的 fenced YAML 块；不存在则先追加 schema（`controller_mode`、`next_action`、`tasks_in_flight`、`task_state`、`receipt_log`、`false_positives`、`risk_inferred`）。
 2. 按 `full-dev-impl.md` 阶段 4 执行风险校验、依赖分析、派发、并行 / 串行、review、L3 audit。
 3. 每个批次后回到下方的 Gatekeeper 偏差检测节跳转。
 4. 全部任务完成后走下方的 Gatekeeper 最终检查。

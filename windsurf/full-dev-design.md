@@ -304,6 +304,7 @@ ls src/<planned-dir>/           # 确认关键路径存在
 - **最小依赖** — 只标真实技术依赖，禁止为控制顺序而串联
 - **风险分级** — 每个任务必填 `risk` + `risk_reason`，驱动实现阶段的 review 深度（详见 `full-dev-impl.md` 阶段 4）
 - **Impact Gate** — L2/L3 任务必须带影响面预检；L2 用简化版，L3 用完整模板，结果会进入实现阶段 task packet 的 `Impact boundary`
+- **Controller packet readiness** — 每个任务必须能直接转成阶段 4 的 controller packet，显式声明 `CWD`、`ALLOWED_FILES`、`SUCCESS_CHECK`、`DO_NOT_DO`、`IF_BLOCKED`；如需独立验证，提前声明 verifier 触发条件
 
 ### 任务格式
 
@@ -325,7 +326,13 @@ When 提交正确的用户名和密码
 Then 返回 200 状态码和有效的 JWT token
 
 **涉及文件：** src/auth/login.test.ts
+**CWD：** /abs/path/to/repo/src/auth
+**ALLOWED_FILES：**
+- /abs/path/to/repo/src/auth/login.test.ts
 **验证命令：** npm test src/auth/login.test.ts
+**SUCCESS_CHECK：**
+- cwd: /abs/path/to/repo/src/auth
+- cmd: npm test src/auth/login.test.ts
 **预期：** FAIL（测试先于实现，应失败）
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
@@ -333,6 +340,12 @@ Then 返回 200 状态码和有效的 JWT token
 - Direct callers: <file:line or none found>
 - Risk triggers: Public API / Auth
 - Escalation: full-dev L2, add devex-review if public contract changes
+**DO_NOT_DO：**
+- 不要修改认证生产代码
+- 不要新增计划外公开接口
+**IF_BLOCKED：**
+- 返回结构化 receipt；不要自行扩展范围
+**verifier：** 非默认；若测试文件触及共享认证契约，则在 impl 完成后派 verifier
 **依赖：** 无
 
 ---
@@ -342,7 +355,14 @@ Then 返回 200 状态码和有效的 JWT token
 **BDD 场景：**（同 task-001-login-test）
 
 **涉及文件：** src/auth/login.ts
+**CWD：** /abs/path/to/repo/src/auth
+**ALLOWED_FILES：**
+- /abs/path/to/repo/src/auth/login.ts
+- /abs/path/to/repo/src/auth/login.test.ts
 **验证命令：** npm test src/auth/login.test.ts
+**SUCCESS_CHECK：**
+- cwd: /abs/path/to/repo/src/auth
+- cmd: npm test src/auth/login.test.ts
 **预期：** PASS
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
@@ -350,6 +370,12 @@ Then 返回 200 状态码和有效的 JWT token
 - Direct callers: <file:line or none found>
 - Risk triggers: Public API / Auth
 - Escalation: full-dev L2, add devex-review if public contract changes
+**DO_NOT_DO：**
+- 不要新增计划外路由
+- 不要修改无关 admin / billing 文件
+**IF_BLOCKED：**
+- 返回结构化 receipt，并附根因、下一步建议和禁止重复事项
+**verifier：** 若实现以 `done_with_concerns` 收尾，或跨模块改动认证契约，则必须派 verifier
 **依赖：** task-001-login-test
 ```
 
@@ -442,9 +468,11 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 
 ### Key Decisions
 - 以设计文件中的 Intent Contract 和计划文件中的任务拆分为准。
+- 实现阶段由 controller 写状态文件；worker 只通过 receipt 回报，不直接修改 `stage 4 data`。
 
 ### Gotchas
 - 实现阶段不要自行扩展用户意图；发现计划缺口时先对齐设计文件和 Intent Contract。
+- `next_action` 是恢复时的单一真相；`mainline_checkpoints` 只作为 diagnostics 与 resume 辅助。
 
 ### Resume From
 - Next workflow: /full-dev-impl
@@ -453,7 +481,11 @@ cat > /tmp/xdev-state-tmp.md << STATEOF
 ## stage 4 data
 
 \`\`\`yaml
+controller_mode: pending_dispatch
+next_action: start first task packet
 tasks_in_flight: []
+task_state: {}
+receipt_log: []
 false_positives: []
 risk_inferred: []
 mainline_checkpoints: []
@@ -462,7 +494,7 @@ STATEOF
 mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 ```
 
-> `## stage 4 data` 下的 fenced YAML 块由 `full-dev-impl.md` 阶段 4 在派发 subagent 时读写。设计阶段先把 schema 占好，避免 impl 阶段再追加导致竞争。
+> `## stage 4 data` 下的 fenced YAML 块由 `full-dev-impl.md` 阶段 4 的 controller 读写。设计阶段先把 schema 占好，避免 impl 阶段再追加导致竞争；worker 只通过 receipt 回报，不直接写状态文件。
 
 ---
 

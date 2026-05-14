@@ -207,29 +207,35 @@ fi
 ## stage 4 data
 
 ```yaml
+controller_mode: pending_dispatch
+next_action: start first task packet
 tasks_in_flight: []
+task_state: {}
+receipt_log: []
 false_positives: []
 risk_inferred: []
 mainline_checkpoints: []
 ```
 ````
 
-后续所有结构化数据（运行中任务、误报、风险推断、主线检查点）都写入该 YAML 块。**写盘节流：** 仅在 phase 转换、status 变更或批次结束时落盘；纯 `last_event_at` 更新留内存，最多 30 s 一次。原子写：临时文件 + `mv`，与主状态文件相同模式。
+后续所有结构化数据（运行中任务、controller 状态、回执 diagnostics、误报、风险推断、主线检查点）都写入该 YAML 块。`controller_mode`、`next_action`、`task_state`、`tasks_in_flight` 是 MVP 必填字段；`receipt_log`、`mainline_checkpoints` 保持 append-only diagnostics。**写盘节流：** 仅在 phase 转换、status 变更或批次结束时落盘；纯 `last_event_at` 更新留内存，最多 30 s 一次。原子写：临时文件 + `mv`，与主状态文件相同模式。
 
 #### 4.1.1 主线控制者（Mainline Controller）
 
-阶段 4 中，主线程默认担任总控和监工：保持干净上下文，只读设计文档、Intent Contract、实现计划、Handoff Summary、任务状态和 subagent 回执。除小批次快路径外，主线程不直接扩写需求、不临时重做方案、不把大段代码上下文塞进自己上下文。
+阶段 4 中，主线程默认担任总控和监工：保持干净上下文，只读设计文档、Intent Contract、实现计划、Handoff Summary、任务状态和 subagent 回执。除小批次快路径和控制面修复外，主线程不直接扩写需求、不临时重做方案、不把大段代码上下文塞进自己上下文。
 
 主线程职责：
 
 1. 将实现计划拆成最小可验收 task packet，并把 Intent Contract 的相关片段放入 packet。
 2. 根据风险分级、冲突矩阵和依赖关系决定串行 / 并行 / teamagent 派发。
-3. 跟踪 `tasks_in_flight`、subagent phase、测试证据、提交 sha 和阻塞点。
+3. 生成唯一 `attempt_id`，跟踪 `tasks_in_flight`、subagent phase、测试证据、提交 sha 和阻塞点。
 4. 每个批次结束后写入 `mainline_checkpoints`：`batch`、`tasks_done`、`evidence`、`intent_status`（`aligned` / `needs_review`）、`next_batch`。
 5. 同一时机刷新状态文件顶部的 `## Handoff Summary`：`Left To Do` 反映剩余批次/任务；`Gotchas` 追加本批次新增风险或回滚事件；`Resume From` 改为下一批次或下一阶段。`Accomplished` / `Key Decisions` 累积式更新。原子写（临时文件 + `mv`）。
 6. 中断恢复时，若 `mainline_checkpoints` 非空且最后一条有 `next_batch`，从该批次继续；若为空，则从实现计划首个未完成任务继续。
-7. 至少在 subagent 返回 `NEEDS_RECLASSIFY` / `BLOCKED`、Gatekeeper 报 `DEVIATION`、验证证据不满足通过条件、或计划与代码现实冲突时暂停并重新对齐用户目标。
-8. **主线程上下文预算（防 auto-compact 动量丢失）：** 在**单个批次处理过程中**，主线程不得在自己上下文里 Read / Grep **业务源码**（不计 CLAUDE.md、设计文档、实现计划、状态文件、Handoff Summary、task packet 模板、Graphify 输出）超过 3 次；超过即说明 task packet 颗粒度过大，必须重新拆分并派发 subagent 执行，不要自己扛。每次 auto-compact 恢复后的**第一动作**必须是：读状态文件顶部 `## Handoff Summary` → 立即派发下一批 task packet（或恢复 `mainline_checkpoints[-1].next_batch`），**不得先回复进度总结、不得重新扫描项目、不得请示用户**；除非命中本文明确 🔴 暂停条件。
+7. 所有状态写入都由 controller merge 完成：worker 只返回 receipt，不能直接编辑 `stage 4 data`；`next_action` 是恢复时的单一真相。
+8. 收到 receipt 后先校验 `ATTEMPT_ID` 是否仍是 active attempt；迟到 receipt 只写 `receipt_log` diagnostics，不覆盖当前 `task_state`。
+9. 至少在 subagent 返回 `NEEDS_RECLASSIFY`、策略预算耗尽、当前 batch 剩余任务全部 blocked / escalation、Gatekeeper 报 `DEVIATION`、验证证据不满足通过条件、或计划与代码现实冲突时暂停并重新对齐用户目标。
+10. **主线程上下文预算（防 auto-compact 动量丢失）：** 在**单个批次处理过程中**，主线程不得在自己上下文里 Read / Grep **业务源码**（不计 CLAUDE.md、设计文档、实现计划、状态文件、Handoff Summary、task packet 模板、Graphify 输出）超过 3 次；超过即说明 task packet 颗粒度过大，必须重新拆分并派发 subagent 执行，不要自己扛。每次 auto-compact 恢复后的**第一动作**必须是：读状态文件顶部 `## Handoff Summary` 和 `## stage 4 data` 的 `next_action` → 立即派发下一批 task packet（或恢复 `mainline_checkpoints[-1].next_batch`），**不得先回复进度总结、不得重新扫描项目、不得请示用户**；除非命中本文明确 🔴 暂停条件。
 
 subagent / teamagent 职责边界：
 
@@ -237,6 +243,30 @@ subagent / teamagent 职责边界：
 - teamagent 可用于一组文件互不冲突、目标相同的任务，但必须共享同一份主线程生成的 task packet 模板和 Intent Contract 摘要。
 - 所有 subagent 输出都必须回到主线程汇总；是否继续、降级、返工或暂停，由主线程决定。
 - 主线程发现 drift 时优先收敛：缩小任务、补测试、请求用户确认；不要让 subagent 继续扩大范围。
+- 主线程允许的写操作仅限控制面修复、状态落盘、极小型快路径 scaffold / 测试骨架初始化；不得把“顺手补完实现”变成常规路径。
+
+#### 4.1.2 Controller-owned state、旧 token 映射与失败分类
+
+迁移期间仍允许 worker 返回旧大写 token，但 controller 必须先做内部映射，再决定下一步；等两套 `full-dev-impl.md` 都迁移完成后，才允许 worker 默认返回新状态词汇。
+
+| 旧 token | controller 内部状态 |
+|---|---|
+| `DONE` | `done`；若有明确保留项则提升为 `done_with_concerns` |
+| `BLOCKED` | `failed_blocked` |
+| `NEEDS_REVIEW` | `done_with_concerns`，由 controller 决定是否派 verifier |
+| `NEEDS_RECLASSIFY` | `escalation_candidate` 或 `blocked_design` |
+
+统一失败分类：
+
+| failure_class | 含义 | 默认动作 |
+|---|---|---|
+| `retryable_tool` | 同策略可重试的工具失败 | 同 task 重派，必要时做最小控制面修正 |
+| `retryable_strategy` | 目标正确但实施策略错了 | 写入 `do_not_repeat`，换策略重派 |
+| `verification_failed` | 实现疑似存在但验证没通过 | 保持 task 未完成，重派修复 |
+| `blocked_external` | 凭证、环境、外部依赖缺失 | 标 blocked；若同批仍有其他任务则继续派发 |
+| `blocked_design` | 设计或范围信息不足 | 暂停并回到设计/用户决策门禁 |
+| `escalation_candidate` | 风险或预算超限 | 进入升级门禁 |
+| `noise_non_blocking` | hook/warning 等噪音 | 只记 diagnostics，不阻断流程 |
 
 ### 4.2 路径预检（subagent 派发前必跑）
 
@@ -315,44 +345,75 @@ implementation subagent 是**窄执行器**：
 
 **禁止：** 调 planning skill / 创建 `task_plan.md`、`progress.md`、`findings.md` / 重新扫描整个项目 / 编辑 allowlist 之外的文件 / 在 targeted 测试通过前跑全量测试 / 提交无关生成文件。
 
-**必须：** 只读 task packet / 派发前已校验路径 / 先写失败测试（除非任务显式非可测）/ 跑指定的 targeted 命令 / 跑指定的 related regression 命令 / 返回 `DONE` `BLOCKED` `NEEDS_REVIEW` `NEEDS_RECLASSIFY` 之一并附证据。
+**必须：** 只读 task packet / 派发前已校验路径 / 先写失败测试（除非任务显式非可测）/ 跑指定的 targeted 命令 / 跑指定的 related regression 命令 / 返回结构化 receipt。迁移期可继续用 `DONE` `BLOCKED` `NEEDS_REVIEW` `NEEDS_RECLASSIFY`，但必须带 `ATTEMPT_ID`、验证证据、根因和下一步建议。
 
 **Task packet 模板：**
 
 ```text
-Repository root: <absolute path>
-Working directory: <absolute path>
-Risk level: L1 | L2 | L3
-Task id: task-NNN
-Intent Contract excerpt:
-- Must Have / Must Not / Done Means relevant to this task
-Impact boundary:
+TASK: task-NNN
+ATTEMPT_ID: attempt-task-NNN-1
+GOAL: <one-sentence objective>
+CWD: <absolute path>
+ALLOWED_FILES:
+- <absolute path>
+SUCCESS_CHECK:
+- cwd: <absolute path>
+- cmd: <focused command>
+REGRESSION_CHECK:
+- cwd: <absolute path>
+- cmd: <related regression command>
+DO_NOT_DO:
+- 不得调用 planning skill
+- 不得创建 planning 文件
+- 不得编辑 ALLOWED_FILES 之外的文件
+- 不得新增违反 Must Not 的用户可见能力
+IF_BLOCKED:
+- 返回结构化 receipt；不要自行扩展范围
+IMPACT_BOUNDARY:
 - Direct callers: <from plan Impact Gate, or none found>
 - Risk triggers: <checked categories>
 - Allowed impact surface: <modules / workflows / docs / tests this task may touch>
 - Unknowns: <what the scan could not prove>
-Allowed files:
+ALLOWED_TESTS:
 - <absolute path>
-Tests allowed:
-- <absolute path>
-Reserved test functions: (无共享契约时整段省略)
-- <test_function_name>
-Targeted command:
-- <command>
-Related regression command:
-- <command>
-Graphify context (可选，read-only):
+VERIFIER_HINT:
+- <when verifier is required, optional if none>
+GRAPHIFY_CONTEXT:
 - <path to focused graphify query output, omit if none>
-不得调用 planning skill。
-不得创建 planning 文件。
-不得超出 Impact boundary；发现边界外影响面，停止并返回 NEEDS_RECLASSIFY，附 file:line 证据。
-不得编辑 allowed 之外的文件。
-不得新增违反 Must Not 的用户可见能力；如任务需要超出 Intent Contract，返回 NEEDS_RECLASSIFY。
-仅返回 status 和证据。
+RESERVED_TEST_FUNCTIONS: (无共享契约时整段省略)
+- <test_function_name>
+INTENT_CONTRACT_EXCERPT:
+- Must Have / Must Not / Done Means relevant to this task
 ```
 
 > Graphify context 只在主线程已有该任务对应的聚焦 `graphify query` 输出时附加；不在 executor 内部即兴生成。
+> `CWD` / `ALLOWED_FILES` 必须保留 4.2 的 path safeguard；当 cwd 已在 `<repo>/<X>`，路径不得再以 `<X>/` 开头。
 > Impact boundary 来自计划阶段的 Impact Gate。缺失时不得临时杜撰；L2/L3 任务缺失 Impact Gate 属于计划质量问题，先返回 `NEEDS_RECLASSIFY` 或回到计划修正。
+
+**Receipt contract：**
+
+```text
+STATUS: done | done_with_concerns | failed_retryable | failed_blocked | escalation_candidate
+LEGACY_STATUS: DONE | BLOCKED | NEEDS_REVIEW | NEEDS_RECLASSIFY   # 迁移期可选
+TASK: task-NNN
+ATTEMPT_ID: attempt-task-NNN-1
+GOAL: <same as packet>
+CHANGED_FILES:
+- <repo-relative path>
+VERIFICATION:
+- <cmd> -> PASS | FAIL
+FAILURE_CLASS: retryable_tool | retryable_strategy | verification_failed | blocked_external | blocked_design | escalation_candidate | none
+ROOT_CAUSE:
+- <one-line reason>
+NEXT_BEST_ACTION:
+- <redispatch / verifier / escalate suggestion>
+DO_NOT_REPEAT:
+- <strategy to avoid next attempt>
+UNKNOWNS:
+- <residual gaps, optional>
+```
+
+controller 只接受与当前 active attempt 匹配的 receipt；迟到 receipt 只进入 `receipt_log` diagnostics，不覆盖 `task_state`。
 
 ### 4.7 NEEDS_RECLASSIFY 处理（风险升级通道）
 
@@ -368,7 +429,7 @@ reason: <一行说明 + file:line 证据>
 1. 读取 reason，确认是否同意升级。
 2. 在计划中更新该任务的 `risk` 字段；变更追加到 `risk_inferred: []`（标记 `source: needs_reclassify`）。
 3. 按新风险重路由（L3 → 串行 + audit；L2 → 加 spec review）。
-4. 重发 task packet。
+4. 将当前 attempt 标记为 `escalation_candidate` 或 `blocked_design`，写入新的 `next_action` 后重发 task packet。
 
 subagent 不得擅自扩大范围继续做。
 
@@ -444,9 +505,9 @@ Task task-NNN (Lk) still running: last event at HH:MM, current phase: <test|impl
 5. log mtime 即 `last_event_at`
 
 **possibly stuck 触发动作（不可只报告）：**
-1. 自动尝试一次：kill 该 subagent，按原 packet 重新派发一次。
-2. 二次仍 `possibly stuck` → 🔴 停下，汇总最后一份 `tasks_in_flight` 快照，请用户决策（重试 / 放弃 / 降级到主线程）。
-3. 永远不要让 stuck subagent 在后台继续而主线程跑别的任务，先隔离再继续。
+1. 自动尝试一次：kill 该 subagent，将旧 attempt 标记为 `abandoned`，按原 packet 生成新 `ATTEMPT_ID` 重新派发一次。
+2. 二次仍 `possibly stuck` → 将旧 attempt 只写入 `receipt_log` diagnostics；若该 task 仍有预算则继续 redispatch，否则升级为 `escalation_candidate` 并暂停。
+3. 永远不要让 stuck subagent 在后台继续而主线程跑别的任务，先隔离旧 attempt 再继续。
 
 ### 4.10 Review 政策（按风险触发）
 
@@ -535,7 +596,7 @@ docs/state/audits/<slug>/audit-task-NNN.md
 - 换算法 / 数据结构 / 接口边界
 - commit message 标注：`[pivot] 放弃方向 X，转向方向 Y，理由：<依据>`
 
-换向后仍 FAIL → 标 `[TODO]` 跳过。
+换向后仍 FAIL → 标 `[TODO]` 跳过；状态层统一写成 `failed_blocked` 或 `escalation_candidate`，并把继续/跳过决策写入 `next_action`。
 
 **Red-Green 边界：**
 - impl `[TODO]` → 配对 test 标 `[TODO-blocked: impl-NNN]` 不执行
@@ -578,7 +639,7 @@ Decision:
 
 > 完整 Gatekeeper prompt 模板和 sidecar 格式见 `full-dev.md#Gatekeeper-批次间偏差检测`
 
-**门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`。
+**门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`；controller 状态层不得保留裸 `[TODO]`，必须映射为 `failed_blocked` 或 `escalation_candidate`。
 
 ### 4.17 Gatekeeper 最终检查（阶段 4 结束前，必跑）
 
