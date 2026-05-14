@@ -21,16 +21,19 @@
 - Claude Code stock-analysis 会话 `25340085-b875-4816-8038-1ae791d84641` 在 2026-05-14 06:33:35 把 TaskUpdate `11` 保持为 `in_progress`，描述写明“下一步继续 task-007 drawdown/cooldown”。
 - 2026-05-14 06:34:04 主线程直接发出纯文本总结并 `end_turn`：`已继续 batch-2... 下一步继续 task-007...`。
 - 任务系统仍显示 `status: in_progress`，状态文件也仍处于阶段 4；因此这不是完成态、不是工具错误、不是 subagent stuck，而是主线程把 focused checks 通过误当成了可停轮边界。
+- 第二次复现显示同类但不同表面：2026-05-14 09:19:51 batch-2 已 commit 且 23 个 focused tests 通过后，主线程以 `I’m at the next implementation checkpoint now.` 结束；状态文件仍停留在 `next_action: run batch-2...`，未写入 batch-2 完成与 task-009 next action。
 
 **What landed：**
 1. **停轮前自检**：阶段 4 任意纯文本回复、阶段总结、"下一步..." 说明或 `end_turn` 前，必须检查 TaskList / TaskUpdate 与 `_STATE_FILE.stage 4 data`。
 2. **禁止 TaskUpdate → summary → end_turn**：`TaskUpdate(status="in_progress", "...下一步继续 X...")` 后必须立即执行 X 对应工具调用，除非命中明确 🔴 暂停。
 3. **批次内部分完成也落状态**：已完成子任务写入 `task_state`，`next_action` 改成精确剩余 task / focused command；状态落盘仍只是中间动作，不是停轮理由。
 4. **compact 前保持推进**：上下文即将压缩时，最后一个可控动作也必须写入精确 next_action 并继续发起下一步工具；恢复后仍按 controller 规则立即执行。
+5. **checkpoint 不是边界**：focused tests / review / audit / commit 成功后必须先刷新 state，再 tail-call 下一批/下一 task；禁止用 checkpoint、commit sha、测试通过摘要作为最终回复。
 
 **What was tried first（为什么 v2.0.2 不够）：**
 - v2.0.2 已禁止用 "Done/完成/阶段总结" 在未完成时收尾，也要求状态问题回答后继续；但真实失败文本没有使用 "完成" 作为终止语，而是“已继续...下一步继续...”。这绕开了词面规则。
 - 原规则强调 batch 边界和 auto-compact 恢复，却没有把 Claude Code 的 TaskUpdate / TaskList 工具状态纳入停轮判定。实际停轮发生在 `TaskUpdate(in_progress)` 之后，因此必须把任务工具状态变成 pre-end-turn gate。
+- 第一轮补丁只写了 `TaskUpdate(in_progress)` 和“下一步继续 X”禁例；第二次复现说明 checkpoint/commit/test-pass 摘要也会被模型误当成自然停顿。因此新增更泛化的 batch checkpoint 后续航规则。
 
 **Rationale：** xdev 的执行目标是 controller 持续推进到终止态。只靠自然语言“不应停止”太软；必须把“是否允许停轮”改成可机械检查的状态门：TaskList / TaskUpdate / `_STATE_FILE.next_action` 任一显示仍有工作，就不能 text-only end_turn。
 

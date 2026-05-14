@@ -10,6 +10,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 
 - Hardened `full-dev-impl` against text-only mid-batch stops. Stage 4 now has a required pre-end-turn self-check: if TaskList / TaskUpdate or `stage 4 data.next_action` still points at unfinished work, the mainline must tail-call the next tool instead of ending with a progress summary such as "下一步继续 task-007".
 - Required partial-batch progress to be mirrored into `_STATE_FILE.stage 4 data.task_state` and a precise remaining `next_action`, so recovery and auto-compact do not lose the exact next task.
+- Tightened batch checkpoint handling: focused tests passing, review/audit passing, or a commit SHA is not a stop boundary. The mainline must update state, write the next precise action, and immediately start the next batch/task instead of ending at "the next implementation checkpoint".
 
 ## [v2.0.4] - 2026-05-11
 
