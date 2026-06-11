@@ -84,7 +84,7 @@ test -f graphify-out/cost.json
 # 信号 A — Graphify 官方检测（权威，但偶有漏报）
 graphify check-update . 2>&1
 #   空输出　　　　　→ 本信号判新鲜
-#   含 "semantic re-extraction is pending" → 语义变化（→ 3b）
+#   含 "Pending non-code changes" → 语义变化（→ 3b）
 #   其它非空　　　　 → 代码变化（→ 3a）
 
 # 信号 B — git HEAD 是否晚于图谱构建时间
