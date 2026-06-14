@@ -129,8 +129,7 @@ install_claude() {
     log "Claude Code workflows → $wf_target"
     run "mkdir -p \"$wf_target\""
     local wf_count=0
-    # shellcheck disable=SC2043  # single-element now; reserved for future path-agnostic workflows
-    for wf in stage5-6-qa.js; do
+    for wf in stage5-6-qa.js ask-investigate.js; do  # path-agnostic workflows (no hardcoded ROOT)
       [ -f "$wf_src/$wf" ] || continue
       run "ln -sfn \"$wf_src/$wf\" \"$wf_target/$wf\""
       wf_count=$((wf_count + 1))

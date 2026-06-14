@@ -251,6 +251,13 @@ graphify query '用户登录 认证流程' --graph graphify-out/graph.json
 
 目标：在预算内挖出 **5–10 条最有价值** 的潜在问题；每条带影响程度、证据、修复入口。不追求维度覆盖全，追求每条发现可行动。
 
+**执行方式（能力探测）：**
+
+- **Claude Code（支持 Dynamic Workflow）→** 主线程先按上方 Graphify 流程（步骤 1-3）判定图谱状态 + 按需刷新，然后触发 `ask-investigate` workflow：`Workflow({ name: "ask-investigate", args: { graphState: "fresh|stale|none" } })`。6 维并行 rg 扫描，各维度原始 grep 结果隔离不进主上下文，只回聚合后的 top 发现（按影响排序，最多 10 条 + 降级维度清单）。聚焦单维度时不必走 workflow，主线程直接扫该维。
+- **Codex CLI / 无 workflow 运行时 →** 按下方巡检清单 6 维串行扫描（原逻辑）。
+
+> 注：`ask-investigate` 由 `bin/install.sh claude` 全局 symlink 到 `~/.claude/workflows/`，所有项目可用。
+
 | 维度 | 典型扫描信号 | 需要 Graphify？ |
 |------|--------------|----------------|
 | 1. 安全热点 | `eval(` / 字符串拼 SQL / 明文 secret / `dangerouslySetInnerHTML` / 无 auth 校验的路由 | 否（`rg` 可打） |
