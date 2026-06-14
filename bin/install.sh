@@ -116,6 +116,27 @@ install_claude() {
 
   run "ln -s \"$src\" \"$target\""
   log "linked $target → $src"
+
+  # Link xdev's Claude-Code Dynamic Workflows globally (~/.claude/workflows/) so
+  # they're available in every project, not just this repo. full-dev.md calls them
+  # by `name`; global workflows are discovered in all projects (project-level wins
+  # on clash). ONLY link path-agnostic workflows (no hardcoded repo ROOT):
+  #   stage5-6-qa.js — reads args.skills, works in any project  →  linked globally
+  #   parity-check.js — hardcodes xdev ROOT (xdev-internal)     →  stays in repo
+  local wf_target="$HOME/.claude/workflows"
+  local wf_src="$XDEV_ROOT/.claude/workflows"
+  if [ -d "$wf_src" ]; then
+    log "Claude Code workflows → $wf_target"
+    run "mkdir -p \"$wf_target\""
+    local wf_count=0
+    # shellcheck disable=SC2043  # single-element now; reserved for future path-agnostic workflows
+    for wf in stage5-6-qa.js; do
+      [ -f "$wf_src/$wf" ] || continue
+      run "ln -sfn \"$wf_src/$wf\" \"$wf_target/$wf\""
+      wf_count=$((wf_count + 1))
+    done
+    log "workflows: linked $wf_count globally (all projects)"
+  fi
 }
 
 install_windsurf() {

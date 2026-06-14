@@ -854,6 +854,13 @@ Gatekeeper 最终检查使用与批次间相同的 subagent prompt 和处理规�
 | `design-review` | 条件（涉及 UI） |
 | `devex-review` | 条件（涉及 API / CLI / SDK / 开发者工作流） |
 
+**执行方式（能力探测）：**
+
+- **Claude Code（支持 Dynamic Workflow）→** 把上方触发的 skill 作为并行节点用 workflow 执行：`Workflow({ name: "stage5-6-qa", args: { skills: [...] } })`，`skills` 传触发的清单（`health` 必选 + 命中的条件 skill）。各 skill 的全文 findings 隔离在脚本变量、不进主上下文，只回聚合后的五态结果（`overall` / `perSkill` / `fixRequired`）。执行期间 `next_action` 指向 `poll stage 5+6 workflow`，workflow 节点视为「未完成工作」（见下方续航硬约束），禁止 text-only `end_turn`。聚合返回后按结果矩阵处理。
+- **Codex CLI / 无 workflow 运行时 →** 按下方「典型场景」的 Subagent A-F（或主线程单 skill）派发，逐个调用 skill 并汇总。
+
+> 注：`stage5-6-qa` 由 `bin/install.sh claude` 全局 symlink 到 `~/.claude/workflows/`，所有项目可用；项目级 `.claude/workflows/` 同名优先。
+
 **典型场景：**
 
 全量（涉及 UI + review 触发 + 安全敏感）：
@@ -899,6 +906,8 @@ Subagent D → 调用 skill: devex-review（涉及 API / CLI / SDK / 开发者�
 | BLOCKED | 无法区分失败是否由本次改动引入，或 2 轮后仍有本次改动相关 HIGH/CRITICAL | 暂停，请用户决策 |
 
 **门禁：** review 无未处理 [ASK]（触发时）+ cso 无本次改动引入的 HIGH（触发时）+ health 评分 >= 7/10 或明确 BASELINE_DEBT + 无本次改动引入的 CRITICAL/HIGH QA 问题（涉及 UI）+ 无本次改动引入的 HIGH 视觉问题（涉及 UI）+ devex-review 无本次改动引入的 HIGH 摩擦点（涉及开发者体验）。`DEGRADED` / `BASELINE_DEBT` 必须写入状态文件或最终汇总，包含：已跑命令、失败证据、为什么不属于本次改动、剩余手工验证项。
+
+**阶段 5/6 续航硬约束：** health、qa、review、cso、design-review、devex-review、任何后台 Bash 命令，以及 **workflow 节点**（Claude Code 端执行 `stage5-6-qa` 时），一旦进入后台/派发，主线程必须轮询到终态并分类处理；不得以「正在后台运行，完成后会继续处理结果」作为最终回复。若结果 PASS（或 workflow 返回 `gatePassed=true`），立即进入阶段 7；若失败，按结果矩阵修复或标记 BASELINE_DEBT / BLOCKED。
 
 ---
 
