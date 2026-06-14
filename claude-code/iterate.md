@@ -94,7 +94,7 @@ fi
 | 文件数量 | <= 5 个文件 |
 | 模块数量 | <= 2 个模块 |
 | 新依赖 | 不引入新依赖 |
-| API 契约 | 不改变公开 API |
+| API 契约 | 不改变公开 API（若改变则升级 full-dev，需 devex-review） |
 
 ### 0.2 风险覆盖（命中任一则无论行数/文件数均升级）
 
@@ -104,7 +104,7 @@ fi
 | 涉及认证/权限/安全 | → /project:xdev:full-dev |
 | 涉及数据库 schema 变更 | → /project:xdev:full-dev |
 | 涉及第三方 API 集成 | → /project:xdev:full-dev |
-| 影响已发布 API 的行为 | → /project:xdev:full-dev |
+| 影响已发布 API 的行为 | → /project:xdev:full-dev（需 devex-review） |
 | 新增页面 / 视图 / 路由 | → /project:xdev:full-dev（含视觉设计阶段） |
 | 新增组件且含 ≥ 2 个交互状态 | → /project:xdev:full-dev（含视觉设计阶段） |
 

@@ -646,20 +646,20 @@ Decision:
 
 ### 4.16 Gatekeeper 偏差检测
 
-每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`，触发 drift-check subagent。
+每完成一个批次后，若 `NEW_COMMITS >= 5` 且实质 `DIFF_LINES >= 200`（排除纯文档变更），触发 drift-check subagent。
 
 - sha 丢失兜底：兜底到 `git merge-base HEAD main`
 - `DEVIATION > 0` → 🔴 暂停，只允许修代码；改文档须降级回阶段 1
+- `OUT_OF_SCOPE` / `MISSING` → 写 sidecar，阶段 5+6 review 统一判定
 - subagent 失败 → 重试 1 次，再失败 WARN 降级不阻断
 
 > 完整 prompt 模板见 `claude-code/full-dev.md#Gatekeeper-批次间偏差检测`
 
-### 4.17 实现完成检查点 + Gatekeeper 最终检查
-- 所有计划中的任务被 controller 归并为 `done` / `done_with_concerns`，或显式记录为 `[TODO]`
-- 所有测试通过（后端 + 前端）
-- 每个功能点有对应测试
-- **Gatekeeper 最终 drift-check**（不受双阈值限制，无 impl 提交则跳过），报告必须包含 `### Intent Check` 表；Must Have 无 pass/degraded 证据或 Must Not 被违反时暂停
-- 单个任务 3 次 FAIL → 跳过并标记 `[TODO]`
+**门禁：** 所有计划任务完成 + 所有测试通过。单个任务 3 次 FAIL → 跳过并标记 `[TODO]`；controller 状态层不得保留裸 `[TODO]`，必须映射为 `failed_blocked` 或 `escalation_candidate`。
+
+### 4.17 Gatekeeper 最终检查（阶段 4 结束前，必跑）
+
+全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。最终报告必须包含 `### Intent Check` 表；`DEVIATION > 0`、Must Have 无 pass/degraded 证据、或 Must Not 被违反，均触发 🔴 暂停。
 
 ---
 
@@ -733,11 +733,7 @@ fi
 10. 推送 + 创建 PR
 11. 自动同步文档
 
-### 7.2 发布后验证
-
-**→ 调用 skill：`canary`**（如适用）
-
-> **执行顺序（严格）：** ship / canary 完成 → 阶段 8 触发判定（需要 worktree 内的 diff）→ 触发则跑 learn → 最后才清理状态文件和 worktree。**不得**在阶段 8 之前清理，否则 learn 拿不到 diff 上下文。
+> **执行顺序（严格）：** ship 完成 → 阶段 8 触发判定（需要 worktree 内的 diff）→ 触发则跑 learn → 最后才清理状态文件和 worktree。**不得**在阶段 8 之前清理，否则 learn 拿不到 diff 上下文。
 
 ---
 

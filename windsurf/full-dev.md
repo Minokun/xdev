@@ -687,12 +687,9 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 
 > 完整 Gatekeeper prompt 模板见 `claude-code/full-dev.md#Gatekeeper-批次间偏差检测`
 
-### 4.6 实现完成检查点 + Gatekeeper 最终检查
-- 所有计划中的任务标记为 DONE
-- 所有测试通过（后端 + 前端）
-- 每个功能点有对应测试
-- **Gatekeeper 最终 drift-check**（不受双阈值限制，无 impl 提交则跳过），并在报告中输出 `### Intent Check` 表
-- 单个任务 3 次 FAIL → 跳过并标记 `[TODO]`
+### 4.6 Gatekeeper 最终检查（阶段 4 结束前，必跑）
+
+全部任务完成、全量测试通过后无条件触发一次最终 drift-check（不受双阈值限制）。若无 impl 相关提交则跳过。最终报告必须包含 `### Intent Check` 表；`DEVIATION > 0`、final 的 Intent Check 有 Must Have 无 pass/degraded 证据、或 Must Not 被违反，均触发 🔴 暂停（Must Not 被违反时移除超纲改动或回用户确认更新合同）。
 
 ---
 

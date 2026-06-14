@@ -331,7 +331,7 @@ fi
 |------|-----------|
 | 任何功能（必选） | **→ `plan-eng-review`** — 架构、数据流、边界情况、测试策略、性能 |
 | 涉及 UI/页面/组件 | **→ `plan-design-review`** — UI/UX、交互、响应式、无障碍 |
-| 新增/修改 API | **→ `plan-devex-review`** — API 设计、命名、文档、错误处理 |
+| 新增/修改 API 或 CLI/SDK | **→ `plan-devex-review`** — API 设计、命名、文档、错误处理、DX |
 | 新模块/大功能/大重构 | **→ `plan-ceo-review`** — 范围是否合理、过度设计、MVP 路径 |
 
 🟡 判定后通知用户审查组合（如 `eng + design + ceo`），继续执行。
@@ -928,7 +928,7 @@ fi
 
 **→ 调用 skill：`ship`**
 
-ship 内置：merge 主分支 → 全量测试 → pre-landing review（不可跳过）→ 版本管理 → PR 创建 → **step 8.5 自动调用 /document-release**（同步 README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md/TODOS，推送到同一分支）。
+ship 内置：预检查 → 合并主分支 → 运行测试 → AI 测试覆盖评估 → 计划完成度审计 → **pre-landing review（含对抗性审查，不可跳过）** → 版本号更新 + CHANGELOG → TODOS.md 更新 → 推送 + PR 创建 → **step 8.5 自动调用 /document-release**（同步 README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md/TODOS，推送到同一分支）。
 
 ### 7.2 生产部署（land-and-deploy，可选）
 
