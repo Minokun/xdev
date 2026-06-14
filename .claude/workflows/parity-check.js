@@ -133,14 +133,18 @@ const results = await pipeline(
 只有"会影响行为的真实语义不一致"才 isRealDrift=true。reasoning / fix 用中文。`,
         { label: `verify:${p.name}`, phase: 'Verify', schema: VERIFY_SCHEMA }
       ).then((v) => ({ suspect: s, verdict: v }))
-    })).then((verified) => ({ pair: p.name, verdict: extractResult.verdict, confirmed: verified.filter(Boolean) }))
+    })).then((verified) => ({ pair: p.name, verdict: extractResult.verdict, confirmed: verified.filter(Boolean), droppedVerify: verified.length - verified.filter(Boolean).length }))
   }
 )
 
-// 汇总:真漂移 vs 误报
+// 汇总:真漂移 vs 误报。失败不静默丢弃:记 droppedPairs(整 pair 失败)+ droppedVerify(verify agent 失败)
+const okResults = results.filter(Boolean)
+const droppedPairs = results.length - okResults.length
+let droppedVerify = 0
 const realDrifts = []
 const falseAlarms = []
-for (const r of results.filter(Boolean)) {
+for (const r of okResults) {
+  droppedVerify += r.droppedVerify || 0
   for (const c of r.confirmed) {
     if (c.verdict && c.verdict.isRealDrift) {
       realDrifts.push({ ...c.suspect, pair: r.pair, reasoning: c.verdict.reasoning, fix: c.verdict.fix })
@@ -157,8 +161,12 @@ return {
     pairsChecked: PAIRS.length,
     realDriftCount: realDrifts.length,
     falseAlarmCount: falseAlarms.length,
+    droppedPairs,
+    droppedVerify,
   },
-  note: '⚠️ 非确定性结果:scan 覆盖 + verify 判断每次可能不同(边界 case 会 true/false 翻转)。若 realDrift 仍非 0 且非已知点,多为 scan 随机性,建议复跑 1-2 次取交集确认;已知已处理项可用 args.suppress 抑制。',
+  note: (droppedPairs > 0 || droppedVerify > 0)
+    ? `⚠️ 非确定性结果,且有 ${droppedPairs} 个 pair / ${droppedVerify} 个 verify agent 失败被记录(非静默丢弃)。结果可能不全,建议重跑确认;已知已处理项可用 args.suppress 抑制。`
+    : '⚠️ 非确定性结果:scan 覆盖 + verify 判断每次可能不同(边界 case 会 true/false 翻转)。若 realDrift 仍非 0 且非已知点,多为 scan 随机性,建议复跑 1-2 次取交集确认;已知已处理项可用 args.suppress 抑制。',
   ranked: realDrifts.sort((a, b) => sev[a.severity] - sev[b.severity]),
   falseAlarms,
 }

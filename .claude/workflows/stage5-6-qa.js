@@ -65,14 +65,23 @@ const perSkill = await parallel(SKILLS.map((skill) => () =>
 DEGRADED / BASELINE_DEBT 必须填 evidence(已跑命令、失败证据、为何非本次改动、剩余手工验证项)。findings 只记关键,不要堆全文。所有自由文本用中文。`,
     { label: `qa:${skill}`, phase: 'Run', schema: SKILL_RESULT_SCHEMA }
   )
-)).then((rs) => rs.filter(Boolean))
+))
 
 phase('Aggregate')
 
+// 失败的 skill agent 不静默丢弃:perSkill 含 null(失败),拆出 droppedSkills 供上层感知
+const droppedSkills = []
+const okResults = []
+for (let i = 0; i < perSkill.length; i++) {
+  if (perSkill[i]) okResults.push(perSkill[i])
+  else droppedSkills.push(SKILLS[i])
+}
+
 // 五态聚合:最严重优先;DEGRADED/BASELINE_DEBT 无 evidence 降级为 fix_required;na 忽略
+// #2 修复:全部 skill 失败(okResults 空)时 overall=blocked,不能默认 pass 放行带病代码
 const order = { blocked: 0, fix_required: 1, degraded: 2, baseline_debt: 2, pass: 3, na: 4 }
-let overall = 'pass'
-for (const r of perSkill) {
+let overall = okResults.length === 0 ? 'blocked' : 'pass'
+for (const r of okResults) {
   let v = r.verdict
   if (v === 'na') continue
   if ((v === 'degraded' || v === 'baseline_debt') && !(r.evidence && r.evidence.trim())) v = 'fix_required'
@@ -82,10 +91,13 @@ for (const r of perSkill) {
 const gatePassed = overall === 'pass' || overall === 'degraded' || overall === 'baseline_debt'
 
 return {
-  skillsRun: perSkill.map((r) => r.skill),
+  skillsRun: okResults.map((r) => r.skill),
+  droppedSkills,
   overall,
   gatePassed,
-  fixRequired: perSkill.filter((r) => r.verdict === 'fix_required' || r.verdict === 'blocked'),
-  perSkill: perSkill.map((r) => ({ skill: r.skill, verdict: r.verdict, severity: r.severity, score: r.score, findings: r.findings })),
-  note: '阶段5+6 workflow 聚合结果。fixRequired 列出需处理项;各 skill 全文 findings 已隔离在脚本变量,未进主上下文。',
+  fixRequired: okResults.filter((r) => r.verdict === 'fix_required' || r.verdict === 'blocked'),
+  perSkill: okResults.map((r) => ({ skill: r.skill, verdict: r.verdict, severity: r.severity, score: r.score, findings: r.findings })),
+  note: droppedSkills.length > 0
+    ? `⚠️ ${droppedSkills.length} 个 skill agent 失败(非静默丢弃):${droppedSkills.join('、')}。结果基于其余 ${okResults.length} 个;若失败的是关键 skill,overall 可能为 blocked。`
+    : '阶段5+6 workflow 聚合结果。fixRequired 列出需处理项;各 skill 全文 findings 已隔离在脚本变量,未进主上下文。',
 }
