@@ -4,7 +4,20 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
-## [Unreleased] - 2026-05-14
+## [v2.1.0] - 2026-06-15
+
+### Added
+
+- `stage5-6-qa` — a dev-only parallel quality-check workflow that aggregates Stage 5+6 (review / `cso --diff` / health / qa / design-review) across parallel subagents into a 5-state verdict (`pass` / `degraded` / `baseline_debt` / `fix_required` / `blocked`), keeping each skill's full findings isolated from the main context. Wired into `/full-dev` via a global symlink so it runs as part of the end-to-end pipeline.
+- `parity-check` — a contributor-facing port-drift detector that diffs the `claude-code/` and `windsurf/` source trees, separates intentional IDE adaptation from real behavioral drift, and alerts only on the latter.
+- `/ask` health-check parallelized — the 6-dimension audit checklist now runs dimensions in parallel via `ask-investigate`.
+
+### Changed
+
+- **No silent loss of failed parallel subagents.** All parallel-aggregation points (`stage5-6-qa`, `parity-check`, `full-dev-design` Stage 2 review) now expose dropped/failed subagent counts instead of swallowing them via `filter(Boolean)`. When every subagent in a dimension fails, the aggregate verdict is `blocked` rather than defaulting to pass — prevents pass/keep decisions made on incomplete data.
+- **`full-dev-design` reviewer-failure handling.** A failed reviewer (timeout / crash / no tally) is retried once, then marked `missing`; the missing dimension's HIGHs count as "unknown" not 0, the round is flagged `[partial-review]`, and a missing mandatory `plan-eng-review` makes the round incomplete.
+- Stage 4 checkpoint rules tightened: 🔴 pause carve-out, no text-only mid-batch stops, continue after checkpoints. Stage 5/6 no longer stops while backend tests / health / QA background jobs are still running.
+- graphify Signal A string updated for v0.8.37+.
 
 ### Fixed
 

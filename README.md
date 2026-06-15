@@ -220,7 +220,7 @@ Stage 7: Release — 7.1 ship (includes pre-landing review + auto document-relea
 Stage 8: Learning (learn — conditional trigger)
 ```
 
-### Five built-in reliability features
+### Built-in reliability features
 
 **Session recovery** — Every workflow writes a state file to `docs/state/` at stage 3 and updates it at each subsequent stage. The state file embeds a `## Handoff Summary` block initialized at end of stage 3 and refreshed by the stage 4 mainline controller after every batch; stage 4 also records `mainline_checkpoints.next_batch`. On the next invocation, recovery follows a three-branch flow: (a) **state file present + 3-way validation passes** (branch match, locked HEAD still in history, plan file exists) → resume within stage 4 from `next_batch` when available; (b) **validation fails** (e.g. rebase / squash invalidated HEAD) → rename the file to `<file>.invalid-<ts>.md` (preserves Handoff and checkpoints for diagnostics; excluded from future scans) and fall through to (c); (c) **state file missing but design doc with a confirmed `## Intent Contract` plus the implementation plan exist in `docs/plans/`** → auto-create a minimal state file (with locked HEAD) and start at stage 4. Only when the design / plan / Intent Contract are missing does recovery halt. This makes session recovery robust to gitignored state loss (clean checkout, cross-machine work, accidental wipe) while keeping the Intent Contract red line. State files are gitignored and deleted automatically after a successful ship.
 
@@ -235,6 +235,10 @@ Stage 8: Learning (learn — conditional trigger)
 **Light Impact Gate** — Before and after code changes, xdev runs a lightweight impact precheck to map direct callers, likely affected workflows/docs/tests, risk triggers, escalation, validation, and unknowns. It uses bounded `rg`, `git diff`, nearby tests, and fresh Graphify query results when already available; it does **not** install GitNexus, build a new index, or auto-refresh Graphify. The goal is narrower than project understanding: catch blast radius before work starts, then turn the final diff into precise validation and sync checks.
 
 **Auto codebase snapshot** — When a workflow needs basic project context (tech stack, directory layout, dev/test commands) and doesn't already have it, it runs a built-in shallow scan and writes the result to `docs/state/codebase-snapshot.md` (gitignored). Subsequent invocations read the snapshot for instant cold-start context. The snapshot carries a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off. There is no separate "map the project" command — the workflows decide when to run this themselves; for deeper questions use `/xdev:ask` or escalate to Graphify (Step 2.6).
+
+**No silent loss of failed parallel subagents** — Wherever the pipeline fans out to parallel subagents (`stage5-6-qa`, `parity-check`, and the Stage 2 parallel review in `full-dev-design`), a failed / timed-out / crashed subagent is no longer swallowed by a `filter(Boolean)`. Each aggregation point exposes a dropped/failed count (`droppedSkills`, `droppedPairs`, `droppedVerify`); when *every* subagent in a dimension fails, the aggregate verdict is `blocked` rather than defaulting to pass. In design review, a failed reviewer is retried once then marked `missing`, its HIGHs count as "unknown" not 0, and the round is flagged `[partial-review]`. Prevents keep/pass decisions made on incomplete data.
+
+**Port-drift detection (`parity-check`)** — A contributor-facing workflow that diffs the `claude-code/` and `windsurf/` source trees and separates *intentional IDE adaptation* (frontmatter format, command namespacing, model recommendations) from *real behavioral drift*, alerting only on the latter. The two source trees stay deliberately ununified; parity-check is what keeps that drift honest without forcing unification.
 
 ### /bugfix — three-tier root-cause pipeline
 
