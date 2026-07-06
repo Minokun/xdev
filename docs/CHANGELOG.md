@@ -9,6 +9,29 @@
 
 ---
 
+## [Unreleased] - 2026-07-06
+
+### Changed — 第三方依赖升级 + README 同步
+
+**改动位置：**
+- `README.md` / `README.zh.md` — ui-ux-pro-max npm 包名 `uipro-cli`→`ui-ux-pro-max-cli`（旧包冻结 2.2.3，原命令会装到冻结版）；graphify 仓库链接 `safishamsi`→`Graphify-Labs` + 0.9.0 升级注意；gstack `--host` 列表同步到 1.58.5 实际接受的值（cursor/windsurf/slate 已被 `--host` 拒绝，改用 `auto`）；新增 gstack Codex 跨模型审查默认开启说明 + codex plugin 推荐
+- 本机依赖升级：gstack 1.57.10→1.58.5、ui-ux-pro-max 2.2.3→2.10.1、graphify 0.8.37→0.9.7、frontend-design 去重 stale symlink；superpowers 已是 6.1.1
+
+**What landed：**
+1. **ui-ux-pro-max 包更名是最关键的同步**：上游把 npm 包 `uipro-cli` 更名为 `ui-ux-pro-max-cli`（二进制仍 `uipro`），旧包冻结 2.2.3。xdev README 的 CLI 安装命令原样会装到冻结版，已修正。skill 调用名 `ui-ux-pro-max` 不变，工作流 .md 无需改。
+2. **gstack 自 1.57.10 起 Codex 审查默认开启**：`/review` `/ship` `/plan-*-review` `/document-release` `/autoplan` 自动跑 Codex 跨模型审查（缺 Codex 回退 Claude），`codex_reviews` 总开关控制。xdev 阶段 2 / 5+6 / 7 已静默享受；只在 README 记录并把 codex plugin 提为推荐，不注入工作流。
+3. **graphify 0.9.0 breaking**：节点 ID 改全路径，旧图需 `graphify extract --force` 重建（graph.json 自动迁移）。仓库迁到 Graphify-Labs/graphify（旧 URL 301）。
+4. **gstack `--host` 同步**：1.58.5 setup 实际接受 `claude/codex/kiro/factory/opencode/openclaw/hermes/gbrain/auto`；旧 README 列的 cursor/windsurf/slate 已被 `--host` 拒绝（改 `auto`）。
+
+**What was tried first（放弃的方向）：**
+- 把 gstack Codex 审查逻辑注入 xdev 工作流文件 —— 放弃。该审查在 gstack skill 内部完成，对 xdev 透明（xdev 只消费 plan-eng-review 等的输出），注入会重复且耦合上游。
+- 集成 gstack 1.58 新增的 `/diagram`、`/spec`、多格式文档引擎为工作流节点 —— 放弃（本轮）。按 docs/gstack-upgrade-plan.md 既定方法论，按需工具不进自动化流程节点；本轮范围"必改+推荐"不含增强。
+- `uipro update` 刷新 skill 内容 —— 撞 GitHub API 限流失败，改用 `uipro init -g --ai claude --force --offline` 从 npm 包内置 2.10.1 资产离线刷新成功。
+
+**Rationale：** xdev 是编排层。第三方 skill 的**安装方式 / 包名 / 接受参数**变更必须同步到 README 安装指引（否则用户装到冻结或被拒的版本）；但 skill**内部行为增强**（Codex 审查、diagram 引擎）对 xdev 透明，只需文档记录、不进工作流。遵循 docs/gstack-upgrade-plan.md 既定的"扫描上游→决策集成与否→同步"方法论。
+
+---
+
 ## [Unreleased] - 2026-05-14
 
 ### Fixed — Stage 4/5 text-only + background 停轮漏洞

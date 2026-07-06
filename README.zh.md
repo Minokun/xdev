@@ -236,7 +236,7 @@ xdev 解决了这四个问题。
 
 **自动代码库快照** —— 当工作流需要基础项目上下文（技术栈、目录结构、开发/测试命令）且当前 session 没有时，会内置执行一次浅层扫描，把结果写入 `docs/state/codebase-snapshot.md`（gitignore）。后续工作流调用时直接复用，省冷启动时间。快照含三层新鲜度校验（分支 + commit + 7 天过期）和截断标记。**没有单独的"了解项目"用户命令** —— 工作流自己判断何时刷快照；想交互式问答用 `/xdev:ask`，想要架构 / 调用链层面的理解则升级到 Graphify（第 2.6 步）。
 
-**并行子 agent 失败防静默丢失** —— 凡是 fan-out 到并行子 agent 的环节（`stage5-6-qa`、`parity-check`、`full-dev-design` 阶段 2 并行审查），失败 / 超时 / 崩溃的子 agent 不再被 `filter(Boolean)` 静默吞掉。每个聚合点都显式暴露 dropped 计数（`droppedSkills`、`droppedPairs`、`droppedVerify`）；当某维的**所有**子 agent 都失败时，聚合判 `blocked` 而非默认 pass。设计审查中，失败的 reviewer 重派 1 次后标 `missing`，其 HIGH 计为「未知」而非 0，并在 commit 标 `[partial-review]`。避免基于不完整数据判定「通过」。
+**并行子 agent 失败防静默丢失** —— 凡是 fan-out 到并行子 agent 的环节（`stage5-6-qa`、`parity-check`、`full-dev-design` 阶段 2 并行审查），失败 / 超时 / 崩溃的子 agent 不再被 `filter(Boolean)` 静默吞掉。每个聚合点都显式暴露 dropped 计数（`droppedSkills`、`droppedPairs`、`droppedVerify`）；阶段 5+6 中任一已触发 skill 掉线都会阻塞聚合结果，整维失败不能默认 pass。设计审查中，失败的 reviewer 重派 1 次后标 `missing`，其 HIGH 计为「未知」而非 0，并在 commit 标 `[partial-review]`。避免基于不完整数据判定「通过」。
 
 **端口漂移检测（`parity-check`）** —— 面向 contributor 的工作流，对比 `claude-code/` 与 `windsurf/` 两个源树，区分**刻意的 IDE 适配**（frontmatter 格式 / 命令命名空间 / 模型推荐）与**真行为漂移**，只对后者报警。两个源树保持故意不统一，parity-check 正是让这种漂移保持诚实、而非强行统一的守门人。
 
@@ -402,8 +402,10 @@ cd ~/.claude/skills/gstack && ./setup
 **Codex / OpenCode / Cursor / Windsurf / 其他支持的 agent：**
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host codex   # 或：opencode / cursor / windsurf / factory / slate / hermes / kiro
+cd ~/gstack && ./setup --host codex   # 或：opencode / kiro / factory / openclaw / hermes / gbrain，或 auto（自动探测）
 ```
+
+> **gstack 自 v1.57.10 起 Codex 跨模型审查默认开启**：`/review`、`/ship`、四个 `/plan-*-review`、`/document-release`、`/autoplan` 会自动请求 Codex 第二意见审查，Codex 不可用时回退 Claude 子 agent —— 因此 xdev 的阶段 2 计划审查、阶段 5+6 / 阶段 7 的 review+ship 已经在享受跨模型覆盖。安装 [codex 插件](https://github.com/openai/codex-plugin-cc)（`/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex`）解锁真正的 Codex 覆盖。全局关闭：`gstack-config set codex_reviews disabled`。
 
 ### 第 2.5 步 —— 安装 ui-ux-pro-max
 
@@ -417,13 +419,15 @@ cd ~/gstack && ./setup --host codex   # 或：opencode / cursor / windsurf / fac
 
 **Codex / Windsurf / Cursor / OpenCode / 其他 agent（CLI —— 推荐）：**
 ```bash
-npm install -g uipro-cli
+npm install -g ui-ux-pro-max-cli
 uipro init --ai codex      # 或：claude / windsurf / cursor / opencode / all
 ```
 
+> **包已更名：** npm 包从 `uipro-cli` 更名为 **`ui-ux-pro-max-cli`**（旧名冻结在 2.2.3），CLI 二进制仍叫 `uipro`。若 `uipro update` 撞 GitHub 限流，可从包内置资产离线刷新：`uipro init -g --ai claude --force --offline`，或设置 `UI_PRO_MAX_GITHUB_TOKEN`。
+
 **更新已有 CLI 安装：**
 ```bash
-npm install -g uipro-cli
+npm install -g ui-ux-pro-max-cli
 uipro update --ai codex    # 或你的 assistant target
 ```
 
@@ -440,6 +444,8 @@ Graphify 是**可选**的；未安装时 xdev 工作流会降级到内置 Level-
 uv tool install graphifyy
 graphify --help
 ```
+
+> **从 < 0.9.0 升级？** v0.9.0 把节点 ID 改成完整仓库相对路径，已有的 `graphify-out/` 图谱需要一次性 `graphify extract --force` 重建（`graph.json` 会自动迁移）。仓库也已迁移到 [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify)（旧 `safishamsi/graphify` URL 会 301 跳转）。
 
 **备选（pipx）：**
 ```bash

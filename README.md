@@ -236,7 +236,7 @@ Stage 8: Learning (learn — conditional trigger)
 
 **Auto codebase snapshot** — When a workflow needs basic project context (tech stack, directory layout, dev/test commands) and doesn't already have it, it runs a built-in shallow scan and writes the result to `docs/state/codebase-snapshot.md` (gitignored). Subsequent invocations read the snapshot for instant cold-start context. The snapshot carries a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off. There is no separate "map the project" command — the workflows decide when to run this themselves; for deeper questions use `/xdev:ask` or escalate to Graphify (Step 2.6).
 
-**No silent loss of failed parallel subagents** — Wherever the pipeline fans out to parallel subagents (`stage5-6-qa`, `parity-check`, and the Stage 2 parallel review in `full-dev-design`), a failed / timed-out / crashed subagent is no longer swallowed by a `filter(Boolean)`. Each aggregation point exposes a dropped/failed count (`droppedSkills`, `droppedPairs`, `droppedVerify`); when *every* subagent in a dimension fails, the aggregate verdict is `blocked` rather than defaulting to pass. In design review, a failed reviewer is retried once then marked `missing`, its HIGHs count as "unknown" not 0, and the round is flagged `[partial-review]`. Prevents keep/pass decisions made on incomplete data.
+**No silent loss of failed parallel subagents** — Wherever the pipeline fans out to parallel subagents (`stage5-6-qa`, `parity-check`, and the Stage 2 parallel review in `full-dev-design`), a failed / timed-out / crashed subagent is no longer swallowed by a `filter(Boolean)`. Each aggregation point exposes a dropped/failed count (`droppedSkills`, `droppedPairs`, `droppedVerify`); any dropped triggered Stage 5+6 skill blocks the aggregate verdict, and an all-failed dimension cannot default to pass. In design review, a failed reviewer is retried once then marked `missing`, its HIGHs count as "unknown" not 0, and the round is flagged `[partial-review]`. Prevents keep/pass decisions made on incomplete data.
 
 **Port-drift detection (`parity-check`)** — A contributor-facing workflow that diffs the `claude-code/` and `windsurf/` source trees and separates *intentional IDE adaptation* (frontmatter format, command namespacing, model recommendations) from *real behavioral drift*, alerting only on the latter. The two source trees stay deliberately ununified; parity-check is what keeps that drift honest without forcing unification.
 
@@ -402,8 +402,10 @@ cd ~/.claude/skills/gstack && ./setup
 **Codex / OpenCode / Cursor / Windsurf / other supported agents:**
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host codex   # or: opencode / cursor / windsurf / factory / slate / hermes / kiro
+cd ~/gstack && ./setup --host codex   # or: opencode / kiro / factory / openclaw / hermes / gbrain, or auto (detects)
 ```
+
+> **Codex cross-model review is now default-on in gstack** (v1.57.10+): `/review`, `/ship`, the four `/plan-*-review`s, `/document-release`, and `/autoplan` automatically request a Codex second-opinion review, falling back to a Claude subagent when Codex isn't available — so xdev's stage-2 plan reviews and stage-5+6 / stage-7 review+ship already get cross-model coverage. Install the [codex plugin](https://github.com/openai/codex-plugin-cc) (`/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex`) to unlock true Codex coverage. Turn it off globally with `gstack-config set codex_reviews disabled`.
 
 ### Step 2.5 — Install ui-ux-pro-max
 
@@ -417,13 +419,15 @@ cd ~/gstack && ./setup --host codex   # or: opencode / cursor / windsurf / facto
 
 **Codex / Windsurf / Cursor / OpenCode / other agents (CLI — recommended):**
 ```bash
-npm install -g uipro-cli
+npm install -g ui-ux-pro-max-cli
 uipro init --ai codex      # or: claude / windsurf / cursor / opencode / all
 ```
 
+> **Package renamed:** the npm package was renamed `uipro-cli` → **`ui-ux-pro-max-cli`** (the old name is frozen at 2.2.3). The CLI binary is still `uipro`. If `uipro update` hits a GitHub rate limit, refresh from the bundled assets: `uipro init -g --ai claude --force --offline`, or set `UI_PRO_MAX_GITHUB_TOKEN`.
+
 **Update an existing CLI install:**
 ```bash
-npm install -g uipro-cli
+npm install -g ui-ux-pro-max-cli
 uipro update --ai codex    # or your assistant target
 ```
 
@@ -440,6 +444,8 @@ Graphify is **optional**. If it is not installed, xdev workflows must fall back 
 uv tool install graphifyy
 graphify --help
 ```
+
+> **Upgrading from < 0.9.0?** v0.9.0 changed node IDs to full repo-relative paths, so existing `graphify-out/` graphs need a one-time `graphify extract --force` to re-import (`graph.json` auto-migrates). The repo also moved to [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) (the old `safishamsi/graphify` URL 301-redirects).
 
 **Fallback if you use pipx:**
 ```bash
@@ -582,7 +588,7 @@ cd ~/.claude/skills/xdev && git pull
 | `ship` | gstack | all workflows |
 | `land-and-deploy` | gstack | full-dev stage 7.2 (optional: merge PR + CI + production health check) |
 | `learn` | gstack | full-dev, bugfix S3 |
-| `graphify` CLI | [Graphify](https://github.com/safishamsi/graphify) (`graphifyy` package) | optional deep project context for full-dev / full-dev-design / bugfix S3 |
+| `graphify` CLI | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) (`graphifyy` package) | optional deep project context for full-dev / full-dev-design / bugfix S3 |
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
 | `frontend-design` | [Anthropic skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design) / locally installed skill | full-dev / full-dev-design stage 1.5 (single page / small components) |
 
