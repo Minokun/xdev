@@ -26,7 +26,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 
 ### Deferred (tracked in `docs/reviews/2026-07-06-self-review.md`)
 
-- **#38 stages 1-3 single-sourcing** deferred — the duplication drift is bidirectional (design.md lacks autoplan + 通过条件), so it needs content reconciliation before pointer-ifying, not a clean collapse.
+- **#38 stages 1-3 — resolved via sync, not unify**: a 199-line diff showed the two are deliberately parallel (flow-specific branch naming / state-file path / handoff semantics), so pointer-ifying would break the merged flow. Shared bodies (通过条件 + autoplan) were synced into `full-dev-design.md` instead; decision recorded in `docs/CHANGELOG.md`.
 - ~8 lower-value items (worktree cleanup on resume, ask.md partial-graph routing / droppedDimensions contract / Signal-A stderr / exec-boundary, cross-tool handoff state, stage-3 reflection failure handling, bugfix `[TODO]` mechanic).
 
 ## [v2.1.1] - 2026-07-06

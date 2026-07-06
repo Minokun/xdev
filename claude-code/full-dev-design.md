@@ -271,6 +271,10 @@ Keep 则将 `rev-(N+1)` marker 写入文件，进入下一轮（若仍有 HIGH�
 
 > **阅读提示：** 条件 2 > 条件 4 —— 即使发生过 2 次 keep，只要随后出现 3 次连续 discard，仍按优先级 2 暂停而非降级。
 
+### 一键全审（全栈大功能推荐）
+
+**→ 调用 skill：`autoplan`** — 自动执行全部审查。注意：autoplan 在迭代循环中仍需遵循 2.1/2.4/2.5 的 baseline 与 keep/discard 协议。
+
 ---
 
 ## 阶段 3：TDD 实现计划
@@ -324,6 +328,11 @@ Then 返回 200 状态码和有效的 JWT token
 - cwd: /abs/path/to/repo/src/auth
 - cmd: npm test src/auth/login.test.ts
 **预期：** FAIL（测试先于实现，应失败）
+**通过条件：**
+- 验证命令：`npm test src/auth/login.test.ts`
+- 期望退出码：1（FAIL）
+- 输出必须包含：`FAIL` 或 `Error: Cannot find module`
+- 输出不得包含：`SyntaxError`（语法错误不算有效 FAIL）
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
 **Impact Gate:** L2 简化版
@@ -354,6 +363,11 @@ Then 返回 200 状态码和有效的 JWT token
 - cwd: /abs/path/to/repo/src/auth
 - cmd: npm test src/auth/login.test.ts
 **预期：** PASS
+**通过条件：**
+- 验证命令：`npm test src/auth/login.test.ts`
+- 期望退出码：0（PASS）
+- 输出必须包含：`1 passed`
+- 额外断言（可选）：`curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/login -d '{"user":"test","pass":"test"}'` 返回 `200` 或 `401`
 **risk:** L2
 **risk_reason:** auth boundary, JWT contract
 **Impact Gate:** L2 简化版
@@ -368,6 +382,16 @@ Then 返回 200 状态码和有效的 JWT token
 **verifier：** 若实现以 `done_with_concerns` 收尾，或跨模块改动认证契约，则必须派 verifier
 **依赖：** task-001-login-test
 ```
+
+**通过条件字段规则：**
+
+| 字段 | 必须 | 说明 |
+|------|------|------|
+| 验证命令 | 是 | 与任务声明的验证命令一致 |
+| 期望退出码 | 是 | 0 = PASS，1 = FAIL，具体数字 |
+| 输出必须包含 | 是 | 可 grep 的精确文本片段 |
+| 输出不得包含 | 否 | 排除误判（如语法错误不算有效 FAIL） |
+| 额外断言 | 否 | 补充验证命令（如 curl 探针） |
 
 **风险等级取值：**
 
@@ -425,11 +449,12 @@ Subagent B — 依赖图检查
   输出：依赖图可视化 + 问题列表
 
 Subagent C — 任务完整性与 BDD 质量检查
-  目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令、**risk + risk_reason**
+  目标：① 每个任务是否包含 BDD 场景、文件列表、验证命令、**通过条件**、**risk + risk_reason**
         ② BDD 质量：Given 必须有具体输入值，Then 必须有可断言的输出（状态码/字段/数值），禁止模糊表述（如"系统正常"/"成功"）
-        ③ 风险字段校验：`risk` ∈ {L0, L1, L2, L3}；`risk_reason` 非空；缺任一字段视为 HIGH 必须修复
-        ④ Impact Gate 校验：L2 必须有简化版，L3 必须有完整版，缺失视为 HIGH 必须修复
-  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表 + 风险字段缺失/非法的任务列表 + Impact Gate 缺失/强度错误列表
+        ③ 通过条件可推导性：「输出必须包含」的文本片段能否从该验证命令的实际输出推导？不能推导标记为 HIGH，必须修复
+        ④ 风险字段校验：`risk` ∈ {L0, L1, L2, L3}；`risk_reason` 非空；缺任一字段视为 HIGH 必须修复
+        ⑤ Impact Gate 校验：L2 必须有简化版，L3 必须有完整版，缺失视为 HIGH 必须修复
+  输出：缺失字段的任务列表 + BDD 质量不达标的任务列表 + 通过条件不可推导的任务列表 + 风险字段缺失/非法的任务列表 + Impact Gate 缺失/强度错误列表
 ```
 
 **汇总规则（所有 subagent 完成后）：**
