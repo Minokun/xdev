@@ -4,7 +4,7 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
-## [Unreleased]
+## [v2.2.0] - 2026-07-06
 
 ### Fixed
 
