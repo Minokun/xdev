@@ -384,6 +384,7 @@ LOW: 1
 - 计数块用 `<!-- tally-start -->` / `<!-- tally-end -->` 包裹；主线程按 `grep -E '^(HIGH|MEDIUM|LOW): [0-9]+$'` 提取
 - 计数必须与上方列表一致（不一致则重跑该 reviewer，不计入 baseline）
 - 多个 reviewer 按级别求和
+- **reviewer 失败处理（防静默丢失）：** 某 reviewer subagent 失败（超时 / 崩溃 / 无 tally 输出）→ 标 `missing` 并**重派 1 次**；仍失败则该维本轮标 `missing`（未审），在 sidecar 追加 `<!-- review-rev-N missing: <reviewer> 原因 -->`。**不得静默丢弃**——missing 维的 HIGH 计为"未知"而非 0（见 2.3）。
 
 > **重要：** subagent 只输出问题列表和 tally，不直接修改设计文档。修复操作由主线程统一执行，避免并发写入冲突。
 
@@ -395,6 +396,7 @@ LOW: 1
 1. 合并 HIGH 级别问题，去重
 2. 主线程逐一修复设计文档（每修复一个问题单独确认）
 3. 提交：`git commit -m "fix(review-rev-N): address <topic> HIGH issues"`
+4. **missing 维处理：** 本轮有 reviewer 标 `missing` 时，commit message 追加 `[partial-review: <reviewer-list>]`；该维 HIGH 按"未知"处理——**不得因 missing 维"没报 HIGH"就视为 0**。若 missing 维含必选的 `plan-eng-review`，本轮保守视为不完整（优先下轮重审补齐，而非直接 keep）。
 
 ### 2.4 Keep / Discard 判定（修复后重审）
 

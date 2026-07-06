@@ -677,6 +677,13 @@ Subagent B → 调用 skill: qa     （浏览器测试，先启动 ./start.sh al
 直接在主线程调用 skill: health  （单任务不值得开 subagent）
 ```
 
+> **其它条件触发的质量 skill（与 `full-dev.md` 阶段 5+6 同一触发矩阵，不得因 split-flow 跳过）：**
+> - **review** — 新引入第三方库/依赖（非版本升级）| 跨模块架构变更 | auth/安全敏感代码 | 首次引入新设计模式或并发/事务模式
+> - **cso --diff** — 认证/登录/SSO/OAuth | 支付/计费/订阅 | PII 数据处理 | 文件上传/下载 | Webhook 接收端 | Secret/API Key 管理 | 权限边界变更（**安全敏感改动必跑**）
+> - **design-review**（涉及 UI）、**devex-review**（涉及公开 API / CLI / SDK / 配置 schema / 开发者工作流）
+>
+> Claude Code 端优先用 `Workflow({ name: "stage5-6-qa", args: { skills: [...] } })` 并行执行触发的 skill（`health` 必选 + 命中条件的 skill）；Codex CLI / 无 workflow 运行时则按触发的 skill 逐个 subagent 派发并汇总。完整触发判定表、UI/DX 改动判定、典型场景与结果矩阵门禁见 `full-dev.md` 阶段 5+6。
+
 两者完成后汇总：先按下面的结果矩阵分类，再决定修复、降级或阻塞；发现本次改动引入的问题立即修复，每个修复单独提交。
 
 **结果矩阵：**

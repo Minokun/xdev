@@ -88,9 +88,16 @@ graphify check-update . 2>&1
 #   其它非空　　　　 → 代码变化（→ 3a）
 
 # 信号 B — git HEAD 是否晚于图谱构建时间
-graph_built_at=$(python3 -c "import json; print(json.load(open('graphify-out/cost.json'))['runs'][-1]['date'])")
-latest_commit_at=$(git log -1 --format=%aI HEAD 2>/dev/null)
-#   latest_commit_at > graph_built_at → 触发刷新
+#   用 datetime.fromisoformat 归一化两侧时间戳再比较：cost.json 是 UTC + 微秒，
+#   %aI 是本地偏移且无微秒——直接字符串比较会在负时区把过期图谱误判成新鲜。
+python3 -c "
+import json, subprocess
+from datetime import datetime
+built = datetime.fromisoformat(json.load(open('graphify-out/cost.json'))['runs'][-1]['date'])
+head = subprocess.run(['git','log','-1','--format=%aI','HEAD'], capture_output=True, text=True).stdout.strip()
+head_dt = datetime.fromisoformat(head) if head else datetime.min
+raise SystemExit(0 if head_dt > built else 1)
+" && echo 'HEAD 晚于图谱构建 → 触发刷新'
 
 # 信号 C — 工作树是否有未提交的源码改动
 git status --porcelain 2>/dev/null | grep -Ev '^.. (graphify-out/|node_modules/|\.venv/|dist/|build/)' | head -5
