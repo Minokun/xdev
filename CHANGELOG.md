@@ -4,6 +4,31 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Fixed
+
+- Dynamic-workflow aggregation no longer silently swallows failed agents: `parity-check` `droppedPairs`/`droppedVerify` now actually increment (were structurally always 0); `stage5-6-qa` fails closed on out-of-enum verdicts (was silently passing); `ask-investigate` no longer crashes on `findings:null` and reports dropped dimensions by key. (+5 regression tests)
+- Removed a hardcoded `项目：stock-analysis（A股分析平台）` from the generic Stage-1 context in all four full-dev files (every non-stock-analysis user got the wrong project injected).
+- Split-flow (`full-dev-impl`) stage 5+6 now runs the full trigger matrix including `cso` (was health+qa only — auth/payment/PII features shipped via the split flow got no security review).
+- Merged-flow stage-2 review now ports the reviewer-failure ("防静默丢失") protocol (a crashed reviewer was silently counted as HIGH=0, falsely passing the gate).
+- bugfix (S2/S3) + iterate now carry the stop-wheel / background-shell invariant (these flows run the same long backend tests that triggered the original incident).
+- `/xdev:ask` Signal-B freshness check now normalizes timestamps via `datetime.fromisoformat` (lexicographic compare broke in negative timezones, falsely reading stale graphs as fresh).
+- `install.sh` no longer silently clobbers non-symlink user files (guarded `ln`), drops the fragile `eval` in `run()` (paths with `$` now work), errors on `--project` with non-windsurf agents, warns on missing workflow sources, and sweeps stale broken symlinks / orphan generated skill dirs.
+
+### Changed
+
+- Gatekeeper drift-check threshold now counts insertion + deletion churn (was insertion-only — deletion-only refactors bypassed batch drift-check).
+- bugfix S1 gained a narrow TDD exception for pure config/copy/docs fixes; the failure-loop table now has an S1 row.
+- iterate stage-3 `health` now has an explicit pass criterion + escalation row (the claimed "质量底线" was previously undefined).
+- Graphify consent unified to 🟡 disclose-and-proceed across all entrypoints (semantic re-extraction / first build; was 🔴 wait-for-confirm in full-dev, auto+disclose in ask — installed Graphify treated as implicit authorization).
+- Frontmatter stage count corrected 9→8; cross-command handoffs normalized to `/xdev:*`; Intent Guard summaries mention `[调整]`/`[回退]`; misleading `(writing-plans)` stage-3 label dropped (workflow generates plans inline); README.zh backports the Mainline-controller triggers + the missing graphify skill-map row.
+
+### Deferred (tracked in `docs/reviews/2026-07-06-self-review.md`)
+
+- **#38 stages 1-3 single-sourcing** deferred — the duplication drift is bidirectional (design.md lacks autoplan + 通过条件), so it needs content reconciliation before pointer-ifying, not a clean collapse.
+- ~8 lower-value items (worktree cleanup on resume, ask.md partial-graph routing / droppedDimensions contract / Signal-A stderr / exec-boundary, cross-tool handoff state, stage-3 reflection failure handling, bugfix `[TODO]` mechanic).
+
 ## [v2.1.1] - 2026-07-06
 
 ### Fixed
