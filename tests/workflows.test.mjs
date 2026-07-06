@@ -67,3 +67,83 @@ test('parity-check does not embed a local checkout path', async () => {
   const source = await readFile(join(repoRoot, '.claude/workflows/parity-check.js'), 'utf8')
   assert.doesNotMatch(source, /\/Users\/wxk\/Desktop\/workspace\/CascadeProjects\/xdev/)
 })
+
+// --- Batch 1: dynamic-workflow aggregation bugs (TDD) ---
+
+test('parity-check counts a failed extract agent in droppedPairs', async () => {
+  const result = await runWorkflow('.claude/workflows/parity-check.js', {
+    args: {},
+    agentResults: [
+      { pair: 'ask', verdict: 'in-sync', suspicious: [] },
+      { pair: 'bugfix', verdict: 'in-sync', suspicious: [] },
+      null, // full-dev extract agent fails
+      { pair: 'full-dev-design', verdict: 'in-sync', suspicious: [] },
+      { pair: 'full-dev-impl', verdict: 'in-sync', suspicious: [] },
+      { pair: 'iterate', verdict: 'in-sync', suspicious: [] },
+    ],
+  })
+  assert.equal(result.summary.droppedPairs, 1)
+  assert.equal(result.summary.realDriftCount, 0)
+})
+
+test('parity-check counts a failed verify agent in droppedVerify (not a false alarm)', async () => {
+  const result = await runWorkflow('.claude/workflows/parity-check.js', {
+    args: {},
+    agentResults: [
+      { pair: 'ask', verdict: 'suspicious', suspicious: [
+        { anchor: '阈值 X', ccSide: '1', wsSide: '2', whySuspicious: '数值不同', severity: 'high' },
+      ] },
+      { pair: 'bugfix', verdict: 'in-sync', suspicious: [] },
+      { pair: 'full-dev', verdict: 'in-sync', suspicious: [] },
+      { pair: 'full-dev-design', verdict: 'in-sync', suspicious: [] },
+      { pair: 'full-dev-impl', verdict: 'in-sync', suspicious: [] },
+      { pair: 'iterate', verdict: 'in-sync', suspicious: [] },
+      null, // ask's verify agent fails
+    ],
+  })
+  assert.equal(result.summary.droppedVerify, 1)
+  assert.equal(result.summary.falseAlarmCount, 0)
+  assert.equal(result.summary.realDriftCount, 0)
+})
+
+test('stage5-6-qa fails closed on an out-of-enum verdict', async () => {
+  const result = await runWorkflow('.claude/workflows/stage5-6-qa.js', {
+    args: { skills: ['health'] },
+    agentResults: [
+      { skill: 'health', verdict: 'critical', severity: 'high', score: 'N/A', findings: 'non-conforming verdict' },
+    ],
+  })
+  assert.equal(result.overall, 'blocked')
+  assert.equal(result.gatePassed, false)
+})
+
+test('ask-investigate survives a dimension returning findings:null', async () => {
+  const result = await runWorkflow('.claude/workflows/ask-investigate.js', {
+    args: { graphState: 'none' },
+    agentResults: [
+      { dimension: 'security', findings: null, note: 'no findings object' },
+      { dimension: 'testing', findings: [], note: '' },
+      { dimension: 'errors', findings: [], note: '' },
+      { dimension: 'architecture', findings: [], note: '', degraded: true },
+      { dimension: 'deadcode', findings: [], note: '' },
+      { dimension: 'observability', findings: [], note: '' },
+    ],
+  })
+  assert.equal(result.findingsCount, 0)
+  assert.deepEqual(result.dimensionsScanned, ['security', 'testing', 'errors', 'architecture', 'deadcode', 'observability'])
+})
+
+test('ask-investigate reports dropped dimensions by key (not Chinese label)', async () => {
+  const result = await runWorkflow('.claude/workflows/ask-investigate.js', {
+    args: { graphState: 'none' },
+    agentResults: [
+      null, // security agent fails
+      { dimension: 'testing', findings: [], note: '' },
+      { dimension: 'errors', findings: [], note: '' },
+      { dimension: 'architecture', findings: [], note: '' },
+      { dimension: 'deadcode', findings: [], note: '' },
+      { dimension: 'observability', findings: [], note: '' },
+    ],
+  })
+  assert.deepEqual(result.droppedDimensions, ['security'])
+})

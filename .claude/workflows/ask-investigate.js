@@ -85,7 +85,7 @@ const droppedDimensions = []
 const okResults = []
 for (let i = 0; i < perDim.length; i++) {
   if (perDim[i]) okResults.push(perDim[i])
-  else droppedDimensions.push(DIMENSIONS[i].label)
+  else droppedDimensions.push(DIMENSIONS[i].key)
 }
 
 // 聚合:跨维度合并 → 按 severity 排序 → 取 top 10(ask "产出质量>数量"约束)
@@ -94,7 +94,7 @@ const all = []
 const degradedDims = []
 for (const r of okResults) {
   if (r.degraded) degradedDims.push(r.dimension)
-  for (const f of r.findings) all.push({ ...f, dimension: r.dimension })
+  for (const f of (Array.isArray(r.findings) ? r.findings : [])) all.push({ ...f, dimension: r.dimension })
 }
 all.sort((a, b) => order[a.severity] - order[b.severity])
 const top = all.slice(0, 10)
