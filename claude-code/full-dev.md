@@ -159,12 +159,12 @@ argument-hint: <需求描述>
 3. 浅层快照不足以支撑判断。
 4. `command -v graphify` 成功。
 5. 当前 agent 环境可调度 Graphify skill pipeline；仅安装 CLI 不代表能首次完整建图。
-6. 通过隐私预检；若项目包含非代码文档、图片、PDF、音视频或可能敏感资料，必须先说明风险并等待用户确认。
+6. 隐私预检：若项目包含非代码文档、图片、PDF、音视频或可能敏感资料，🟡 先披露"Graphify 可能把这些内容发送到底层模型 API"后继续，不二次确认（与 `/xdev:ask` 同策略——已装 Graphify 视为隐式授权，成本透明披露即可）。
 
 更新图谱按变更类型分流：
 
 - 只改代码，且已有图谱：可先执行 `graphify check-update .`；确认需要更新时，优先执行 `graphify update .` 做本地代码重抽取（Graphify CLI 标注 no LLM needed），🟡 通知即继续。
-- 文档、图片、PDF、音视频或语义资料发生变化：视为语义重抽取，🔴 先说明可能调用底层模型 API 并等待用户确认。
+- 文档、图片、PDF、音视频或语义资料发生变化：视为语义重抽取，🟡 先披露可能调用底层模型 API 的成本后继续，不二次确认（与 `/xdev:ask` 同策略）。
 - 大范围重构、模块迁移、分支切换、依赖图明显变化：优先更新图谱；失败则降级 Level 1 并继续。
 - 不自动执行 `graphify install`、`graphify watch`、`graphify hook install` 或任何平台配置、常驻、钩子模式；这些只在用户明确要求时配置。
 
@@ -176,7 +176,7 @@ argument-hint: <需求描述>
 - 检测 Graphify CLI 只用 `command -v graphify`；不要在普通工作流运行中自动安装 Graphify 或执行 `graphify install`。
 - `command -v graphify` 只证明 CLI 可用，可用于已有图谱 query 和代码 AST 更新；首次完整建图还需要当前 agent 可调度 Graphify skill pipeline。
 - 官方 PyPI 包名是 `graphifyy`，CLI 命令是 `graphify`；如需安装，只引用 README Step 2.6，不在普通工作流内展开安装命令。
-- 首次完整初始化或更新图谱前，若项目包含非代码文档、图片、PDF、音视频或可能敏感的工作资料：🔴 说明 Graphify 可能把非代码语义抽取内容发送到底层模型 API，等待用户确认。
+- 首次完整初始化或更新图谱前，若项目包含非代码文档、图片、PDF、音视频或可能敏感的工作资料：🟡 披露 Graphify 可能把非代码语义抽取内容发送到底层模型 API，然后继续（不二次确认；与 `/xdev:ask` 同策略）。
 - 代码 AST 结构抽取、本地已有图谱查询、失败后降级到 Level-1 浅层扫描：🟡 通知即继续。
 - 不要把完整 `graph.json` 直接塞入上下文；优先读取 `GRAPH_REPORT.md`，再用 `graphify query` 获取与当前任务相关的小子图。
 
@@ -717,7 +717,8 @@ NEW_COMMITS=$(git rev-list --count ${LAST_GK_SHA}..HEAD)
 REAL_DIFF=$(git diff --name-only ${LAST_GK_SHA}..HEAD \
   | grep -vE '^(docs/|.*\.md$|.*\.txt$)')
 DIFF_LINES=$(git diff --shortstat ${LAST_GK_SHA}..HEAD \
-  | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+')
+  | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | grep -oE '[0-9]+' \
+  | awk '{s+=$1} END {print s+0}')
 DIFF_LINES=${DIFF_LINES:-0}
 
 # 短路：全是文档变更则跳过
