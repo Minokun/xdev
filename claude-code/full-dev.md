@@ -1,5 +1,5 @@
 ---
-description: 完整开发流程 — 从需求构思到功能发布的端到端标准工作流（最多 9 阶段），编排多个 skill 协同执行
+description: 完整开发流程 — 从需求构思到功能发布的端到端标准工作流（8 阶段），编排多个 skill 协同执行
 argument-hint: <需求描述>
 ---
 
@@ -245,7 +245,6 @@ fi
 **🟡 判定后通知用户分流结果，继续执行。**
 
 补充上下文：
-- 项目：stock-analysis（A 股分析平台）
 - 需求：$ARGUMENTS
 - 产出设计文档到 `docs/plans/YYYY-MM-DD-<topic>-design.md`
 - 完成后提交：`git add docs/plans/ && git commit -m "docs: add design for <feature>"`
@@ -673,13 +672,13 @@ mv /tmp/xdev-state-tmp.md "${_STATE_FILE}"
 ## — 交接检查点（默认跳过，直接继续阶段 4）
 
 > 本节仅在用户显式要求拆分到不同工具时才停下。
-> 需要拆分？请改用 `/project:xdev:full-dev-design` + `/project:xdev:full-dev-impl`。
+> 需要拆分？请改用 `/xdev:full-dev-design` + `/xdev:full-dev-impl`。
 
 ---
 
 ## 阶段 4：TDD 实现循环
 
-> **状态更新：** 阶段开始时，更新状态文件的「当前阶段」为 `4（TDD 实现循环）`，「完成阶段」追加 `4` 待完成。
+> **状态更新：** 阶段开始时，更新状态文件的「当前阶段」为 `4（TDD 实现循环）`（「完成阶段」仍为 `1, 2, 3`，`4` 在阶段 5+6 入口才追加）。
 
 > **Controller-first 指针：** 阶段 4 由主线程担任 controller，worker 只返回 receipt；恢复先看状态文件中的 `next_action`，不是回放对话；暂停条件收窄到设计阻塞、预算耗尽、整批 blocked / escalation 或用户决策门禁。
 >
@@ -722,7 +721,7 @@ DIFF_LINES=${DIFF_LINES:-0}
 # 短路：全是文档变更则跳过
 [ -z "$REAL_DIFF" ] && {
   echo "<!-- gk-skipped: no-real-changes, sha=$(git rev-parse HEAD) -->" >> <plan>.gatekeeper.log
-  continue  # 不触发，更新锚点
+  # 纯文档变更：本批次跳过 drift-check，锚点已在上一行更新（下方双阈值对 diff=0 自然不触发）
 }
 
 [ "$NEW_COMMITS" -ge 5 ] && [ "$DIFF_LINES" -ge 200 ] && {
@@ -824,7 +823,7 @@ MISSING: <数字>
 
 **例外跳过：** 若 `<阶段3结束sha>..HEAD` 之间无 impl 相关提交（全部任务 pivot / 标 `[TODO]` / 仅文档变更）：
 ```bash
-<!-- gk-final-skipped: no impl commits since stage-3-end -->
+echo "<!-- gk-final-skipped: no impl commits since stage-3-end, sha=$(git rev-parse HEAD) -->" >> <plan>.gatekeeper.log
 ```
 
 Gatekeeper 最终检查使用与批次间相同的 subagent prompt 和处理规则，`DEVIATION > 0` 仍触发 🔴 暂停。

@@ -212,7 +212,7 @@ xdev 解决了这四个问题。
 ```
 阶段 1：需求探索（brainstorming / office-hours）
 阶段 2：计划审查 —— 并行 subagent（eng + design + devex + ceo 按需选择）
-阶段 3：TDD 实现计划（writing-plans，含依赖标注）
+阶段 3：TDD 实现计划（含依赖标注）
          ── 交接点（可选，用于跨工具拆分）──
 阶段 4：TDD 实现 —— 风险分级（L0–L3）+ 心跳监控 + L3 独立审计
 阶段 5+6：质量 + QA（并行）—— review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review
@@ -226,9 +226,9 @@ xdev 解决了这四个问题。
 
 **实施 worktree 守卫** —— xdev 在产生任何 commit（包括设计 / 视觉 / 计划）之前，就检查当前分支是否是仓库 base/default 分支（通常是 `main`/`master`）。若命中，就在隔离的 git worktree 中创建 `xdev-*` feature branch，并在 worktree 中继续整个流程。full-dev/full-dev-design 在前置守卫时执行（让阶段 1 的设计 commit 也落在 feature 分支上，而非 base）；bugfix/iterate 在流程开头执行。worktree 位置按顺序解析：已有且 ignore 的 `.worktrees/` → 已有且 ignore 的 `worktrees/` → `${XDEV_WORKTREE_ROOT}`（环境变量，可指向 SSD / 共享存储）→ `~/.config/xdev/worktrees/<project>/`（默认）。`ship` 成功后自动清理 worktree；阶段 7 保留最终兜底检查防止在 base 分支调用 `ship`。守卫同时会把根级 `.env*` / `.envrc` 拷到新 worktree，并提示首次跑测试前需重新执行 `uv sync` / `npm ci`（`git worktree add` 不会带上 gitignored 的构建产物）。
 
-**结构化通过条件** —— 阶段 3 生成的每个任务都带有可机械校验的通过条件：精确的验证命令、期望退出码、必须包含的输出文本、以及可选的额外断言（如 `curl` 探针）。Subagent 提交前必须逐项验收，全部满足才能提交。Subagent C 在计划反思阶段额外校验"输出必须包含"的文本片段是否能从验证命令的实际输出中推导。
+**主线控制者** —— 阶段 4 由主线程担任总控：保持干净上下文（只留设计文档、Intent Contract、计划、Handoff Summary、任务状态、subagent 回执），把计划拆成携带相关 Intent Contract 片段的窄 task packet，按风险 + 冲突矩阵 + 依赖派发给 TDD subagent / teamagent。Subagent 只执行被分配任务，所有输出回到主线汇总。主线在每个批次边界更新 `mainline_checkpoints` 并刷新 Handoff Summary，并在以下任一情况暂停以重新对齐用户意图：subagent 返回 `NEEDS_RECLASSIFY` / `BLOCKED`、Gatekeeper 报告 `DEVIATION`、证据不满足通过条件、或计划与代码现实偏离。防止长上下文漂移和单方面扩范围。
 
-**主线控制者** —— 实现阶段由主线程担任总控和监工，保持干净上下文，依据 Intent Contract、设计文档、实现计划和 Handoff Summary 生成窄 task packet，再分配给 subagent / teamagent。Subagent 只执行被分配任务，所有回执回到主线程汇总，避免长上下文后偏离用户目标。
+**结构化通过条件** —— 阶段 3 生成的每个任务都带有可机械校验的通过条件：精确的验证命令、期望退出码、必须包含的输出文本、以及可选的额外断言（如 `curl` 探针）。Subagent 提交前必须逐项验收，全部满足才能提交。Subagent C 在计划反思阶段额外校验"输出必须包含"的文本片段是否能从验证命令的实际输出中推导。
 
 **阶段 4 风险分级** —— 阶段 3 的每个任务都带 `risk` 分级（L0 微改 / L1 本地 / L2 跨模块 / L3 关键路径），驱动阶段 4 的编排：窄执行器 packet 按风险收敛；review 按风险抽样（L1 每模块 1 个）或强制（L2/L3）；L3 任务强制独立审计 subagent，sidecar 写入 `docs/state/audits/<slug>/`；subagent 进度由风险感知心跳监控（L1 5/10min、L2 8/15min、L3 15/25min），可能卡住的子任务先被自动 kill 重派，再升级给用户。典型阶段 4 耗时从 ~90min 降到 45–60min，同时保留共享模块 / auth / 金额敏感代码的质量门禁。
 
@@ -588,6 +588,7 @@ cd ~/.claude/skills/xdev && git pull
 | `ship` | gstack | 所有工作流 |
 | `land-and-deploy` | gstack | full-dev 阶段 7.2（可选：merge PR + CI + 生产健康检查）|
 | `learn` | gstack | full-dev、bugfix S3 |
+| `graphify` CLI | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify)（`graphifyy` 包）| full-dev / full-dev-design / bugfix S3 可选深度项目上下文 |
 | `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design 阶段 1.5（全新产品 / 复杂 UI）|
 | `frontend-design` | [Anthropic skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design) / 本地已安装 skill | full-dev / full-dev-design 阶段 1.5（单页面 / 少量组件）|
 

@@ -100,20 +100,20 @@ fi
 
 | 高风险信号 | 升级到 |
 |------------|--------|
-| 涉及金融计算/资金逻辑 | → /project:xdev:full-dev |
-| 涉及认证/权限/安全 | → /project:xdev:full-dev |
-| 涉及数据库 schema 变更 | → /project:xdev:full-dev |
-| 涉及第三方 API 集成 | → /project:xdev:full-dev |
-| 影响已发布 API 的行为 | → /project:xdev:full-dev（需 devex-review） |
-| 新增页面 / 视图 / 路由 | → /project:xdev:full-dev（含视觉设计阶段） |
-| 新增组件且含 ≥ 2 个交互状态 | → /project:xdev:full-dev（含视觉设计阶段） |
+| 涉及金融计算/资金逻辑 | → /xdev:full-dev |
+| 涉及认证/权限/安全 | → /xdev:full-dev |
+| 涉及数据库 schema 变更 | → /xdev:full-dev |
+| 涉及第三方 API 集成 | → /xdev:full-dev |
+| 影响已发布 API 的行为 | → /xdev:full-dev（需 devex-review） |
+| 新增页面 / 视图 / 路由 | → /xdev:full-dev（含视觉设计阶段） |
+| 新增组件且含 ≥ 2 个交互状态 | → /xdev:full-dev（含视觉设计阶段） |
 
 > **UI 迭代留在本流程的条件：** 现有组件的样式调整（文案 / 间距 / 颜色微调）、修复现有 UI 的显示 bug。这类改动用 `qa` 验证足够，不需要设计 skill。
 
 **升级路径：**
-- 量化阈值任一不满足 → 升级到 `/project:xdev:full-dev`
-- 风险覆盖命中任一 → 升级到 `/project:xdev:full-dev`
-- 发现 bug → 切换到 `/project:bugfix`
+- 量化阈值任一不满足 → 升级到 `/xdev:full-dev`
+- 风险覆盖命中任一 → 升级到 `/xdev:full-dev`
+- 发现 bug → 切换到 `/xdev:bugfix`
 
 🟡 通知用户分流结果，继续执行。
 
@@ -174,7 +174,7 @@ Risk triggers:
 - [ ] Installer / release / workflow protocol
 
 Escalation:
-- <stay in /xdev:iterate | switch to /project:bugfix | upgrade to /project:xdev:full-dev | add review/cso/devex-review>
+- <stay in /xdev:iterate | switch to /xdev:bugfix | upgrade to /xdev:full-dev | add review/cso/devex-review>
 
 Suggested validation:
 - <command or manual probe>
@@ -183,7 +183,7 @@ Unknowns:
 - <what rg / local reading cannot prove>
 ```
 
-升级规则：跨模块或影响 API / CLI / SDK / schema / auth / payment / installer / workflow 协议 → 升级 `/project:xdev:full-dev`；发现实际是错误行为 → 切 `/project:bugfix`；查不到调用方但目标是共享文件 → 写 Unknowns，不得声称影响面为空。
+升级规则：跨模块或影响 API / CLI / SDK / schema / auth / payment / installer / workflow 协议 → 升级 `/xdev:full-dev`；发现实际是错误行为 → 切 `/xdev:bugfix`；查不到调用方但目标是共享文件 → 写 Unknowns，不得声称影响面为空。
 
 ---
 
@@ -292,7 +292,7 @@ fi
 
 | 信号 | 升级到 |
 |------|-------|
-| 改动超出范围限制 | `/project:xdev:full-dev` |
-| 发现 bug（不是当前改动引入的） | `/project:bugfix` |
-| 需要新依赖或改 API | `/project:xdev:full-dev` |
-| 测试发现意外的失败 | `/project:bugfix` |
+| 改动超出范围限制 | `/xdev:full-dev` |
+| 发现 bug（不是当前改动引入的） | `/xdev:bugfix` |
+| 需要新依赖或改 API | `/xdev:full-dev` |
+| 测试发现意外的失败 | `/xdev:bugfix` |

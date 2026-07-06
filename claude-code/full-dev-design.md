@@ -82,7 +82,6 @@ Graphify 生命周期、隐私、过期和降级规则与 `/xdev:full-dev` 保�
 **🟡 判定后通知用户分流结果，继续执行。**
 
 补充上下文：
-- 项目：stock-analysis（A 股分析平台）
 - 需求：$ARGUMENTS
 - 产出设计文档到 `docs/plans/YYYY-MM-DD-<topic>-design.md`
 - 完成后提交：`git add docs/plans/ && git commit -m "docs: add design for <feature>"`
@@ -537,7 +536,7 @@ office-hours / superpowers:brainstorming
 **交接给实现工具的提示：**
 
 ```
-/project:xdev:full-dev-impl
+/xdev:full-dev-impl
 
 请读取以下文件获取上下文：
 1. AGENTS.md — 项目架构和开发命令
@@ -547,7 +546,7 @@ office-hours / superpowers:brainstorming
 按照实现计划逐步执行 TDD 循环。
 ```
 
-**下一步：** 使用 `/project:xdev:full-dev-impl` 继续实现阶段（将自动读取依赖标注进行并行分析）。
+**下一步：** 使用 `/xdev:full-dev-impl` 继续实现阶段（将自动读取依赖标注进行并行分析）。
 也可将实现计划交给其他工具（如 Codex）执行。
 
 ## 质量门禁

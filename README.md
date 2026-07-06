@@ -212,7 +212,7 @@ Commands self-classify and degrade, so when in doubt just describe the goal. The
 ```
 Stage 1: Requirement exploration (brainstorming / office-hours)
 Stage 2: Plan review — parallel subagents (eng + design + devex + ceo as needed)
-Stage 3: TDD implementation plan (writing-plans) with dependency annotations
+Stage 3: TDD implementation plan with dependency annotations
          ── handoff point (optional, for cross-tool split) ──
 Stage 4: Implementation — risk-gated parallel batches (L0–L3) + heartbeat + L3 audit
 Stage 5+6: Quality + QA (parallel) — review(cond.) ‖ cso --diff(cond.) ‖ health ‖ qa ‖ design-review
