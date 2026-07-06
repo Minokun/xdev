@@ -9,6 +9,23 @@
 
 ---
 
+## [Unreleased] - 2026-07-06 (self-review 批量修复)
+
+### Changed — workflow / JS / installer 自审批量修复
+
+**改动位置：** `claude-code/*.md`（full-dev / full-dev-impl / bugfix / iterate / ask）、`bin/install.sh`、`.claude/workflows/*.js`、`README.md` / `README.zh.md`
+
+**What landed：** 见分支 `xdev-self-review-fixes` 的 7 个 commit（`9c6229e`→`a548366`）。覆盖 self-review fan-out workflow（review→verify→synthesize）产出的全部 **7 条 HIGH** + 大部分 MEDIUM/LOW。完整清单见 `docs/reviews/2026-07-06-self-review.md`。
+
+**Rationale：** xdev 自身的 workflow 文件 / JS 聚合层 / 安装器在持续演进中积累了静默丢失、dogfood 泄漏、跨文件 drift、失败路径缺口。用 review workflow 系统性挖出，按 HIGH→MEDIUM→LOW 批量修复。JS 修复走 TDD（先红后绿，+5 回归测试）；install.sh 端到端验证（syntax / `$`-in-path / 非符号链接 guard / dry-run）。
+
+**What was tried first / Deferred：**
+- **#38 stages 1-3 单源化延后**：报告描述为"折叠成指针"，但结构对比发现 drift **双向**——design.md 缺 autoplan（一键全审）+ 通过条件两块，直接指针化会丢内容。需先双向调和（把两块补进 design.md）再指针化，单独 focused 续集做。
+- **graphify 同意策略 #12 统一成自动+披露**：ask.md 自动跑+披露、full-dev.md 要求 🔴 显式确认；统一成前者（已装 Graphify = 隐式授权，成本透明披露），记入 root CHANGELOG。
+- 其余 ~8 项 LOW（worktree 清理 / ask 边界细节等）记入 `docs/reviews/2026-07-06-self-review.md` 作为 backlog。
+
+---
+
 ## [Unreleased] - 2026-07-06
 
 ### Changed — 第三方依赖升级 + README 同步
