@@ -55,11 +55,16 @@ log() { echo "[xdev] $*"; }
 warn() { echo "[xdev] warning: $*" >&2; }
 err() { echo "[xdev] error: $*" >&2; exit 1; }
 
+# run <cmd> <arg> ... — execute a command, or echo it under --dry-run.
+# Arguments are passed through directly (no eval), so paths with spaces / $ / quotes
+# are handled correctly and --dry-run shows exactly what will run.
 run() {
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "  + $*"
+    printf '  + '
+    printf '%s ' "$@"
+    echo
   else
-    eval "$@"
+    "$@"
   fi
 }
 
@@ -98,6 +103,14 @@ if [ -n "$TARGET_OVERRIDE" ]; then
   done
 fi
 
+# --project only makes sense for windsurf (project-local .windsurf/workflows/); reject it
+# for claude/codex so the user doesn't silently get a global install while expecting local.
+if [ "$PROJECT_LOCAL" -eq 1 ]; then
+  for a in "${AGENTS[@]}"; do
+    [ "$a" != "windsurf" ] && err "--project only applies to windsurf; '$a' has no project-local mode. Drop --project or select windsurf only."
+  done
+fi
+
 # --- per-agent installers ---
 install_claude() {
   local target="${TARGET_OVERRIDE:-$CLAUDE_DEFAULT_TARGET}"
@@ -105,16 +118,16 @@ install_claude() {
   [ -d "$src" ] || err "missing source dir: $src"
 
   log "Claude Code → $target"
-  run "mkdir -p \"$(dirname "$target")\""
+  run mkdir -p "$(dirname "$target")"
 
   if [ -L "$target" ]; then
     log "removing existing symlink: $target"
-    run "rm \"$target\""
+    run rm "$target"
   elif [ -e "$target" ]; then
     err "target exists and is NOT a symlink: $target (refusing to overwrite; remove manually)"
   fi
 
-  run "ln -s \"$src\" \"$target\""
+  run ln -s "$src" "$target"
   log "linked $target → $src"
 
   # Link xdev's Claude-Code Dynamic Workflows globally (~/.claude/workflows/) so
@@ -128,14 +141,23 @@ install_claude() {
   local wf_src="$XDEV_ROOT/.claude/workflows"
   if [ -d "$wf_src" ]; then
     log "Claude Code workflows → $wf_target"
-    run "mkdir -p \"$wf_target\""
+    run mkdir -p "$wf_target"
     local wf_count=0
     for wf in stage5-6-qa.js ask-investigate.js; do  # path-agnostic workflows (no hardcoded ROOT)
-      [ -f "$wf_src/$wf" ] || continue
-      run "ln -sfn \"$wf_src/$wf\" \"$wf_target/$wf\""
+      if [ ! -f "$wf_src/$wf" ]; then warn "missing workflow source: $wf — skipped"; continue; fi
+      # Guard: never clobber a non-symlink user file (matches install_windsurf / install_codex_prompts).
+      if [ -L "$wf_target/$wf" ]; then
+        run rm "$wf_target/$wf"
+      elif [ -e "$wf_target/$wf" ]; then
+        warn "skipping $wf_target/$wf (exists, not a symlink — remove manually if you want xdev's version)"
+        continue
+      fi
+      run ln -s "$wf_src/$wf" "$wf_target/$wf"
       wf_count=$((wf_count + 1))
     done
     log "workflows: linked $wf_count globally (all projects)"
+  else
+    warn "workflows source dir not found: $wf_src — global workflow linking skipped"
   fi
 }
 
@@ -152,7 +174,7 @@ install_windsurf() {
   [ -d "$src" ] || err "missing source dir: $src"
 
   log "Windsurf → $target"
-  run "mkdir -p \"$target\""
+  run mkdir -p "$target"
 
   local count=0 skipped=0
   for f in "$src"/*.md; do
@@ -162,14 +184,14 @@ install_windsurf() {
     local link="$target/$name"
 
     if [ -L "$link" ]; then
-      run "rm \"$link\""
+      run rm "$link"
     elif [ -e "$link" ]; then
       warn "skipping $link (exists, not a symlink — remove manually if you want xdev's version)"
       skipped=$((skipped + 1))
       continue
     fi
 
-    run "ln -s \"$f\" \"$link\""
+    run ln -s "$f" "$link"
     count=$((count + 1))
   done
   log "Windsurf: linked $count file(s); skipped $skipped"
@@ -187,7 +209,7 @@ install_codex_prompts() {
   [ -d "$src" ] || err "missing source dir: $src"
 
   log "Codex prompts → $target"
-  run "mkdir -p \"$target\""
+  run mkdir -p "$target"
 
   local count=0 skipped=0
   for f in "$src"/*.md; do
@@ -197,17 +219,29 @@ install_codex_prompts() {
     link="$target/xdev-$name.md"
 
     if [ -L "$link" ]; then
-      run "rm \"$link\""
+      run rm "$link"
     elif [ -e "$link" ]; then
       warn "skipping $link (exists, not a symlink — remove manually if you want xdev's version)"
       skipped=$((skipped + 1))
       continue
     fi
 
-    run "ln -s \"$f\" \"$link\""
+    run ln -s "$f" "$link"
     count=$((count + 1))
   done
   log "Codex prompts: linked $count file(s); skipped $skipped"
+
+  # Sweep stale xdev-* prompt symlinks whose target no longer resolves
+  # (a workflow was renamed/dropped in a newer release). Only removes BROKEN symlinks.
+  local removed=0
+  for link in "$target"/xdev-*.md; do
+    [ -L "$link" ] || continue
+    if [ ! -e "$link" ]; then
+      run rm "$link"
+      removed=$((removed + 1))
+    fi
+  done
+  [ "$removed" -gt 0 ] && log "Codex prompts: removed $removed stale (broken) symlink(s)"
 }
 
 install_codex_skills() {
@@ -216,7 +250,7 @@ install_codex_skills() {
   [ -d "$src" ] || err "missing source dir: $src"
 
   log "Codex skills → $target"
-  run "mkdir -p \"$target\""
+  run mkdir -p "$target"
 
   local count=0
   for f in "$src"/*.md; do
@@ -229,7 +263,7 @@ install_codex_skills() {
     description="$(awk '/^description:/{sub(/^description: */, ""); print; exit}' "$f")"
     [ -n "$description" ] || description="xdev $name workflow"
 
-    run "mkdir -p \"$skill_dir\""
+    run mkdir -p "$skill_dir"
 
     # Refuse to overwrite a non-generated SKILL.md (no xdev marker).
     if [ -e "$skill_md" ] && [ ! -L "$skill_md" ] && ! grep -q "^<!-- xdev-generated -->" "$skill_md" 2>/dev/null; then
@@ -262,6 +296,23 @@ EOF
     count=$((count + 1))
   done
   log "Codex skills: wrote $count skill(s)"
+
+  # Sweep stale generated skill dirs: xdev marker present but the source workflow is
+  # gone (renamed/dropped). Only removes dirs xdev itself generated (marker-gated).
+  local s_removed=0
+  for d in "$target"/xdev-*/; do
+    [ -d "$d" ] || continue
+    local sm="${d}SKILL.md" nm
+    [ -f "$sm" ] || continue
+    grep -q "^<!-- xdev-generated -->" "$sm" 2>/dev/null || continue  # only xdev-generated dirs
+    nm="$(basename "${d%/}")"   # xdev-<name>
+    nm="${nm#xdev-}"
+    if [ ! -f "$src/$nm.md" ]; then
+      run rm -rf "${d%/}"
+      s_removed=$((s_removed + 1))
+    fi
+  done
+  [ "$s_removed" -gt 0 ] && log "Codex skills: removed $s_removed stale generated dir(s)"
 }
 
 install_codex() {
