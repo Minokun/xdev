@@ -23,9 +23,9 @@ export const meta = {
 
 const DIMENSIONS = [
   { key: 'security',      label: '安全热点',       rg: 'eval\\(|字符串拼 SQL|明文 secret|dangerouslySetInnerHTML|password|api[_-]?key', needsGraph: false },
-  { key: 'testing',       label: '测试缺口',       rg: 'def |function |export ', hint: '核心模块/公开 API 是否有同名 test 文件', needsGraph: 'partial' },
-  { key: 'errors',        label: '错误处理与回退', rg: 'except:|except Exception|catch\\s*\\(.*\\)\\s*\\{\\s*\\}|pass$', needsGraph: false },
-  { key: 'architecture',  label: '架构耦合',       rg: 'import|require|from ', hint: '循环依赖/上帝模块/跨簇高耦合', needsGraph: true },
+  { key: 'testing',       label: '测试缺口',       rg: '\\b(def|function|export)\\b', hint: '核心模块/公开 API 是否有同名 test/spec 文件', needsGraph: 'partial' },
+  { key: 'errors',        label: '错误处理与回退', rg: 'except:|except Exception|catch\\s*\\([^)]*\\)\\s*\\{\\s*\\}|^\\s*pass\\s*$', needsGraph: false },
+  { key: 'architecture',  label: '架构耦合',       rg: '\\b(import|require|from)\\b', hint: '循环依赖/上帝模块/跨簇高耦合', needsGraph: true },
   { key: 'deadcode',      label: '死代码与技术债', rg: 'TODO|FIXME|HACK|XXX|: any|as any', needsGraph: 'partial' },
   { key: 'observability', label: '可观测性',       rg: 'logger|log\\.|console\\.|metric|trace|span', hint: '关键路径(入口/核心逻辑)是否有日志/指标/错误上报', needsGraph: false },
 ]
@@ -63,6 +63,7 @@ const perDim = await parallel(DIMENSIONS.map((d) => () =>
 
 扫描方式:
 - 用 rg 搜该维度信号,模式参考:${d.rg}${d.hint ? '\n- 重点判断:' + d.hint : ''}
+- 优先扫源码/测试/配置入口;默认排除 .git、node_modules、dist、build、graphify-out、大型文档产物
 - 读最相关文件确认(入口/核心逻辑优先)
 - 证据必须附 file:line(诚实度"源码确认"级)
 

@@ -8,7 +8,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 
 ### Added
 
-- `stage5-6-qa` — a dev-only parallel quality-check workflow that aggregates Stage 5+6 (review / `cso --diff` / health / qa / design-review) across parallel subagents into a 5-state verdict (`pass` / `degraded` / `baseline_debt` / `fix_required` / `blocked`), keeping each skill's full findings isolated from the main context. Wired into `/full-dev` via a global symlink so it runs as part of the end-to-end pipeline.
+- `stage5-6-qa` — a dev-only parallel quality-check workflow that aggregates Stage 5+6 (review / `cso --diff` / health / qa / design-review / devex-review) across parallel subagents into a 5-state verdict (`pass` / `degraded` / `baseline_debt` / `fix_required` / `blocked`), keeping each skill's full findings isolated from the main context. Wired into `/full-dev` via a global symlink so it runs as part of the end-to-end pipeline.
 - `parity-check` — a contributor-facing port-drift detector that diffs the `claude-code/` and `windsurf/` source trees, separates intentional IDE adaptation from real behavioral drift, and alerts only on the latter.
 - `/ask` health-check parallelized — the 6-dimension audit checklist now runs dimensions in parallel via `ask-investigate`.
 

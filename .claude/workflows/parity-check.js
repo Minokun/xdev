@@ -25,7 +25,7 @@ export const meta = {
   ],
 }
 
-const ROOT = (typeof args !== 'undefined' && args && args.root) || '/Users/wxk/Desktop/workspace/CascadeProjects/xdev'
+const ROOT = (typeof args !== 'undefined' && args && args.root) || '.'
 
 // 6 对命令文件
 const PAIRS = [

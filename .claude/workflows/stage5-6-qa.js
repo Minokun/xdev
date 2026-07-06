@@ -15,12 +15,9 @@
 // PoC(wf_63b32c9d-90f)已验证:workflow subagent 拥有 Skill 工具,可调起 health/qa 等
 // skill 并返回结构化结果;subagent 模式自动跳过 skill 内的 AskUserQuestion 交互门。
 //
-// 定位:**开发期工具,不接入 full-dev 产品命令**(曾尝试集成进 claude-code/full-dev.md
-// 阶段5+6,但冒烟暴露两个问题已回退:① health 自指误报 —— health 用标准 Node 扫本目录
-// .js,会因 workflow 脚本是 Claude Code 特定格式(export const meta + 顶层 return,runtime
-// 包装使其合法)而非标准 ES 模块,报 SyntaxError → fix_required;② 用户项目无此脚本则
-// workflow 跑不了)。手动调用方式:Workflow({ scriptPath, args:{ skills:[...] } })。
-// 若 args.skills 含 health,上述 health 误报属已知(脚本在 Claude Code runtime 正常),可忽略。
+// 安装后由 bin/install.sh 全局 symlink 到 ~/.claude/workflows/。full-dev.md 通过
+// Workflow({ name: "stage5-6-qa", args:{ skills:[...] } }) 调用;项目级同名 workflow
+// 可覆盖全局版本。
 
 export const meta = {
   name: 'stage5-6-qa',
@@ -77,15 +74,32 @@ for (let i = 0; i < perSkill.length; i++) {
   else droppedSkills.push(SKILLS[i])
 }
 
+const normalizedResults = okResults.map((r) => {
+  let verdict = r.verdict
+  if ((verdict === 'degraded' || verdict === 'baseline_debt') && !(r.evidence && r.evidence.trim())) {
+    verdict = 'fix_required'
+  }
+  return { ...r, verdict }
+})
+
+for (const skill of droppedSkills) {
+  normalizedResults.push({
+    skill,
+    verdict: 'blocked',
+    severity: 'high',
+    score: 'N/A',
+    findings: 'skill agent 失败或超时,该维度未完成检查',
+    evidence: 'droppedSkills 记录该 skill agent 未返回结构化结果',
+  })
+}
+
 // 五态聚合:最严重优先;DEGRADED/BASELINE_DEBT 无 evidence 降级为 fix_required;na 忽略
-// #2 修复:全部 skill 失败(okResults 空)时 overall=blocked,不能默认 pass 放行带病代码
+// 任一触发 skill 失败时 overall=blocked,不能基于不完整数据放行。
 const order = { blocked: 0, fix_required: 1, degraded: 2, baseline_debt: 2, pass: 3, na: 4 }
-let overall = okResults.length === 0 ? 'blocked' : 'pass'
-for (const r of okResults) {
-  let v = r.verdict
-  if (v === 'na') continue
-  if ((v === 'degraded' || v === 'baseline_debt') && !(r.evidence && r.evidence.trim())) v = 'fix_required'
-  if (order[v] < order[overall]) overall = v
+let overall = normalizedResults.length === 0 ? 'blocked' : 'pass'
+for (const r of normalizedResults) {
+  if (r.verdict === 'na') continue
+  if (order[r.verdict] < order[overall]) overall = r.verdict
 }
 
 const gatePassed = overall === 'pass' || overall === 'degraded' || overall === 'baseline_debt'
@@ -95,9 +109,9 @@ return {
   droppedSkills,
   overall,
   gatePassed,
-  fixRequired: okResults.filter((r) => r.verdict === 'fix_required' || r.verdict === 'blocked'),
-  perSkill: okResults.map((r) => ({ skill: r.skill, verdict: r.verdict, severity: r.severity, score: r.score, findings: r.findings })),
+  fixRequired: normalizedResults.filter((r) => r.verdict === 'fix_required' || r.verdict === 'blocked'),
+  perSkill: normalizedResults.map((r) => ({ skill: r.skill, verdict: r.verdict, severity: r.severity, score: r.score, findings: r.findings })),
   note: droppedSkills.length > 0
-    ? `⚠️ ${droppedSkills.length} 个 skill agent 失败(非静默丢弃):${droppedSkills.join('、')}。结果基于其余 ${okResults.length} 个;若失败的是关键 skill,overall 可能为 blocked。`
+    ? `⚠️ ${droppedSkills.length} 个 skill agent 失败(非静默丢弃):${droppedSkills.join('、')}。overall=blocked,需重跑失败 skill 后再判断。`
     : '阶段5+6 workflow 聚合结果。fixRequired 列出需处理项;各 skill 全文 findings 已隔离在脚本变量,未进主上下文。',
 }

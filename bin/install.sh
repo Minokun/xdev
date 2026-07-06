@@ -121,8 +121,9 @@ install_claude() {
   # they're available in every project, not just this repo. full-dev.md calls them
   # by `name`; global workflows are discovered in all projects (project-level wins
   # on clash). ONLY link path-agnostic workflows (no hardcoded repo ROOT):
-  #   stage5-6-qa.js — reads args.skills, works in any project  →  linked globally
-  #   parity-check.js — hardcodes xdev ROOT (xdev-internal)     →  stays in repo
+  #   stage5-6-qa.js   — reads args.skills, works in any project → linked globally
+  #   ask-investigate.js — reads args.graphState, project-agnostic → linked globally
+  #   parity-check.js  — xdev contributor tool, not a product workflow → stays in repo
   local wf_target="$HOME/.claude/workflows"
   local wf_src="$XDEV_ROOT/.claude/workflows"
   if [ -d "$wf_src" ]; then
