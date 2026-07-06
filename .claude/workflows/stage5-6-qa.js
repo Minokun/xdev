@@ -99,6 +99,7 @@ const order = { blocked: 0, fix_required: 1, degraded: 2, baseline_debt: 2, pass
 let overall = normalizedResults.length === 0 ? 'blocked' : 'pass'
 for (const r of normalizedResults) {
   if (r.verdict === 'na') continue
+  if (!(r.verdict in order)) { overall = 'blocked'; continue }
   if (order[r.verdict] < order[overall]) overall = r.verdict
 }
 

@@ -107,8 +107,9 @@ const results = await pipeline(
   ),
   // stage 2: 对每个可疑漂移派一个怀疑者对抗式确认(每对文件的发现一出来就立刻验证,不等其他对)
   (extractResult, p) => {
-    if (!extractResult || !extractResult.suspicious || !extractResult.suspicious.length) {
-      return { pair: p.name, verdict: extractResult ? extractResult.verdict : 'unknown', confirmed: [] }
+    if (!extractResult) return null
+    if (!extractResult.suspicious || !extractResult.suspicious.length) {
+      return { pair: p.name, verdict: extractResult.verdict, confirmed: [] }
     }
     const suppress = (typeof args !== 'undefined' && args && args.suppress) || []
     return parallel(extractResult.suspicious.map((s) => () => {
@@ -132,7 +133,7 @@ const results = await pipeline(
 
 只有"会影响行为的真实语义不一致"才 isRealDrift=true。reasoning / fix 用中文。`,
         { label: `verify:${p.name}`, phase: 'Verify', schema: VERIFY_SCHEMA }
-      ).then((v) => ({ suspect: s, verdict: v }))
+      ).then((v) => v ? { suspect: s, verdict: v } : null)
     })).then((verified) => ({ pair: p.name, verdict: extractResult.verdict, confirmed: verified.filter(Boolean), droppedVerify: verified.length - verified.filter(Boolean).length }))
   }
 )
