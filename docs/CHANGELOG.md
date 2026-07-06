@@ -9,6 +9,24 @@
 
 ---
 
+## [Unreleased] - 2026-07-06 (stages 1-3 刻意并行决策)
+
+### Changed — #38 修正：stages 1-3 不单源化，改为「刻意并行 + 共享体同步」
+
+**改动位置：** `claude-code/full-dev-design.md`（补 autoplan + 通过条件 机制）、`docs/reviews/2026-07-06-self-review.md`
+
+**What landed：**
+1. **#38 不做指针化**：199 行 diff 证明 full-dev.md 与 design.md 的 stages 1-3 不是纯复制，而是**刻意并行**——带流程特定的分支命名（`xdev-full-dev-<ts>` vs `xdev-full-dev-design-<ts>`）、状态文件路径（`full-dev--` vs `full-dev-design--`）、stage 3→后续过渡（合并流继续阶段 4 vs 拆分流交接）。指针化会破坏合并流的 resume 与 stage 衔接。
+2. **共享体同步**：把 full-dev.md 独有的 `通过条件` pass-criteria 机制（任务模板字段 + 字段规则表 + subagent C ③ 可推导性校验）+ `autoplan`（一键全审）补进 design.md，让拆分流计划也具备可机械校验的通过条件（#31）。reviewer-failure 协议此前已双向同步（#10）。
+
+**What was tried first（放弃的方向）：**
+- **把 full-dev.md stages 1-3 折叠成指针指向 design.md**（self-review 报告 #38 原方案，类比 stage-4 单源化）—— 放弃。理由：结构对比 + diff 显示两份是「刻意并行」（同 claude-code/windsurf 的分叉），不是冗余复制；指针化会丢流程特定的分支名/状态文件/交接语义，破坏合并流正确性。报告的 verify 阶段只读了片段、没整段 diff，所以漏判。
+- **新建独立共享文件**（类比 full-dev-impl.md）抽 stages 1-3 共享体 —— 放弃（本轮）。理由：工作量最大，且流程特定部分仍需留在各自入口；收益（消 drift）已被「共享体同步 + 刻意并行文档化」覆盖大部分。
+
+**Rationale：** xdev 的 claude-code/windsurf 分叉已被 CHANGELOG v2.0.4 确立为「刻意并行、不统一」。stages 1-3 的 full-dev.md/design.md 分叉同构——两份为不同流程（合并流 vs 纯设计流）各自调优，共享体（审查协议、任务格式、通过条件、autoplan）应手动同步，流程特定部分（分支名、状态文件、交接）必须分叉。parity-check 只覆盖 claude-code↔windsurf，**full-dev↔design 的 stages 1-3 共享体同步目前靠人工**——本条记录该约定。
+
+---
+
 ## [Unreleased] - 2026-07-06 (self-review 批量修复)
 
 ### Changed — workflow / JS / installer 自审批量修复
