@@ -4,6 +4,26 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v2.1.1] - 2026-07-06
+
+### Fixed
+
+- **Stage 5+6 verdict now blocks on any dropped triggered skill** (was: only when an entire dimension failed). A single dropped/timed-out `health` / `qa` / `review` / `cso --diff` / `design-review` / `devex-review` subagent in `stage5-6-qa` now blocks the aggregate verdict instead of being silently swallowed — closes the last gap in the no-silent-loss guarantee.
+- `parity-check` is now path-agnostic (no embedded local checkout path), so it runs correctly from any clone.
+
+### Changed
+
+- **Third-party dependency upgrade + install-doc sync.** Bumped gstack → 1.58.5, ui-ux-pro-max → 2.10.1, graphify → 0.9.7 (CLI + skill), refreshed the graphify skill, and removed a stale duplicate `frontend-design` symlink (the plugin copy is current). README install instructions updated:
+  - **ui-ux-pro-max npm package renamed** `uipro-cli` → `ui-ux-pro-max-cli` (the old name is frozen at 2.2.3; the CLI binary is still `uipro`).
+  - **graphify** repo moved to `Graphify-Labs/graphify`; **0.9.0 is breaking** — node IDs are now full repo-relative paths, so existing `graphify-out/` graphs need a one-time `graphify extract --force` to re-import (`graph.json` auto-migrates).
+  - **gstack `--host`** synced to its 1.58.5 accepted values (`claude / codex / kiro / factory / opencode / openclaw / hermes / gbrain / auto`); `cursor` / `windsurf` / `slate` are no longer accepted — use `auto`.
+  - Documented that **gstack now runs Codex cross-model review by default** across `/review`, `/ship`, the four `/plan-*-review`s, `/document-release`, and `/autoplan` (`codex_reviews` switch; falls back to a Claude subagent when Codex is unavailable), and recommended the codex plugin.
+
+### Added
+
+- `tests/workflows.test.mjs` — gates the `stage5-6-qa` and `parity-check` dynamic-workflow logic (dropped-skill blocking, evidence-less degradation → `fix_required`, no embedded checkout path).
+- `ask-investigate.js` is now linked as a global Claude Code workflow via `install.sh`, so `/ask` health-check parallelism is available in every project.
+
 ## [v2.1.0] - 2026-06-15
 
 ### Added
