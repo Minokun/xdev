@@ -117,6 +117,8 @@ Graphify 生命周期、隐私、过期和降级规则与 `/xdev:full-dev` 保�
 1. 实施修复（最小 diff，单一文件）
 2. 写回归测试（先 FAIL，再 PASS）
 3. 全量测试：`cd backend && uv run pytest -v` + `cd frontend && npm test`
+
+> **TDD 例外（仅 S1）：** 纯配置 / 文案 / 文档类修复无法先写失败测试时，允许聚焦受影响模块的单测或 `[manual-verify]`（写明手动验证步骤），不必跑全量前后端套件——避免"改一个错别字触发全量 pytest + npm test"的仪式倒挂（S2/S3 见各自 TDD 例外）。
 4. `git add && git commit -m "fix: ..." && git push origin HEAD`
 
 > S1 不跑 health/qa，不调用 ship。修复中发现 > 1 个文件受影响 → 升级 S2。

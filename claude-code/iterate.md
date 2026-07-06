@@ -259,6 +259,8 @@ Decision:
 
 运行代码质量仪表盘快速检查。
 
+> **门禁：** health 评分不低于改动前。若下降且由本次改动造成 → FIX_REQUIRED（修复后重跑，最多 2 轮）；属既有 BASELINE_DEBT（与本次 diff 无关）则记录后继续。qa 发现 CRITICAL/HIGH 且由本次改动造成 → 同样 FIX_REQUIRED（最多 2 轮），仍未解决则升级 `/xdev:bugfix`。
+
 **→ 调用 skill：`qa`**（如涉及 UI）
 
 先启动服务：`./start.sh all`，快速浏览器检查受影响页面。
@@ -299,3 +301,4 @@ fi
 | 发现 bug（不是当前改动引入的） | `/xdev:bugfix` |
 | 需要新依赖或改 API | `/xdev:full-dev` |
 | 测试发现意外的失败 | `/xdev:bugfix` |
+| health 回退或 qa CRITICAL/HIGH 且由本次改动造成、2 轮内未修复 | `/xdev:bugfix` |
