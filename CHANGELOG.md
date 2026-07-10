@@ -4,6 +4,15 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v2.3.0] - 2026-07-10
+
+### Added
+
+- `/ask` now reads project domain context before answering: root `CONTEXT.md` / `CONTEXT-MAP.md`, `docs/domain/` terminology files, and anchor-relevant ADRs are used as bounded, read-only supplementary evidence.
+- `/ask` explicitly distinguishes historical ADR decisions from current implementation when they conflict, and reports missing domain context under `Unknowns` without blocking the answer.
+- Claude Code `/ask` health-check agents now use relevant project terminology and ADRs while keeping source `file:line` evidence mandatory.
+- Added regression coverage for domain-context and ADR rules across the Claude Code and Windsurf ports.
+
 ## [v2.2.0] - 2026-07-06
 
 ### Fixed

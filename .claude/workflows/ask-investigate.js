@@ -65,7 +65,8 @@ const perDim = await parallel(DIMENSIONS.map((d) => () =>
 - 用 rg 搜该维度信号,模式参考:${d.rg}${d.hint ? '\n- 重点判断:' + d.hint : ''}
 - 优先扫源码/测试/配置入口;默认排除 .git、node_modules、dist、build、graphify-out、大型文档产物
 - 读最相关文件确认(入口/核心逻辑优先)
-- 证据必须附 file:line(诚实度"源码确认"级)
+- 若存在 CONTEXT.md / CONTEXT-MAP.md / docs/domain/，先读取与本维度相关的术语定义；若存在相关 ADR，读取其结论并用项目术语描述发现
+- 证据必须附 file:line(诚实度"源码确认"级)；术语或 ADR 只能作为独立上下文证据，不能替代源码证据
 
 ${d.needsGraph === true ? `本维度**需要 Graphify 图谱**才能准确判断(循环依赖/跨簇耦合)。当前图谱状态:${graphState}。
 - 若 ${graphState} === 'fresh':可调 \`graphify query '<相关概念>' --graph graphify-out/graph.json\`(只读)拿子图辅助

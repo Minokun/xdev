@@ -188,6 +188,31 @@ graphify update .
 - 降级 `rg` + 文件阅读回答
 - 在 `Unknowns` 明确："本次结论基于 <数据源>；架构 / 跨模块 / 死代码 类结论准确度受限，若需高准确度请 <具体建议：`graphify update .` / `/full-dev` 初始化>"
 
+### 步骤 4.5：领域上下文与 ADR 补证（只读）
+
+在 Graphify / `rg` 之外，先建立项目自己的术语和设计决策上下文，避免把同名词按通用含义解释。
+
+**读取优先级：**
+
+1. 根目录 `CONTEXT.md`；若存在 `CONTEXT-MAP.md`，先按 map 指向读取相关上下文文件。
+2. `docs/domain/CONTEXT.md`、`docs/domain/glossary.md` 或同等命名的领域词汇文件。
+3. 与当前问题锚点、模块路径或业务名词相关的 ADR：优先 `docs/adr/`、`docs/decisions/`、`docs/domain/decisions/`，以及各模块下的 `**/adr/`；没有锚点时最多读取最近/最相关的 5 个。
+
+**边界：**
+
+- 只读，不创建或修改 `CONTEXT.md`、词汇表、ADR。
+- 不为找上下文而全量读取所有文档；先用 `rg -l` 按锚点筛选，再读取最相关的少量文件。
+- 将术语定义和 ADR 结论作为 `Evidence` 的独立来源；若 ADR 与当前代码冲突，分别报告“历史决策”和“当前实现”，不得默认为代码错误。
+- 找不到这些文件时不阻塞回答，在 `Unknowns` 写明“未发现项目领域上下文 / 相关 ADR，术语按源码和当前对话解释”。
+
+```bash
+# 仅示意：按实际存在的路径与锚点执行，排除生成物
+rg --files -g 'CONTEXT.md' -g 'CONTEXT-MAP.md' -g 'glossary.md' -g 'ADR-*.md' -g '*adr*/*.md' \
+  -g '!graphify-out/**' -g '!node_modules/**' -g '!.git/**'
+rg -l -i '<1–3 个锚点>' docs . --glob '*.md' \
+  -g '!graphify-out/**' -g '!node_modules/**' -g '!.git/**' | head -20
+```
+
 ### 步骤 5：query 调用规范（防注入 + 节制）
 
 ```bash
@@ -227,8 +252,9 @@ graphify query '用户登录 认证流程' --graph graphify-out/graph.json
 
 1. **解析锚点**：抽取文件 / 函数 / 类 / 组件 / 页面 / API / 表 / 业务名词
 2. **Graphify query**：按步骤 5 规范发起，引用返回子图
-3. **源码补证**：`rg -n '<锚点>' .` + 读取最相关文件，优先入口 / 核心逻辑 / 状态副作用 / 测试
-4. **答**：按"输出格式"结构化产出
+3. **领域上下文补证**：按步骤 4.5 读取术语、`CONTEXT.md` / `CONTEXT-MAP.md` 和相关 ADR；没有则记录 Unknowns
+4. **源码补证**：`rg -n '<锚点>' .` + 读取最相关文件，优先入口 / 核心逻辑 / 状态副作用 / 测试
+5. **答**：按"输出格式"结构化产出
 
 问题类型与输出重点：
 
@@ -246,6 +272,8 @@ graphify query '用户登录 认证流程' --graph graphify-out/graph.json
 ## 体检模式：巡检清单（6 维）
 
 目标：在预算内挖出 **5–10 条最有价值** 的潜在问题；每条带影响程度、证据、修复入口。不追求维度覆盖全，追求每条发现可行动。
+
+**领域上下文：** 进入任一维度扫描前，按步骤 4.5 读取与该维度相关的术语和 ADR；它们只用于解释项目词汇、识别历史约束和组织发现，不能替代源码证据。找不到时在 `Unknowns` 标注，不阻塞体检。
 
 | 维度 | 典型扫描信号 | 需要 Graphify？ |
 |------|--------------|----------------|
@@ -283,6 +311,7 @@ graphify query '用户登录 认证流程' --graph graphify-out/graph.json
 <前端 → API → service → queue → DB>
 
 ## Evidence          （必填）
+- `CONTEXT.md` / `docs/domain/glossary.md` / `docs/adr/<relevant>.md` — <术语定义或历史决策；没有则在 Unknowns 说明>
 - `src/auth/login.ts:42-58` — <证明了什么>
 - Graphify query `'auth flow'` → 命中社区 #7（auth），边 `routes/login → services/auth → repo/userRepo`
 - 跨证据推断 [A + B] → X（**非源码直接确认**）

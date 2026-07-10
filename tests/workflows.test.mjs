@@ -147,3 +147,21 @@ test('ask-investigate reports dropped dimensions by key (not Chinese label)', as
   })
   assert.deepEqual(result.droppedDimensions, ['security'])
 })
+
+test('/ask requires domain context and ADR evidence rules on both ports', async () => {
+  const [claudeAsk, windsurfAsk, investigate] = await Promise.all([
+    readFile(join(repoRoot, 'claude-code/ask.md'), 'utf8'),
+    readFile(join(repoRoot, 'windsurf/ask.md'), 'utf8'),
+    readFile(join(repoRoot, '.claude/workflows/ask-investigate.js'), 'utf8'),
+  ])
+
+  for (const source of [claudeAsk, windsurfAsk]) {
+    assert.match(source, /领域上下文与 ADR 补证/)
+    assert.match(source, /CONTEXT-MAP\.md/)
+    assert.match(source, /docs\/domain/)
+    assert.match(source, /历史决策.*当前实现/)
+    assert.match(source, /Unknowns.*未发现项目领域上下文/s)
+  }
+  assert.match(investigate, /CONTEXT-MAP\.md/)
+  assert.match(investigate, /术语或 ADR 只能作为独立上下文证据/)
+})
