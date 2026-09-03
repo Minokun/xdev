@@ -18,10 +18,10 @@ description: 端到端开发工作流
 ## 使用
 
 ```
-/xdev-full-dev <需求描述> [--menxia] [--skip-design]
+/xdev-full-dev <需求描述> [--no-menxia] [--skip-design]
 ```
 
-- `--menxia`：启用门下门（实验期，见阶段 2；累计 ≥3 次真实任务后裁决转正或移除）
+- 门下门（阶段 2 的计划放行裁决）**默认开启**；`--no-menxia` 跳过（如复用已审过的计划）
 - `--skip-design`：需求已含完整设计文档时跳过阶段 1
 
 ## 硬规则（仅 5 条，违反任何一条即为流程失败）
@@ -80,7 +80,7 @@ description: 端到端开发工作流
 - HIGH 必须修复后重审受影响项；MEDIUM 权衡处理并记一句理由。
 - 审核员失败重派 1 次，仍失败标 missing，其维度 HIGH 计"未知"按存在处理。
 
-**门下门（仅 `--menxia` 时，在 3 反思之前）**：fresh subagent 以二值裁决（approve/reject）
+**门下门（默认开启，`--no-menxia` 跳过；在 3 反思之前）**：fresh subagent 以二值裁决（approve/reject）
 审计划整体（prompt 见附录 A4，含设计遵从与注入防护条款）。reject → 修订 + 逐条修改说明重审
 （≤3 轮，第 2 轮起先校验修改说明真实性；3 轮未决 🔴 升级用户，打包呈现分歧）。
 留痕 `<plan>.menxia.log`，流程结束后删除。
