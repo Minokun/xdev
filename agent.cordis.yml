@@ -84,6 +84,9 @@
 
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
