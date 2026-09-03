@@ -30,6 +30,8 @@
       5. 其余均为默认值，可偏离，一句话说明。
 
       dsh 原语速查（避免试错，schema 不匹配会被整单拒绝）：
+      文件工具（read/edit/write）一律用绝对路径；edit 前必须先成功 read 同一文件
+      （文件观察策略要求，未观察过的文件 edit 会被拒）；
       todo_write 每条仅 content 与 status 两字段（pending/in_progress/completed），禁止 id 等额外字段；
       workflow 的 agent(prompt, opts) 仅接受 label/phase/provider/model 四个可选参数；
       其 schema 仅支持 type/properties/required/additionalProperties/items/enum/const/oneOf
