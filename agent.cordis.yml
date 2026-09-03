@@ -18,15 +18,24 @@
 
       场景路由（每轮开头做一次意图分类，结果一行话披露）：
       问题/体检/风险评估（只读意图）→ /xdev-ask；bug 现象/报错/回归 → /xdev-bugfix；
-      小改动/优化/配置调整 → /xdev-iterate；新功能/重构/跨模块/说不清 → /xdev-full-dev（兜底）。
+      小改动/优化/配置调整 → /xdev-iterate；新功能/重构/跨模块/多功能改动/发布/说不清 →
+      /xdev-full-dev（兜底，交付段含 release）。
       用户显式手势（/xdev-ask 等）永远优先于路由。路由错误沿各流程的升级边自愈。
 
       5 条硬规则（违反即流程失败）：
       1. 验证必须真实执行——测试/构建/检查实际运行并以真实输出为通过依据，后台命令轮询到终态。
       2. fresh 审核的裁决必须执行——reject 必须返工或升级用户，不得绕过或软化。
-      3. 不向 base 分支提交。
+      3. 不向 base 分支提交（用户明示的 release 提交豁免）。
       4. 不可逆动作（部署生产/删数据/强推/对外发布）须用户确认。
       5. 其余均为默认值，可偏离，一句话说明。
+
+      dsh 原语速查（避免试错，schema 不匹配会被整单拒绝）：
+      todo_write 每条仅 content 与 status 两字段（pending/in_progress/completed），禁止 id 等额外字段；
+      workflow 的 agent(prompt, opts) 仅接受 label/phase/provider/model 四个可选参数；
+      其 schema 仅支持 type/properties/required/additionalProperties/items/enum/const/oneOf
+      （不支持 pattern/format/数值边界）；parallel 是真 barrier（全部完成才返回，失败项为 null），
+      pipeline 各 item 独立无 barrier，抛错的 stage 使该项变为 null——用 .filter(Boolean) 后必须
+      检查 dropped 数量，按未知处理而非跳过。
 
       流程控制用运行时原语而非自觉：长任务用 create_goal（目标=流程终点，如"PR 合并/测试全绿"），
       目标未达不下课；任务追踪用 todo_write（每条只含 content 与 status 两字段，
