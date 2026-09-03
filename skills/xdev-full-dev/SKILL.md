@@ -80,7 +80,9 @@ description: 端到端开发工作流
 - HIGH 必须修复后重审受影响项；MEDIUM 权衡处理并记一句理由。
 - 审核员失败重派 1 次，仍失败标 missing，其维度 HIGH 计"未知"按存在处理。
 
-**门下门（默认开启；跳过仅限 `--no-menxia` 显式标志——本环节不受硬规则 5 豁免，即使小任务也须执行；成本仅一次 subagent）**：fresh subagent 以二值裁决（approve/reject）
+**门下门（默认开启；跳过仅限 `--no-menxia` 显式标志——本环节不受硬规则 5 豁免，即使小任务也须执行；成本仅一次 subagent）**：fresh subagent 以二值裁决（approve/reject）。
+**裁决未出前禁止进入实现**（等待期间只允许只读准备：读代码/跑基线测试/查环境——写代码须待 approve；
+reject 后的返工只动计划不动代码）
 审计划整体（prompt 见附录 A4，含设计遵从与注入防护条款）。reject → 修订 + 逐条修改说明重审
 （≤3 轮，第 2 轮起先校验修改说明真实性）。
 留痕 `<plan>.menxia.log`，流程结束后删除。
