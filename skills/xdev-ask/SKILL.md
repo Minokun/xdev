@@ -1,21 +1,23 @@
 ---
-description: 项目问答与体检 — 只读；用 Graphify（有则用）+ 定向搜索回答项目问题，或主动挖掘潜在风险；答案必须带 file:line 证据
-argument-hint: <问题 或 "体检">
+name: xdev-ask
+description: 项目问答与体检
 ---
 
-# /xdev:ask — 项目问答与体检
+<!-- 由 claude-code/ask.md 经 bin/gen-dsh.mjs 生成，勿手改；改源文件后重跑生成。 -->
 
-**问题 / 指令：** $ARGUMENTS
+# /xdev-ask — 项目问答与体检
+
+**问题 / 指令：** 用户消息（手势之外的原文）
 
 ## 原则与边界
 
 **最终答案正确 > 其它一切**；做不到就诚实标注，绝不用过时数据给自信答案。
 
-**只读**。允许：读文件、`rg`、`graphify query` / `check-update` / `update`、为答案正确而做的图谱刷新或建图（`graphify-out/` 是唯一允许写入的位置）。禁止：改源码、跑测试 / 构建 / 迁移、任何 `git` 写操作、`graphify install|watch|hook`、Graphify 之外的网络调用。用户要求改代码 / 跑测试 / 部署 → 停下，建议切 `/xdev:iterate` / `/xdev:bugfix` / `/xdev:full-dev`；问"怎么改 / 如何实现"属正当问答，照答。
+**只读**。允许：读文件、`rg`、`graphify query` / `check-update` / `update`、为答案正确而做的图谱刷新或建图（`graphify-out/` 是唯一允许写入的位置）。禁止：改源码、跑测试 / 构建 / 迁移、任何 `git` 写操作、`graphify install|watch|hook`、Graphify 之外的网络调用。用户要求改代码 / 跑测试 / 部署 → 停下，建议切 `/xdev-iterate` / `/xdev-bugfix` / `/xdev-full-dev`；问"怎么改 / 如何实现"属正当问答，照答。
 
 ## 模式判定
 
-| `$ARGUMENTS` | 模式 |
+| `用户消息（手势之外的原文）` | 模式 |
 |---|---|
 | 含具体锚点（文件 / 函数 / 路由 / 组件 / 业务名词 / 调用链） | **问答** |
 | 空 / "体检" / "有什么风险" / "审一下" | **体检**（6 维清单） |
@@ -41,7 +43,7 @@ argument-hint: <问题 或 "体检">
 
 **首次建图前先判断是否需要**：局部问题（单文件 / 单函数，rg 可独立回答）不建图；架构 / 调用链 / 体检 / 跨模块影响面才建。
 
-**query 规范**：`$ARGUMENTS` 不直接拼 shell——先压成 1–3 个实体关键词，单引号包裹（内部 `'` 转义为 `'\''`）：`graphify query '<关键词>' --graph graphify-out/graph.json`。不读完整 `graph.json`，只引用返回子图。`exit != 0` → 图谱不可用，立即降级；`exit == 0` 但无命中 → 重写关键词 ≤2 次再降级。
+**query 规范**：`用户消息（手势之外的原文）` 不直接拼 shell——先压成 1–3 个实体关键词，单引号包裹（内部 `'` 转义为 `'\''`）：`graphify query '<关键词>' --graph graphify-out/graph.json`。不读完整 `graph.json`，只引用返回子图。`exit != 0` → 图谱不可用，立即降级；`exit == 0` 但无命中 → 重写关键词 ≤2 次再降级。
 
 **降级**时在 `Unknowns` 写明："本次结论基于 <数据源>；架构 / 跨模块 / 死代码类结论准确度受限"。
 
@@ -83,9 +85,6 @@ argument-hint: <问题 或 "体检">
 
 进入任一维度前按上节读取相关术语与 ADR，只用于解释词汇与识别历史约束，不替代源码证据。
 
-<!-- claude-only -->
-**Claude Code 并行执行**：主线程先完成图谱状态判定 + 按需刷新，再触发 `Workflow({ name: "ask-investigate", args: { graphState: "fresh|stale|none" } })`——6 维并行 rg，各维原始输出隔离不进主上下文，只回聚合后的 top 发现（≤10 条 + 降级维度清单）。聚焦单维时主线程直接扫。`ask-investigate` 由 `bin/install.sh claude` 全局链接到 `~/.claude/workflows/`。
-<!-- /claude-only -->
 
 ## 输出格式
 
@@ -123,4 +122,4 @@ argument-hint: <问题 或 "体检">
 
 ## 升级信号
 
-发现具体 bug → `/xdev:bugfix` · 用户接受建议要改代码（≤100 行）→ `/xdev:iterate` · 多模块 / 改 API / schema / 新依赖 → `/xdev:full-dev`
+发现具体 bug → `/xdev-bugfix` · 用户接受建议要改代码（≤100 行）→ `/xdev-iterate` · 多模块 / 改 API / schema / 新依赖 → `/xdev-full-dev`

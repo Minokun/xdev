@@ -2,21 +2,21 @@
 # xdev install — link workflows into your agent's commands directory.
 #
 # Usage:
-#   bin/install.sh <agent> [<agent> ...] [--project] [--target <path>] [--dry-run] [-h|--help]
+#   bin/install.sh <agent> [<agent> ...] [--target <path>] [--dry-run] [-h|--help]
 #
 # Agents (multi-select — pass any combination):
 #   claude     Claude Code (creates ~/.claude/commands/xdev directory symlink)
-#   windsurf   Windsurf (creates per-file symlinks in workflows directory)
 #   codex      Codex CLI — installs BOTH custom prompts and skills:
 #                ~/.codex/prompts/xdev-*.md           (per-file symlinks; /prompts:xdev-*)
 #                ~/.agents/skills/xdev-*/SKILL.md     (generated wrappers; $xdev-* + implicit)
-#   all        Shorthand for: claude windsurf codex
+#   all        Shorthand for: claude codex
+#
+# Note: the Windsurf IDE target was REMOVED in v3.0.0 — Windsurf is no longer
+# supported. dsh (DeepSeek Harness) does not use this script; see README §DSH.
 #
 # Options:
-#   --project       For Windsurf only: install into ./.windsurf/workflows/ (project-local)
-#                   instead of ~/.codeium/windsurf/windsurf/workflows/ (global)
 #   --target <path> Override target directory entirely (advanced).
-#                   Applies to claude / windsurf only; codex always uses default paths.
+#                   Applies to claude only; codex always uses default paths.
 #   --dry-run       Print actions without making changes
 #   -h, --help      Show this help and exit
 #
@@ -24,11 +24,10 @@
 # never touches non-symlink user files.
 # Examples:
 #   bin/install.sh claude
-#   bin/install.sh windsurf --project
 #   bin/install.sh codex
 #   bin/install.sh claude codex                 # install for two agents at once
 #   bin/install.sh all
-#   bin/install.sh windsurf --target ~/custom/workflows --dry-run
+#   bin/install.sh claude --target ~/custom/commands --dry-run
 
 set -euo pipefail
 
@@ -37,18 +36,15 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 XDEV_ROOT="$( cd -- "$SCRIPT_DIR/.." && pwd )"
 
 CLAUDE_DEFAULT_TARGET="$HOME/.claude/commands/xdev"
-WINDSURF_GLOBAL_TARGET="$HOME/.codeium/windsurf/windsurf/workflows"
-WINDSURF_PROJECT_TARGET="./.windsurf/workflows"
 CODEX_PROMPTS_TARGET="$HOME/.codex/prompts"
 CODEX_SKILLS_TARGET="$HOME/.agents/skills"
 
 DRY_RUN=0
-PROJECT_LOCAL=0
 TARGET_OVERRIDE=""
 AGENTS=()
 
 print_help() {
-  sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 log() { echo "[xdev] $*"; }
@@ -81,33 +77,24 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) print_help; exit 0 ;;
     --dry-run) DRY_RUN=1; shift ;;
-    --project) PROJECT_LOCAL=1; shift ;;
     --target)
       [ $# -ge 2 ] || err "--target requires a path argument"
       TARGET_OVERRIDE="$2"; shift 2 ;;
-    claude|windsurf|codex)
+    claude|codex)
       add_agent "$1"; shift ;;
     all)
-      add_agent claude; add_agent windsurf; add_agent codex; shift ;;
+      add_agent claude; add_agent codex; shift ;;
     *) err "unknown argument: $1 (try --help)" ;;
   esac
 done
 
 if [ "${#AGENTS[@]}" -eq 0 ]; then
-  err "missing agent. Try: $0 claude  |  $0 windsurf  |  $0 codex  |  $0 all  |  $0 --help"
+  err "missing agent. Try: $0 claude  |  $0 codex  |  $0 all  |  $0 --help"
 fi
 
 if [ -n "$TARGET_OVERRIDE" ]; then
   for a in "${AGENTS[@]}"; do
     [ "$a" = "codex" ] && err "--target is not supported with codex (it has two fixed targets)"
-  done
-fi
-
-# --project only makes sense for windsurf (project-local .windsurf/workflows/); reject it
-# for claude/codex so the user doesn't silently get a global install while expecting local.
-if [ "$PROJECT_LOCAL" -eq 1 ]; then
-  for a in "${AGENTS[@]}"; do
-    [ "$a" != "windsurf" ] && err "--project only applies to windsurf; '$a' has no project-local mode. Drop --project or select windsurf only."
   done
 fi
 
@@ -131,21 +118,19 @@ install_claude() {
   log "linked $target → $src"
 
   # Link xdev's Claude-Code Dynamic Workflows globally (~/.claude/workflows/) so
-  # they're available in every project, not just this repo. full-dev.md calls them
+  # they're available in every project, not just this repo. ask.md calls them
   # by `name`; global workflows are discovered in all projects (project-level wins
   # on clash). ONLY link path-agnostic workflows (no hardcoded repo ROOT):
-  #   stage5-6-qa.js   — reads args.skills, works in any project → linked globally
   #   ask-investigate.js — reads args.graphState, project-agnostic → linked globally
-  #   parity-check.js  — xdev contributor tool, not a product workflow → stays in repo
   local wf_target="$HOME/.claude/workflows"
   local wf_src="$XDEV_ROOT/.claude/workflows"
   if [ -d "$wf_src" ]; then
     log "Claude Code workflows → $wf_target"
     run mkdir -p "$wf_target"
     local wf_count=0
-    for wf in stage5-6-qa.js ask-investigate.js; do  # path-agnostic workflows (no hardcoded ROOT)
+    for wf in ask-investigate.js; do  # path-agnostic workflows (no hardcoded ROOT)
       if [ ! -f "$wf_src/$wf" ]; then warn "missing workflow source: $wf — skipped"; continue; fi
-      # Guard: never clobber a non-symlink user file (matches install_windsurf / install_codex_prompts).
+      # Guard: never clobber a non-symlink user file (matches install_codex_prompts).
       if [ -L "$wf_target/$wf" ]; then
         run rm "$wf_target/$wf"
       elif [ -e "$wf_target/$wf" ]; then
@@ -159,42 +144,6 @@ install_claude() {
   else
     warn "workflows source dir not found: $wf_src — global workflow linking skipped"
   fi
-}
-
-install_windsurf() {
-  local target
-  if [ -n "$TARGET_OVERRIDE" ]; then
-    target="$TARGET_OVERRIDE"
-  elif [ "$PROJECT_LOCAL" -eq 1 ]; then
-    target="$WINDSURF_PROJECT_TARGET"
-  else
-    target="$WINDSURF_GLOBAL_TARGET"
-  fi
-  local src="$XDEV_ROOT/windsurf"
-  [ -d "$src" ] || err "missing source dir: $src"
-
-  log "Windsurf → $target"
-  run mkdir -p "$target"
-
-  local count=0 skipped=0
-  for f in "$src"/*.md; do
-    [ -e "$f" ] || continue
-    local name
-    name="$(basename "$f")"
-    local link="$target/$name"
-
-    if [ -L "$link" ]; then
-      run rm "$link"
-    elif [ -e "$link" ]; then
-      warn "skipping $link (exists, not a symlink — remove manually if you want xdev's version)"
-      skipped=$((skipped + 1))
-      continue
-    fi
-
-    run ln -s "$f" "$link"
-    count=$((count + 1))
-  done
-  log "Windsurf: linked $count file(s); skipped $skipped"
 }
 
 # Codex install: combines per-file prompt symlinks (~/.codex/prompts/xdev-*.md)
@@ -324,7 +273,6 @@ install_codex() {
 for a in "${AGENTS[@]}"; do
   case "$a" in
     claude)   install_claude ;;
-    windsurf) install_windsurf ;;
     codex)    install_codex ;;
   esac
 done
@@ -334,9 +282,6 @@ log "installed for: ${AGENTS[*]}"
 for a in "${AGENTS[@]}"; do
   case "$a" in
     claude)   log "  verify claude:        ls -l \"${TARGET_OVERRIDE:-$CLAUDE_DEFAULT_TARGET}\"" ;;
-    windsurf)
-      ws_target="${TARGET_OVERRIDE:-$([ "$PROJECT_LOCAL" -eq 1 ] && echo "$WINDSURF_PROJECT_TARGET" || echo "$WINDSURF_GLOBAL_TARGET")}"
-      log "  verify windsurf:      ls -l \"$ws_target\"" ;;
     codex)
       log "  verify codex prompts: ls -l \"$CODEX_PROMPTS_TARGET\" | grep xdev-"
       log "  verify codex skills:  ls -l \"$CODEX_SKILLS_TARGET\" | grep xdev-" ;;

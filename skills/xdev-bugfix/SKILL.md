@@ -1,13 +1,15 @@
 ---
-description: Bug 修复流程 — blame/bisect 先于假设 + 卡住时 fresh 调查 + TDD 回归测试 + 交付
-argument-hint: <bug 描述或错误信息>
+name: xdev-bugfix
+description: Bug 修复流程
 ---
 
-# /xdev:bugfix — Bug 修复流程
+<!-- 由 claude-code/bugfix.md 经 bin/gen-dsh.mjs 生成，勿手改；改源文件后重跑生成。 -->
 
-**Bug 描述：** $ARGUMENTS
+# /xdev-bugfix — Bug 修复流程
 
-> 本流程是 `full-dev.md` 阶段 3–4 的 bugfix 特化。硬规则 1–5 全部生效（见 `full-dev.md`），
+**Bug 描述：** 用户消息（手势之外的原文）
+
+> 本流程是 `/xdev-full-dev` 阶段 3–4 的 bugfix 特化。硬规则 1–5 全部生效（见 `/xdev-full-dev`），
 > 本文件只写 bugfix **不同于** full-dev 的部分：如何定位根因、何时升级、以及阶段 3–4 里
 > "计划 / Intent Contract / 任务" 在没有设计文档时的替代物。
 
@@ -71,5 +73,5 @@ blame/bisect 定位结果。产出：根因假设（按置信度排序）、每�
 ## 阶段 4：交付（= full-dev 阶段 4）
 
 - S1：推到分支即止。
-- S2/S3：按 `full-dev.md` 阶段 4 执行——全量测试已真实通过则直接复用输出不重跑；pre-landing 对抗审查（附录 D）；命中 auth / 支付 / PII / schema / 新依赖时加条件深度审查（附录 C）；CHANGELOG 一行 + PATCH bump；commit + push + PR；PR 合并后清理 worktree。
+- S2/S3：按 `/xdev-full-dev` 阶段 4 执行——全量测试已真实通过则直接复用输出不重跑；pre-landing 对抗审查（附录 D）；命中 auth / 支付 / PII / schema / 新依赖时加条件深度审查（附录 C）；CHANGELOG 一行 + PATCH bump；commit + push + PR；PR 合并后清理 worktree。
 - 复盘（可选）：出现新根因模式 / 同文件反复修复 / 可复用的防御写法时，写一条到项目笔记；否则跳过。

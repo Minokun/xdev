@@ -6,7 +6,7 @@
 //
 // 图谱状态(新鲜/过期/无)由 ask.md 主线程按步骤 1-3 判定 + 按需刷新后,通过
 // args.graphState 传入。本 workflow 只做并行扫描 + 汇总,不触碰图谱写操作。
-// 只读调研 → 不调 health/qa 等 skill → 无 stage5-6-qa 那样的自指误报问题。
+// 只读调研 → 不派发任何写操作 subagent → 不存在自指误报问题。
 //
 // 用法:
 //   Workflow({ name: "ask-investigate", args: { graphState: "fresh|stale|none" } })

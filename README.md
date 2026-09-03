@@ -1,8 +1,10 @@
 # xdev — AI-Native Development Workflows
 
-> **Ship features, not ceremonies.** xdev is a set of production-grade AI workflow files for Windsurf and Claude Code that orchestrate the full development lifecycle — from brainstorming to production — with built-in quality gates, parallel execution, and tiered failure loops.
+> **Ship features, not ceremonies.** xdev is a set of production-grade AI workflow files for Claude Code, Codex CLI, and dsh (DeepSeek Harness) that orchestrate the full development lifecycle — from brainstorming to production — with built-in quality gates, parallel execution, and tiered failure loops.
 
 English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
+
+> **⚠️ Windsurf IDE is no longer supported (v3.0.0).** The `windsurf/` port and the `install.sh windsurf` target have been removed. If you relied on them, stay on the [v2.3.0 tag](https://github.com/Minokun/xdev/tree/v2.3.0) or migrate to Claude Code / Codex / dsh.
 
 ---
 
@@ -12,7 +14,44 @@ English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
 
 ---
 
-## Quick Start
+## Quick Start (dsh / DeepSeek Harness)
+
+**dsh is the flagship target.** xdev ships as a first-class dsh agent preset — "xdev 模式" — with its own persona, tool stack, and preset-private skills. `git clone` IS the installer (the repo root already carries the generated preset files):
+
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git ~/.dsh/.agent-presets/xdev
+```
+
+Non-default dsh home? Use `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`.
+
+Start (or restart) dsh — the mode selector now shows **xdev 模式**. Invoke the workflows as dsh gestures (they also work mid-sentence; xdev auto-routes even without a gesture):
+
+```
+/xdev-full-dev  Add dark mode support to the settings panel
+/xdev-bugfix     Login timeout crashes the app after 30 seconds
+/xdev-iterate    Reduce homepage load timeout from 5s to 3s
+/xdev-ask        How does the auth flow work?
+```
+
+**Why dsh is the best fit** — dsh gives xdev's core mechanisms first-class runtime primitives instead of prose conventions:
+
+| xdev concept (prose, in other agents) | dsh primitive (enforced) |
+|---|---|
+| "spawn fresh reviewers that haven't seen this conversation" | `spawn` provider with `inheritsParentContext: false` — freshness is a contract |
+| "run the 3 reviews in parallel, dropped = unknown" | `workflow` tool: `parallel()` is a real barrier, `agent()` failure resolves `null` and is counted |
+| "reviewers must return structured verdicts" | `agent(prompt, {schema})` — JSON-Schema-validated output |
+| "strong model plans, cheap model implements" | `agent(prompt, {provider, model})` per subagent |
+
+**Upgrading / uninstalling:**
+
+```bash
+git -C ~/.dsh/.agent-presets/xdev pull      # upgrade
+rm -rf ~/.dsh/.agent-presets/xdev           # uninstall
+```
+
+Design rationale: [`docs/experiments/dsh-integration/RESEARCH.md`](./docs/experiments/dsh-integration/RESEARCH.md).
+
+## Quick Start (Claude Code / Codex CLI)
 
 ### 1. Install (one minute)
 
@@ -23,10 +62,9 @@ git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
 
 # Pick one — or pass several at once
 bash ~/.claude/skills/xdev/bin/install.sh claude         # Claude Code
-bash ~/.claude/skills/xdev/bin/install.sh windsurf       # Windsurf
 bash ~/.claude/skills/xdev/bin/install.sh codex          # Codex CLI (prompts + skills)
 bash ~/.claude/skills/xdev/bin/install.sh claude codex   # multi-select
-bash ~/.claude/skills/xdev/bin/install.sh all            # claude + windsurf + codex
+bash ~/.claude/skills/xdev/bin/install.sh all            # = claude + codex
 ```
 
 That's enough to use `/iterate` and `/ask` (rg mode) immediately. Heavier commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills — see [Installation](#installation) for the per-tier setup. xdev **degrades gracefully** when optional skills are missing.
@@ -50,7 +88,7 @@ xdev classifies the complexity, picks the right path, executes, verifies, and sh
 /xdev:ask  Audit this project — what risks should I worry about?
 ```
 
-> Examples above use the Claude Code prefix. On Windsurf drop the `xdev:` prefix (`/full-dev …`); on Codex use `/prompts:xdev-full-dev …` or `$xdev-full-dev …`.
+> Examples above use the Claude Code prefix. On Codex use `/prompts:xdev-full-dev …` or `$xdev-full-dev …`; on dsh use `/xdev-full-dev …`.
 
 > xdev auto-assesses severity → selects the right workflow → executes → verifies → ships. No hand-holding required.
 
@@ -86,25 +124,27 @@ There are plenty of AI command collections out there. Here's why xdev is differe
 | Failure handling | ❌ | ❌ | ❌ | ✅ Retry limits + escalation paths |
 | Cross-tool handoff | ❌ | ❌ | ❌ | ✅ Design in Opus, implement in Codex |
 | Parallel execution | ❌ | ❌ | ✅ Explicit multi-agent modes | ✅ Subagent dispatch built into workflow |
-| Tiered execution paths | ❌ | ❌ | ❌ | ✅ S1/S2/S3 for bugs (15 min vs 90 min) |
-| Confirmation policy | ❌ | ❌ | ❌ | ✅ 🔴/🟡/🟢 three tiers |
-| **Adaptive execution** | ❌ | ❌ | ❌ — user picks the mode | ✅ Self-assesses severity, auto-selects workflow and skills |
+| Tiered execution paths | ❌ | ❌ | ❌ | ✅ S1/S2/S3 for bugs (one-line fix vs. cross-module investigation) |
+| Confirmation policy | ❌ | ❌ | ❌ | ✅ explicit 🔴 user-confirm gates (irreversible ops, big-feature design) |
+| **Adaptive execution** | ❌ | ❌ | ❌ — user picks the mode | ✅ Self-assesses severity, auto-selects workflow and review depth |
 | **Dependency-aware parallelism** | ❌ | ❌ | ❌ — parallel by declaration, not by task graph | ✅ Analyzes task graph, runs independent tasks in parallel |
 | **Cognitive load** | High — pre-map scenarios, manually chain tools | High — craft precise prompts for every variation | Medium — pick the right mode & agent mix per task | **Low — describe the goal, xdev decides how** |
 
-> **Confirmation tiers:** 🔴 high-risk ops (git push, PR publish) — always confirm · 🟡 mid-risk (bulk file edits) — prompt by default · 🟢 low-risk (read files, run tests) — auto-execute
+> **🔴 gates** (the only user-confirm points): irreversible ops — production deploy, data deletion, force-push, external release (hard rule 4) — and the design of cross-module / irreversible features. Everything else notifies and continues.
 
-**gstack and superpowers are excellent tools** — xdev is the orchestration layer that knows *when*, *how*, and *in what order* to use them. Think of gstack as the power tools and xdev as the master workflow that coordinates them.
+### Core philosophy: information extraction, not ritual
 
-### Core philosophy: orchestration, not reinvention
+Modern models are strong — most "workflow rules" just restate what the model would do anyway, and those rules are dead weight. xdev v2 keeps only mechanisms that **extract information the model cannot get for free from its own context**:
 
-xdev **doesn't reinvent the wheel**. superpowers and gstack already contain battle-tested skills — `investigate`, `health`, `qa`, `ship`, `browse`, `writing-plans`… these skills are already great on their own.
+1. **Fresh-context review** (independent reviewers with no parent-conversation bias)
+2. **Diff-vs-design drift checking** (what the code actually does vs what was agreed)
+3. **Really executed tests/commands** (objective output, not "should pass")
 
-**xdev does something different: it uses a superior methodology to orchestrate those skills into an automated engineering pipeline.**
+Everything else — stage rituals, output formats, taxonomy tables — is a *default the model may deviate from*, not a cage. All review prompts are built in; **xdev has zero required external skill dependencies** (gstack / superpowers no longer needed; their essence lives on in the built-in prompts).
 
-> The right skill, at the right moment, in the right order — that's the real leverage of AI-assisted development.
+> Evidence: the Sansheng A/B experiment (`docs/experiments/sansheng/PROPOSAL.md`) showed strong reviewers still have orthogonal blind spots — 3 reflections missed 8 real defects that a gate caught on landed plans, and the gate caught only 1/6 BDD defects that a reflection caught 6/6. (Cost: the gate arm ran at 57–67% of baseline tokens, missing its ≤55% target — which is why it ships opt-in.) Independent perspectives don't become redundant as models get smarter; the blind spots just move.
 
-Calling `qa` on its own tests a feature. But xdev specifies: `qa` should only run *after* all TDD tests pass and `health` score hasn't dropped below pre-fix baseline; any issues found must be fixed and re-verified; only after 2 failed attempts does it fall back to manual verification. **The gap in methodology is what determines the gap in final delivery quality.**
+Running the test suite on its own tells you whether it passes. But xdev specifies *when* it counts: a UI check only runs *after* the full suite and lint/build really passed with no new failures versus the pre-change baseline; any issue found must be fixed and re-verified; only after 2 failed rounds does it fall back to manual verification. **The gap in methodology is what determines the gap in final delivery quality.**
 
 ### The core insight
 
@@ -125,9 +165,9 @@ Read bug description / code state / change scope
         │
         ▼
   Classify severity automatically
-  ├── S1: root cause obvious → fast path (no investigate, no health/qa)
-  ├── S2: single-module, reproducible → standard path (inline probe, tests only)
-  └── S3: cross-module / intermittent → deep path (full investigate + health + qa)
+  ├── S1: root cause obvious → fast path (no subagent, focused tests only)
+  ├── S2: single-module, reproducible → standard path (inline probe, full tests)
+  └── S3: cross-module / intermittent → deep path (fresh investigation subagent + full tests + UI check)
 ```
 
 **Dependency analysis drives parallel execution:**
@@ -140,7 +180,7 @@ Analyze task dependency graph
                          not queued one after another)
 ```
 
-This is **self-directed execution**, not blind script following. The AI reads context, decides how much effort to invest, which skills to invoke, and which tasks can run concurrently — always choosing the most appropriate path, not the most conservative full-suite one.
+This is **self-directed execution**, not blind script following. The AI reads context, decides how much effort to invest, which reviews to dispatch, and which tasks can run concurrently — always choosing the most appropriate path, not the most conservative full-suite one.
 
 ---
 
@@ -148,14 +188,16 @@ This is **self-directed execution**, not blind script following. The AI reads co
 
 6 workflow files that cover the complete development lifecycle:
 
-| Workflow | Claude Code | Windsurf | When to use | Target time |
-|----------|-------------|----------|-------------|------------|
-| **full-dev** | `/xdev:full-dev` | `/full-dev` | New feature, large refactor, cross-module change | Hours–days |
-| **full-dev-design** | `/xdev:full-dev-design` | `/full-dev-design` | Design phase only — produces a plan and hands off to Codex for implementation | 1–4 hours |
-| **full-dev-impl** | `/xdev:full-dev-impl` | `/full-dev-impl` | Implementation phase only — reads the design plan and executes | Hours–days |
-| **bugfix** | `/xdev:bugfix` | `/bugfix` | Bug, crash, unexpected behavior | 15 min–90 min |
-| **iterate** | `/xdev:iterate` | `/iterate` | Small change, optimization, config tweak | 15–60 min |
-| **ask** | `/xdev:ask` | `/ask` | Read-only project Q&A or proactive audit; top priority is "most current, most accurate answer" | 1–5 min |
+| Workflow | Claude Code | Codex | dsh | When to use | Target time |
+|----------|-------------|-------|-----|-------------|------------|
+| **full-dev** | `/xdev:full-dev` | `/prompts:xdev-full-dev` | `/xdev-full-dev` | New feature, large refactor, cross-module change | Hours–days |
+| **full-dev-design** | `/xdev:full-dev-design` | `/prompts:xdev-full-dev-design` | — | Design phase only — produces a plan and hands off for implementation | 1–4 hours |
+| **full-dev-impl** | `/xdev:full-dev-impl` | `/prompts:xdev-full-dev-impl` | — | Implementation phase only — reads the design plan and executes | Hours–days |
+| **bugfix** | `/xdev:bugfix` | `/prompts:xdev-bugfix` | `/xdev-bugfix` | Bug, crash, unexpected behavior | 15 min–90 min |
+| **iterate** | `/xdev:iterate` | `/prompts:xdev-iterate` | `/xdev-iterate` | Small change, optimization, config tweak | 15–60 min |
+| **ask** | `/xdev:ask` | `/prompts:xdev-ask` | `/xdev-ask` | Read-only project Q&A or proactive audit; top priority is "most current, most accurate answer" | 1–5 min |
+
+> **dsh note:** on dsh, `full-dev-design` / `full-dev-impl` are folded into `/xdev-full-dev` — dsh's per-subagent `model` option replaces the cross-tool handoff files (strong model plans, cheap model implements).
 
 > **Cross-tool handoff:** `full-dev-design` + `full-dev-impl` let you use the best model for each phase — plan with a powerful reasoning model (e.g. Opus), implement with a fast execution model (e.g. Codex). xdev handles the handoff automatically via a shared plan file.
 
@@ -180,9 +222,9 @@ Commands self-classify and degrade, so when in doubt just describe the goal. The
 - Want a fast execution model running against a pre-locked plan
 
 **`/xdev:bugfix`** — anything broken, crashing, or behaving wrong. Auto-tiers severity.
-- *S1 fast (≤ 15 min)*: obvious typo, off-by-one, missing import, single-line regression
-- *S2 standard (≤ 35 min)*: reproducible bug in one module — *"signup form rejects valid emails containing `+`"*
-- *S3 deep (≤ 90 min)*: cross-module / intermittent / auth- or payment-sensitive — *"checkout occasionally double-charges customers"*
+- *S1 fast*: obvious typo, off-by-one, missing import, single-line regression
+- *S2 standard*: reproducible bug in one module — *"signup form rejects valid emails containing `+`"*
+- *S3 deep*: cross-module / intermittent / auth- or payment-sensitive — *"checkout occasionally double-charges customers"*
 
 **`/xdev:iterate`** — small, in-scope tweak with no surprises. Auto-escalates if it grows.
 - Copy / timeout / threshold / log-level changes
@@ -207,103 +249,60 @@ Commands self-classify and degrade, so when in doubt just describe the goal. The
 
 ## Workflow Architecture
 
-### /full-dev — 8-stage end-to-end pipeline
+### /full-dev — 4-stage end-to-end pipeline
 
 ```
-Stage 1: Requirement exploration (brainstorming / office-hours)
-Stage 2: Plan review — parallel subagents (eng + design + devex + ceo as needed)
-Stage 3: TDD implementation plan with dependency annotations
+Stage 1: Design — features F1..Fn / Must-Not / acceptance criteria (scale-adaptive; 🔲 user confirm only for big/irreversible features)
+Stage 2: Plan & gates — task breakdown → 3 fresh reviewers (coverage ‖ dependency ‖ BDD quality)
+         [+ Menxia Gate (opt-in --menxia): binary approve/reject, forced rework ≤3 rounds]
          ── handoff point (optional, for cross-tool split) ──
-Stage 4: Implementation — risk-gated parallel batches (L0–L3) + heartbeat + L3 audit
-Stage 5+6: Quality + QA (parallel) — review(cond.) ‖ cso --diff(cond.) ‖ health ‖ qa ‖ design-review
-Stage 7: Release — 7.1 ship (includes pre-landing review + auto document-release) → 7.2 land-and-deploy (optional)
-Stage 8: Learning (learn — conditional trigger)
+Stage 3: Implement & test — TDD red-green per task, parallel dispatch by task graph,
+         drift check (diff vs Intent Contract), conditional deep review (auth/payment/schema)
+Stage 4: Deliver — full tests (really executed) → adversarial pre-landing review → PR → optional deploy
 ```
+
+**5 hard rules** (everything else is a deviable default): verification must really run · fresh verdicts must be honored · never commit to base branch · irreversible actions need user confirmation · defaults may be skipped with a one-line reason.
 
 ### Built-in reliability features
 
-**Session recovery** — Every workflow writes a state file to `docs/state/` at stage 3 and updates it at each subsequent stage. The state file embeds a `## Handoff Summary` block initialized at end of stage 3 and refreshed by the stage 4 mainline controller after every batch; stage 4 also records `mainline_checkpoints.next_batch`. On the next invocation, recovery follows a three-branch flow: (a) **state file present + 3-way validation passes** (branch match, locked HEAD still in history, plan file exists) → resume within stage 4 from `next_batch` when available; (b) **validation fails** (e.g. rebase / squash invalidated HEAD) → rename the file to `<file>.invalid-<ts>.md` (preserves Handoff and checkpoints for diagnostics; excluded from future scans) and fall through to (c); (c) **state file missing but design doc with a confirmed `## Intent Contract` plus the implementation plan exist in `docs/plans/`** → auto-create a minimal state file (with locked HEAD) and start at stage 4. Only when the design / plan / Intent Contract are missing does recovery halt. This makes session recovery robust to gitignored state loss (clean checkout, cross-machine work, accidental wipe) while keeping the Intent Contract red line. State files are gitignored and deleted automatically after a successful ship.
+**Session recovery / cross-tool handoff** — At the end of stage 2 the flow writes a minimal state file `docs/state/xdev--<branch>.md` (branch / stage / plan path / next action) and commits the plan. `/full-dev-impl` resumes from that file's next action without replaying the conversation; a missing plan or an anchor commit no longer in history → ask the user to re-plan, never guess. v2-format state files (`full-dev-design--<branch>--<slug>.md`) are not parsed — the flow tells you to finish them with v2 or re-plan.
 
-**Implementation worktree guard** — Before producing any commit (design/plan included), xdev checks whether the current branch is the repo's base/default branch (`main`/`master`). If so, it creates an `xdev-*` feature branch in an isolated git worktree and continues the whole flow there. Full-dev/full-dev-design run the guard in the prelude (so stage-1 design commits also land on the feature branch, not base); bugfix/iterate run it at flow start. Worktree location resolution: existing + gitignored `.worktrees/` → existing + gitignored `worktrees/` → `${XDEV_WORKTREE_ROOT}` (env var, for pointing at SSD / shared storage) → `~/.config/xdev/worktrees/<project>/` (default). `ship` success auto-removes the worktree; stage-7 keeps a final base-branch check as a defensive stop. The guard also copies root-level `.env*` / `.envrc` into the new worktree and reminds you to re-run `uv sync` / `npm ci` before the first test run, since gitignored build artifacts don't follow `git worktree add`.
+**Base-branch guard** (hard rule 3) — Never commit to `main`/`master`. On the base branch, create an `xdev-<slug>` feature branch first — optionally in a `git worktree` (remember worktrees don't carry `.env*` or build artifacts). Worktrees are removed at stage 4 once the PR is merged.
 
-**Mainline controller** — In stage 4 the main thread acts as supervisor: it keeps a clean context (only design doc, Intent Contract, plan, Handoff Summary, task status, subagent receipts), splits the plan into narrow task packets carrying the relevant Intent Contract excerpt, and dispatches them to TDD subagents / teamagents based on risk + conflict matrix + dependencies. Subagents only execute their assigned packet; all output flows back to the mainline for aggregation. The mainline updates `mainline_checkpoints` and refreshes the Handoff Summary on every batch boundary, and pauses to re-align on user intent whenever a subagent returns `NEEDS_RECLASSIFY` / `BLOCKED`, the Gatekeeper reports `DEVIATION`, evidence misses pass criteria, or the plan diverges from code reality. Prevents long-context drift and unilateral scope expansion.
+**Intent Contract + drift check** — The design doc's F1..Fn / Must-Not / acceptance criteria, once confirmed, are the *Intent Contract*. After each batch (~5 commits) a fresh subagent reads only the contract, the design doc and the diff (appendix B) and reports `[偏离]` (interface / data-flow / module-boundary mismatch, with file:line) and `[超纲]` (user-visible capability with no contract entry). Any deviation → the user may only fix code; changing the design means explicitly going back to stage 1.
 
-**Structured pass criteria** — Every task in the stage-3 plan now carries a machine-checkable `pass criteria` block: the exact verification command, expected exit code, required output strings, and optional extra assertions (e.g. a `curl` probe). Subagents may not commit unless all criteria pass. Subagent C validates that the "must-contain" string is actually derivable from the verification command's real output.
+**Worker receipts, mainline aggregation** — Independent tasks are dispatched to parallel subagents that return only a receipt (files touched / commands run / real output summary / problems). Workers never write state; the main thread merges receipts and owns the state file. This keeps the supervising context small and prevents unilateral scope creep.
 
-**Risk-gated stage 4** — Every task in the stage-3 plan carries a `risk` classification (L0 trivial / L1 local / L2 cross-module / L3 critical) that drives stage 4 orchestration: executor packets are narrowed per risk level, reviews are sampled (L1 per-module) or mandatory (L2/L3), L3 tasks get an independent audit subagent writing sidecars to `docs/state/audits/<slug>/`, and subagent progress is tracked by a risk-aware heartbeat (L1 5/10min, L2 8/15min, L3 15/25min) that kills and re-dispatches possibly-stuck runs before escalating to the user. Cuts typical stage 4 wall time ~90min → 45–60min while preserving quality gates on shared/auth/finance-sensitive code.
+**No silent loss of failed reviewers** — If any of the 3 plan-reflection subagents fails or times out it is retried once; on second failure it's marked `missing` and its dimension's HIGH count is treated as *unknown, i.e. present* — no pass verdict on incomplete data. Background commands must be polled to completion ("will handle it later" stop-turns violate hard rule 1).
 
-**Light Impact Gate** — Before and after code changes, xdev runs a lightweight impact precheck to map direct callers, likely affected workflows/docs/tests, risk triggers, escalation, validation, and unknowns. It uses bounded `rg`, `git diff`, nearby tests, and fresh Graphify query results when already available; it does **not** install GitNexus, build a new index, or auto-refresh Graphify. The goal is narrower than project understanding: catch blast radius before work starts, then turn the final diff into precise validation and sync checks.
+**Adversarial pre-landing review** — Before the PR, a fresh subagent is told to assume the diff *will* cause a production incident and to find the three most likely paths (data loss > security > regression > performance), each with a trigger path and file:line evidence — and to report fewer than three rather than invent them (appendix D). Conditional deep review (appendix C) is added when the diff touches auth / payment / PII / schema / new dependencies.
 
-**Auto codebase snapshot** — When a workflow needs basic project context (tech stack, directory layout, dev/test commands) and doesn't already have it, it runs a built-in shallow scan and writes the result to `docs/state/codebase-snapshot.md` (gitignored). Subsequent invocations read the snapshot for instant cold-start context. The snapshot carries a freshness check (branch + commit + 7-day expiry) and a truncation marker so the model knows when output was cut off. There is no separate "map the project" command — the workflows decide when to run this themselves; for deeper questions use `/xdev:ask` or escalate to Graphify (Step 2.6).
+**Menxia Gate (opt-in, `--menxia`)** — A fresh reviewer gives a binary approve/reject on the whole plan with design-deference (approved / exempted / non-goal decisions in the design are never grounds for rejection) and injection-guard clauses; rejection forces a revision with per-item change notes, re-reviewed ≤3 rounds, and from round 2 the reviewer first verifies the change notes against the actual plan diff (4/5 fake revisions were caught in the N4 experiment). Gray-release: after ≥3 real tasks, promote or remove.
 
-**No silent loss of failed parallel subagents** — Wherever the pipeline fans out to parallel subagents (`stage5-6-qa`, `parity-check`, and the Stage 2 parallel review in `full-dev-design`), a failed / timed-out / crashed subagent is no longer swallowed by a `filter(Boolean)`. Each aggregation point exposes a dropped/failed count (`droppedSkills`, `droppedPairs`, `droppedVerify`); any dropped triggered Stage 5+6 skill blocks the aggregate verdict, and an all-failed dimension cannot default to pass. In design review, a failed reviewer is retried once then marked `missing`, its HIGHs count as "unknown" not 0, and the round is flagged `[partial-review]`. Prevents keep/pass decisions made on incomplete data.
+**Single source of truth** — `claude-code/` is the only hand-edited source. The dsh preset artifacts (`preset.yml`, `agent.cordis.yml`, `skills/xdev-*/`) are generated by `bin/gen-dsh.mjs` and committed so `git clone` is a complete install; `tests/workflows.test.mjs` fails if they are stale, if any workflow re-introduces external skill calls, or if `bugfix` / `iterate` grow past their thin-shell budget.
 
-**Port-drift detection (`parity-check`)** — A contributor-facing workflow that diffs the `claude-code/` and `windsurf/` source trees and separates *intentional IDE adaptation* (frontmatter format, command namespacing, model recommendations) from *real behavioral drift*, alerting only on the latter. The two source trees stay deliberately ununified; parity-check is what keeps that drift honest without forcing unification.
-
-### /bugfix — three-tier root-cause pipeline
+### /bugfix — root cause first, then the full-dev stage 3–4 loop
 
 ```
-Severity classification (S1 / S2 / S3)
-  │
-  ├── S1: fix → test → push                              (≤ 15 min)
-  ├── S2: inline investigation → TDD → full tests → ship (≤ 35 min)
-  └── S3: investigate → TDD → health + qa → ship → learn (≤ 90 min)
+Tier (S1 quick / S2 standard / S3 deep — decided by evidence, not by clock)
+  ├── S1: regression test → fix → focused tests → push branch (no PR)
+  ├── S2: inline probe → TDD → full tests → deliver
+  └── S3: git blame/bisect → stuck? fresh investigation subagent → TDD → full tests + UI check → deliver
+Intent Contract for the drift/scope check = the root-cause report's "expected impact range"
 ```
 
 ### /iterate — scope-gated fast path
 
 ```
-Scope check (6 dimensions: lines / files / modules / deps / API / bug?)
-  │
-  ├── Out of scope → escalate to /full-dev
-  ├── Bug found   → escalate to /bugfix
-  └── In scope    → TDD → health → ship
+Scope gate (<100 lines · ≤5 files · ≤2 modules · no new deps · no public-API change)
+  ├── auth / payment / schema / public API / new page → /full-dev
+  ├── describes wrong behaviour, not a change → /bugfix
+  └── in scope → list direct callers of shared files (rg) → TDD → full tests + lint/build → deliver
 ```
 
-### Project context resolution — auto snapshot vs Graphify
+### Project context — no ceremony
 
-xdev resolves project context **autonomously** at the start of every workflow. There is no separate "understand the project" command — the workflow self-classifies and picks the right depth.
-
-```
-Task starts
-  │
-  ▼
-Does the task need project-level understanding?
-  ├── No → Level 0: skip scanning, use the prompt as-is
-  └── Yes
-       ├── Only basic structure / commands / test patterns
-       │     → Level 1: run the built-in shallow scan, read docs/state/codebase-snapshot.md
-       │
-       └── Architecture / cross-module / call chains / design intent / global state
-             ├── graphify-out/{graph.json, GRAPH_REPORT.md} fresh
-             │     → Level 3: read GRAPH_REPORT.md + targeted `graphify query`
-             │
-             ├── `command -v graphify` ok but graph missing/stale
-             │     ├── current agent can run the Graphify skill pipeline
-             │     │     → Level 2: initialize/refresh the graph (privacy gate first)
-             │     └── otherwise → fall back to Level 1
-             │
-             └── Graphify not installed
-                   → mention it as optional (README Step 2.6) and fall back to Level 1
-```
-
-Key rules:
-- **CLI ≠ skill pipeline.** `command -v graphify` only proves the CLI exists (good for queries and code-only AST refresh via `graphify update .`); first full graph initialization additionally requires the current agent environment to be able to run the Graphify skill pipeline.
-- **No auto-install, no auto-automation.** Workflows never run `graphify install`, `graphify watch`, or `graphify hook install`. Installation lives only in README Step 2.6 and runs on user request.
-- **Privacy gate.** First full initialization or any semantic refresh of docs/PDF/images/audio/video is 🔴 — the workflow must explain that semantic extraction can call the underlying model API and wait for confirmation. Code-only AST refresh is 🟡 (notify and continue).
-- **Token discipline.** Workflows read `GRAPH_REPORT.md` plus focused `graphify query "<question>" --graph graphify-out/graph.json` results. Full `graph.json` is never injected into context.
-- **Always degrade gracefully.** Missing Graphify, failed init, failed update, or stale snapshot all degrade to the Level-1 shallow scan (or skip) and the workflow continues.
-
-Per-workflow defaults:
-
-| Workflow | Default depth | Deep path trigger |
-|----------|---------------|-------------------|
-| `/iterate` | Level 0/1 only | If deep context is needed → escalate to `/full-dev` or `/bugfix` (no deep scan inside iterate) |
-| `/bugfix` S1/S2 | Level 1 | S3 deep path: read `GRAPH_REPORT.md` → `graphify query`; init only if Level 2 conditions met |
-| `/full-dev` | Adaptive Level 0–3 | Source of truth for the lifecycle and execution boundary |
-| `/full-dev-design` | Level 0/1, Level 2 when architecture judgment is needed | Defers to `/full-dev` lifecycle |
-| `/full-dev-impl` | Trusts the design plan; supplements with `graphify query` only when the plan is insufficient | Defers to `/full-dev` lifecycle |
-| `/ask` | Adaptive Level 1–3, with "most current, most accurate answer" as top priority; installed Graphify treated as implicit authorization | Fresh graph → query directly; code changes → 🟡 auto `graphify update .`; semantic changes or first-time build → 🟡 auto-invoke the Graphify skill pipeline (`/graphify`, LLM-backed full pipeline; **the `graphify` CLI has no full-build equivalent**), transparently disclosing cost without re-confirming; user says "don't refresh / don't build" → skip immediately + `Unknowns` annotation |
+Workflows read the project's own `CLAUDE.md` / `AGENTS.md` and use `rg` + file reads. There is no built-in "snapshot" or "understand the project" step. `/ask` additionally uses a Graphify graph when one is present (see Step 2.6) and degrades to `rg` when it isn't — every answer states which data source it rests on.
 
 ---
 
@@ -313,24 +312,24 @@ Per-workflow defaults:
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-~/.claude/skills/xdev/bin/install.sh claude    # or: windsurf / codex / "claude codex" / "all"
+~/.claude/skills/xdev/bin/install.sh claude    # or: codex / "claude codex" / "all"
 ```
 
-Done. `/iterate` and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash.
+Done. `/iterate` and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash. For dsh, see the [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) above — one `git clone`, no install script needed.
 
 ### Pick your install tier (choose what you need)
 
 xdev itself is just workflow files; the heavy lifting is done by external skills. Install only what you need:
 
+xdev v2 is **self-contained** — install xdev itself and everything works:
+
 | What you want to use | Install | Cumulative time |
 |----------------------|---------|-----------------|
-| `/iterate`, `/ask` (rg mode) | **xdev itself** (required) | 1 min |
-| `/bugfix` full S1/S2/S3 triage | + **gstack** (Step 2) | +3 min |
-| `/full-dev` full pipeline (design + reviews + ship) | + **gstack** + **superpowers** (Steps 1 + 2) | +5 min |
-| `/full-dev` stage 1.5 visual design | + **ui-ux-pro-max** (Step 2.5) | +2 min |
-| `/ask` audit mode + `/full-dev` deep architecture | + **Graphify** (Step 2.6; installing it is treated as implicit authorization for LLM extraction) | +2 min |
+| `/iterate`, `/ask`, `/bugfix`, `/full-dev` (full pipeline) | **xdev itself** | 1 min |
+| **dsh "xdev 模式" preset** (all of the above as native dsh skills) | `git clone` into `~/.dsh/.agent-presets/xdev` — see [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) | 1 min |
+| Optional: code-graph context for `/ask` | Graphify (installing = implicit authorization for LLM extraction) | +2 min |
 
-> **Graceful-degradation guarantee**: if a skill is missing, xdev silently skips the related stage instead of erroring. Start with the core and add deps as needed.
+> External skill libraries (gstack / superpowers) are **no longer referenced or required**.
 
 ### Let Claude Code install everything (alternative)
 
@@ -342,19 +341,9 @@ Please install xdev and its dependencies for me:
 1. xdev itself (required):
    Run: git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
    Then: ~/.claude/skills/xdev/bin/install.sh claude
-   (If I also use Codex CLI or Windsurf, replace `claude` with any combination, e.g. `claude codex`, `windsurf codex`, or `all`.)
+   (If I also use Codex CLI, replace `claude` with any combination, e.g. `claude codex`, or `all`.)
 
-2. gstack (recommended — /bugfix full triage + /full-dev pipeline):
-   Run: git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
-
-3. superpowers (recommended — brainstorming + engineering skill suite):
-   Run: /plugin install superpowers@claude-plugins-official
-
-4. ui-ux-pro-max (optional — UI/UX design skill):
-   Run: /plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
-   Then: /plugin install ui-ux-pro-max@ui-ux-pro-max-skill
-
-5. Graphify (optional — deep project understanding):
+2. Graphify (optional — used only by /ask):
    Run: uv tool install graphifyy
    Verify: graphify --help
    Note: the PyPI package is graphifyy; do not install the unrelated graphify package.
@@ -368,114 +357,20 @@ After all steps complete, confirm the files are in place and tell me which xdev 
 
 ## Per-step details
 
-### Step 1 — Install superpowers
+> **Steps 1–2 removed (v2):** xdev no longer depends on superpowers or gstack. Their genuinely useful review logic
+> (plan reflection, drift check, adversarial pre-landing review) has been internalized as built-in prompts in
+> `full-dev.md`. Skip straight to the optional extras below.
 
-superpowers provides the `brainstorming` skill used in xdev (lightweight requirement exploration for simple features), plus a broader suite of development workflow skills (`writing-plans`, `test-driven-development`, `systematic-debugging`, `dispatching-parallel-agents`, etc.) that Claude Code agents can draw on during execution.
+### Step 2.6 — Graphify (optional; only `/ask` uses it)
 
-**Claude Code (official marketplace — easiest):**
-```
-/plugin install superpowers@claude-plugins-official
-```
-
-**Claude Code (custom marketplace):**
-```
-/plugin marketplace add obra/superpowers-marketplace
-/plugin install superpowers@superpowers-marketplace
-```
-
-**Windsurf / Cursor:** Search for `superpowers` in the plugin marketplace.
-
-**Codex / OpenCode:** Tell the AI to fetch and follow `https://raw.githubusercontent.com/obra/superpowers/refs/heads/main/.codex/INSTALL.md`
-
-### Step 2 — Install gstack
-
-gstack provides the core engineering skills used by xdev: `office-hours`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `plan-devex-review`, `design-consultation`, `review`, `cso`, `health`, `qa`, `qa-only`, `design-review`, `devex-review`, `browse`, `investigate`, `ship`, `land-and-deploy`, `canary`, `autoplan`, `learn`.
-
-**Requirements:** Git, [Bun v1.0+](https://bun.sh)
-
-**Claude Code:**
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-cd ~/.claude/skills/gstack && ./setup
-```
-
-**Codex / OpenCode / Cursor / Windsurf / other supported agents:**
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host codex   # or: opencode / kiro / factory / openclaw / hermes / gbrain, or auto (detects)
-```
-
-> **Codex cross-model review is now default-on in gstack** (v1.57.10+): `/review`, `/ship`, the four `/plan-*-review`s, `/document-release`, and `/autoplan` automatically request a Codex second-opinion review, falling back to a Claude subagent when Codex isn't available — so xdev's stage-2 plan reviews and stage-5+6 / stage-7 review+ship already get cross-model coverage. Install the [codex plugin](https://github.com/openai/codex-plugin-cc) (`/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex`) to unlock true Codex coverage. Turn it off globally with `gstack-config set codex_reviews disabled`.
-
-### Step 2.5 — Install ui-ux-pro-max
-
-`ui-ux-pro-max` provides end-to-end UI/UX design support: design-system generation, product-type reasoning, style/color/typography search, interaction guidance, and stack-specific UI rules. Used in `full-dev` / `full-dev-design` stage 1.5 when building new products or complex UIs.
-
-**Claude Code (marketplace):**
-```
-/plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
-/plugin install ui-ux-pro-max@ui-ux-pro-max-skill
-```
-
-**Codex / Windsurf / Cursor / OpenCode / other agents (CLI — recommended):**
-```bash
-npm install -g ui-ux-pro-max-cli
-uipro init --ai codex      # or: claude / windsurf / cursor / opencode / all
-```
-
-> **Package renamed:** the npm package was renamed `uipro-cli` → **`ui-ux-pro-max-cli`** (the old name is frozen at 2.2.3). The CLI binary is still `uipro`. If `uipro update` hits a GitHub rate limit, refresh from the bundled assets: `uipro init -g --ai claude --force --offline`, or set `UI_PRO_MAX_GITHUB_TOKEN`.
-
-**Update an existing CLI install:**
-```bash
-npm install -g ui-ux-pro-max-cli
-uipro update --ai codex    # or your assistant target
-```
-
-### Step 2.6 — Install Graphify (optional, recommended for deep project understanding)
-
-Graphify provides the deep project context layer used when xdev needs architecture boundaries, cross-module relationships, call chains, design rationale, or global project-state judgment.
-
-Graphify is **optional**. If it is not installed, xdev workflows must fall back to the built-in Level-1 shallow scan and continue.
-
-**Requirements:** Python 3.10+.
-
-**Recommended global CLI install:**
-```bash
-uv tool install graphifyy
-graphify --help
-```
-
-> **Upgrading from < 0.9.0?** v0.9.0 changed node IDs to full repo-relative paths, so existing `graphify-out/` graphs need a one-time `graphify extract --force` to re-import (`graph.json` auto-migrates). The repo also moved to [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) (the old `safishamsi/graphify` URL 301-redirects).
-
-**Fallback if you use pipx:**
-```bash
-pipx install graphifyy
-graphify --help
-```
-
-**Important:** the official PyPI package is `graphifyy`, while the CLI command is `graphify`. Do not install the unrelated `graphify` package.
-
-**Optional: enable the Graphify skill pipeline for your agent**
-
-The CLI is enough for existing graph queries and code-only updates. First full graph initialization requires the Graphify skill pipeline to be available in the current agent environment.
-
-Claude Code example:
+[Graphify](https://github.com/Graphify-Labs/graphify) builds a code knowledge graph that `/ask` queries for architecture / call-chain / dead-code questions. Without it `/ask` falls back to `rg` and says so in `Unknowns`. Nothing else in xdev depends on it.
 
 ```bash
-graphify install --platform claude
+uv tool install graphifyy          # Python 3.10+
+graphify --version
 ```
 
-For other supported agents, run `graphify --help` and choose the matching install target. xdev workflows must not run these install/configuration commands automatically.
-
-**Execution policy inside xdev workflows:**
-- Detect Graphify CLI with `command -v graphify` before query/update/check-update steps.
-- Never auto-install Graphify or run `graphify install` inside a normal workflow run.
-- If Graphify is missing, tell the user it is an optional enhancement and continue with the built-in Level-1 shallow scan.
-- If a graph already exists, prefer `graphify-out/GRAPH_REPORT.md` and focused `graphify query` output over reading the full `graph.json`.
-- Installing Graphify does not scan the project. First graph initialization is only triggered by xdev workflows when a Level 2 task needs deep architecture/call-chain context, the shallow snapshot is insufficient, and the current agent can run the Graphify skill pipeline.
-- For existing graphs, code-only refreshes may use `graphify check-update .` and `graphify update .`; semantic refreshes for docs/media/sensitive materials require user confirmation.
-- `command -v graphify` only proves the CLI exists; it is enough for existing graph queries and code-only updates, but not by itself enough to guarantee first full graph initialization.
-- Do not enable `graphify install`, `graphify watch`, `graphify hook install`, or other platform/persistent automation unless the user explicitly asks for it.
+Then run the `/graphify` skill once in your project to build `graphify-out/`. `/ask` refreshes the graph automatically when it detects staleness (code-only via `graphify update .`; semantic re-extraction via the skill, with cost disclosed). xdev never runs `graphify install` / `watch` / `hook install`.
 
 ### Step 3 — Install xdev itself
 
@@ -491,31 +386,23 @@ Run the install script (idempotent — safe to re-run; creates, updates, and rep
 # Claude Code (global)
 bash ~/.claude/skills/xdev/bin/install.sh claude
 
-# Windsurf (global)
-bash ~/.claude/skills/xdev/bin/install.sh windsurf
-
-# Windsurf (project-level — links into the current project's .windsurf/workflows/, version-controlled with your repo)
-cd /path/to/your/project
-bash ~/.claude/skills/xdev/bin/install.sh windsurf --project
-
 # Codex CLI (installs both custom prompts and skills — see below for invocation)
 bash ~/.claude/skills/xdev/bin/install.sh codex
 
-# Multi-select: pass any combination (these are equivalent to `all` minus what you skip)
+# Multi-select: pass any combination (equivalent to `all` minus what you skip)
 bash ~/.claude/skills/xdev/bin/install.sh claude codex
-bash ~/.claude/skills/xdev/bin/install.sh windsurf codex
-bash ~/.claude/skills/xdev/bin/install.sh all                # = claude windsurf codex
+bash ~/.claude/skills/xdev/bin/install.sh all                # = claude codex
 
 # Preview without writing
-bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
+bash ~/.claude/skills/xdev/bin/install.sh claude --dry-run
 
 # Custom target directory (advanced; not supported with codex)
-bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
+bash ~/.claude/skills/xdev/bin/install.sh claude --target /your/custom/path
 ```
 
 #### Windows (native, via Git Bash)
 
-xdev installs directly against **native Windows** Codex CLI / Claude Code / Windsurf — same per-agent paths as macOS/Linux, just under `%USERPROFILE%`. The installer is bash-only, so you run it from **Git Bash** (one-time, ships with [Git for Windows](https://gitforwindows.org/)). No WSL involved.
+xdev installs directly against **native Windows** Codex CLI / Claude Code — same per-agent paths as macOS/Linux, just under `%USERPROFILE%`. The installer is bash-only, so you run it from **Git Bash** (one-time, ships with [Git for Windows](https://gitforwindows.org/)). No WSL involved.
 
 One-time setup:
 
@@ -537,9 +424,9 @@ Targets land in the standard Windows locations the agents already read from:
 | Agent | Windows path |
 |---|---|
 | Claude Code | `%USERPROFILE%\.claude\commands\xdev\` |
-| Windsurf | `%USERPROFILE%\.codeium\windsurf\windsurf\workflows\` |
 | Codex prompts | `%USERPROFILE%\.codex\prompts\` |
 | Codex skills | `%USERPROFILE%\.agents\skills\` |
+| dsh preset | `%USERPROFILE%\.dsh\.agent-presets\xdev\` (git clone) |
 
 > No native PowerShell installer is shipped today. If `pwsh bin/install.ps1` would meaningfully improve your flow, please open an issue.
 
@@ -547,9 +434,9 @@ Invoke with:
 
 ```
 Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask
-Windsurf:        /full-dev               /full-dev-design               /full-dev-impl               /bugfix               /iterate               /ask
 Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask
 Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask
+dsh preset:      /xdev-full-dev          (design/impl folded in)        (design/impl folded in)      /xdev-bugfix          /xdev-iterate          /xdev-ask
 ```
 
 > **Codex install layout.** Picking the `codex` target installs both interfaces side-by-side so you can pick whichever fits the moment:
@@ -563,36 +450,28 @@ cd ~/.claude/skills/xdev && git pull
 ```
 
 > Claude Code uses a directory symlink — `git pull` alone keeps it up to date; no need to re-run the install script.
-> Windsurf and Codex use per-file symlinks (and Codex additionally has generated `SKILL.md` wrappers). If a release adds, renames, or rewords the description of a workflow file, re-run the install script with the same agent target(s) to refresh links and regenerate skill wrappers.
+> Codex uses per-file symlinks plus generated `SKILL.md` wrappers. If a release adds, renames, or rewords the description of a workflow file, re-run the install script with the same agent target(s) to refresh links and regenerate skill wrappers.
+> dsh keeps its own clone — update with `git -C ~/.dsh/.agent-presets/xdev pull` (or set `DSH_HOME` accordingly).
 
-### Skill dependency map
+### Skill dependency map (v2: none required)
 
-| Skill | Source | Used in |
-|-------|--------|---------|
-| `superpowers:brainstorming` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design stage 1 (simple features) |
-| `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design stage 1 (large features) |
-| `design-consultation` | gstack | full-dev / full-dev-design stage 1.1 (new product with no design system) |
-| `plan-eng-review` | gstack | full-dev stage 2 (always) |
-| `plan-design-review` | gstack | full-dev stage 2 (UI changes) |
-| `plan-devex-review` | gstack | full-dev stage 2 (API changes) |
-| `plan-ceo-review` | gstack | full-dev stage 2 (large features) |
-| `autoplan` | gstack | full-dev stage 2 (full-stack, Claude Code only) |
-| `investigate` | gstack | bugfix S3 |
-| `health` | gstack | full-dev, bugfix S3, iterate |
-| `qa` | gstack | full-dev, bugfix S3 (UI), iterate |
-| `design-review` | gstack | full-dev stage 5+6 (UI changes), bugfix S3 (UI) |
-| `devex-review` | gstack | full-dev stage 5+6 (API / CLI / SDK changes) |
-| `review` | gstack | full-dev stage 5+6 (conditional: new deps / arch changes / security) |
-| `cso` | gstack | full-dev stage 5+6 (conditional: auth / payment / PII / secrets) |
-| `browse` | gstack | bugfix S2 UI verification |
-| `ship` | gstack | all workflows |
-| `land-and-deploy` | gstack | full-dev stage 7.2 (optional: merge PR + CI + production health check) |
-| `learn` | gstack | full-dev, bugfix S3 |
-| `graphify` CLI | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) (`graphifyy` package) | optional deep project context for full-dev / full-dev-design / bugfix S3 |
-| `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design stage 1.5 (new products / complex UI) |
-| `frontend-design` | [Anthropic skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design) / locally installed skill | full-dev / full-dev-design stage 1.5 (single page / small components) |
+xdev v2 has **zero required skill dependencies**. The capabilities formerly provided by gstack / superpowers
+live on as built-in prompts inside the workflow files:
 
-> xdev degrades gracefully if individual skills are missing — the workflow file will call the skill and it simply won't execute if not installed.
+| Former skill | Now |
+|---|---|
+| `plan-eng-review` / `plan-design-review` / `plan-devex-review` / `plan-ceo-review` | built-in 3-reflection plan review (`full-dev.md` appendix A1–A3) |
+| `office-hours` / `superpowers:brainstorming` | stage 1 design conversation (scale-adaptive, no separate skill) |
+| Gatekeeper drift check | built-in drift check prompt (appendix B) |
+| `review` / `cso` | conditional deep-review prompt (appendix C) |
+| `ship` pre-landing review | built-in adversarial pre-landing review (appendix D) |
+| `health` / `qa` | really-executed test/lint/build commands in stage 4 |
+| `learn` | optional one-line retro in stage 4 |
+| `investigate` | `/bugfix` blame/bisect + fresh investigation subagent |
+| `graphify` CLI | optional, used only by `/ask` (Step 2.6) |
+| `ui-ux-pro-max` | no longer referenced by any workflow; install it independently if you want design guidance |
+
+> If you have gstack / superpowers installed, they continue to work independently of xdev — xdev just no longer calls them.
 
 ---
 
@@ -602,7 +481,7 @@ cd ~/.claude/skills/xdev && git pull
 2. **Root cause, not symptoms** — No fix without evidence. No evidence without investigation.
 3. **Tests first** — Regression tests must fail before the fix, pass after. No exceptions.
 4. **Atomic commits** — Every change is independently bisect-able.
-5. **Parallel when independent** — Reviews, health+QA run concurrently when there are no dependencies.
+5. **Parallel when independent** — Reviews and independent tasks run concurrently when there are no dependencies.
 6. **Explicit escalation** — Every failure path has a defined next step. No infinite loops.
 7. **Minimal footprint** — Don't refactor what you didn't break. Don't review what you didn't change.
 
@@ -623,7 +502,7 @@ xdev uses two fundamentally different kinds of quality gates. Mixing them up is 
 
 - **Adjudicator**: an LLM or a human
 - **Signal**: semantic evaluation — two runs on the same input may differ slightly
-- **Examples**: `health ≥ 7/10`, `review` with no unresolved HIGH issues, `design-review` visual compliance, `plan-*-review` HIGH/MEDIUM count, Light Impact Gate escalation / unknowns analysis
+- **Examples**: plan reflection HIGH/MEDIUM count, drift-check `[偏离]`/`[超纲]` tally, Menxia approve/reject, pre-landing review findings, `/iterate` scope-gate escalation
 - **Rule**: rubrics and scores are acceptable **but the evaluation dimensions must be enumerated** (no opaque "overall good"). Each dimension passes independently — never average dimensions into a single comprehensive score.
 
 ### What not to do
@@ -642,16 +521,18 @@ Corollary: when tightening a gate, first ask "is this mechanical or judgement?".
 xdev/
 ├── README.md              ← This file (English)
 ├── README.zh.md           ← Chinese version
-├── bin/                   ← Install scripts
-│   └── install.sh         ← Idempotent symlink installer
-├── windsurf/              ← Source for .windsurf/workflows/ symlinks
-│   ├── full-dev.md
-│   ├── full-dev-design.md
-│   ├── full-dev-impl.md
-│   ├── bugfix.md
-│   ├── iterate.md
-│   └── ask.md
-└── claude-code/           ← Source for .claude/commands/xdev/ symlinks
+├── preset.yml             ← dsh preset metadata (GENERATED by gen-dsh — "xdev 模式")
+├── agent.cordis.yml       ← dsh preset composition (GENERATED — persona + tool stack)
+├── skills/                ← dsh preset-private skills (GENERATED from claude-code/)
+│   ├── xdev-ask/SKILL.md
+│   ├── xdev-bugfix/SKILL.md
+│   ├── xdev-iterate/SKILL.md
+│   └── xdev-full-dev/SKILL.md
+├── docs/experiments/      ← Sansheng + dsh-integration research (dsh preset rationale)
+├── bin/
+│   ├── install.sh         ← Idempotent symlink installer (claude / codex)
+│   └── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
+└── claude-code/           ← Single hand-edited source; .claude/commands/xdev/ + Codex prompts symlink here
     ├── full-dev.md
     ├── full-dev-design.md
     ├── full-dev-impl.md
@@ -667,7 +548,7 @@ xdev/
 Contributions are welcome! Feel free to:
 
 - Open an issue for bugs, questions, or workflow suggestions
-- Submit a PR to improve or extend existing workflow files
+- Submit a PR to improve or extend existing workflow files — edit `claude-code/`, then run `node bin/gen-dsh.mjs` and `node --test tests/`
 - Share how you've adapted xdev for your own stack
 
 ---

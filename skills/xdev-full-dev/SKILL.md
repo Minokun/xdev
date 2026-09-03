@@ -1,8 +1,11 @@
 ---
-description: 端到端开发工作流 — 设计 → 计划与门 → 实现与测试 → 交付（自有、零外部 skill 依赖）
+name: xdev-full-dev
+description: 端到端开发工作流
 ---
 
-# /xdev:full-dev — 端到端开发工作流 v2
+<!-- 由 claude-code/full-dev.md 经 bin/gen-dsh.mjs 生成，勿手改；改源文件后重跑生成。 -->
+
+# /xdev-full-dev — 端到端开发工作流 v2
 
 > **设计原则（本文件的存在理由）：**
 > 1. 只保留**信息提取型机制**——制造模型自身上下文里拿不到的信息（fresh 独立审核、diff 对照设计、真实执行的测试输出）。模型再强，这三类信息也不会免费出现。
@@ -15,7 +18,7 @@ description: 端到端开发工作流 — 设计 → 计划与门 → 实现与�
 ## 使用
 
 ```
-/xdev:full-dev <需求描述> [--menxia] [--skip-design]
+/xdev-full-dev <需求描述> [--menxia] [--skip-design]
 ```
 
 - `--menxia`：启用门下门（实验期，见阶段 2；累计 ≥3 次真实任务后裁决转正或移除）
@@ -83,7 +86,7 @@ description: 端到端开发工作流 — 设计 → 计划与门 → 实现与�
 留痕 `<plan>.menxia.log`，流程结束后删除。
 
 写状态文件 `docs/state/xdev--<branch>.md`（最小内容：分支 / 阶段 / 计划路径 / next action），
-commit 计划。跨工具交接此时可停（对方用 `/xdev:full-dev-impl` 从状态文件续跑）。
+commit 计划。跨工具交接此时可停（对方用 `/xdev-full-dev-impl` 从状态文件续跑）。
 
 ## 阶段 3：实现与测试
 

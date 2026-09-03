@@ -1,8 +1,10 @@
 # xdev — AI 原生开发工作流
 
-> **专注交付，而非仪式。** xdev 是一套面向 Windsurf 和 Claude Code 的生产级 AI 工作流文件，将完整开发生命周期（从需求到发布）的编排、质量门禁、并行执行和失败回路全部内置其中。
+> **专注交付，而非仪式。** xdev 是一套面向 Claude Code、Codex CLI 和 dsh（DeepSeek Harness）的生产级 AI 工作流文件，将完整开发生命周期（从需求到发布）的编排、质量门禁、并行执行和失败回路全部内置其中。
 
 [English](./README.md) | 中文 | [版本说明](./CHANGELOG.md)
+
+> **⚠️ 自 v3.0.0 起不再支持 Windsurf IDE。** `windsurf/` 移植目录与 `install.sh windsurf` 目标已移除。依赖它的用户请留在 [v2.3.0 tag](https://github.com/Minokun/xdev/tree/v2.3.0)，或迁移到 Claude Code / Codex / dsh。
 
 ---
 
@@ -12,7 +14,44 @@
 
 ---
 
-## 快速上手
+## 快速上手（dsh / DeepSeek Harness）
+
+**dsh 是旗舰目标。** xdev 以一等公民形态发布为 dsh agent preset——"xdev 模式"，自带 persona、工具栈和 preset 私有技能。**git clone 即安装**（仓库根已携带生成好的 preset 文件）：
+
+```bash
+git clone --depth 1 https://github.com/Minokun/xdev.git ~/.dsh/.agent-presets/xdev
+```
+
+dsh 装在非默认位置？用 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`。
+
+启动（或重启）dsh，模式选择器里即出现 **xdev 模式**。用 dsh 手势触发（也支持出现在句子任意位置；不带手势时 xdev 也会自动路由）：
+
+```
+/xdev-full-dev  给设置页面增加深色模式支持
+/xdev-bugfix     登录超时后 app 直接崩溃
+/xdev-iterate    把首页加载超时从 5s 改为 3s
+/xdev-ask        这个项目的鉴权流程怎么走的？
+```
+
+**为什么 dsh 是最佳载体** —— xdev 的核心机制在 dsh 里从"写在 prose 里靠模型自觉"变成运行时强制原语：
+
+| xdev 概念（其他 agent 里是 prose 约定） | dsh 原语（运行时强制） |
+|---|---|
+| "派发没看过父对话的 fresh 审核员" | `spawn` provider 的 `inheritsParentContext: false`——fresh 是契约不是请求 |
+| "3 个审查并行跑，丢一个按未知处理" | `workflow` 工具：`parallel()` 是真 barrier，`agent()` 失败返回 `null` 并计数 |
+| "审核员必须返回结构化裁决" | `agent(prompt, {schema})`——JSON Schema 校验输出 |
+| "强模型规划、便宜模型实现" | 每个子 agent 独立的 `agent(prompt, {provider, model})` |
+
+**升级 / 卸载：**
+
+```bash
+git -C ~/.dsh/.agent-presets/xdev pull      # 升级
+rm -rf ~/.dsh/.agent-presets/xdev           # 卸载
+```
+
+设计依据：[`docs/experiments/dsh-integration/RESEARCH.md`](./docs/experiments/dsh-integration/RESEARCH.md)。
+
+## 快速上手（Claude Code / Codex CLI）
 
 ### 1. 安装（一分钟）
 
@@ -23,10 +62,9 @@ git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
 
 # 任选其一，也可一次装多个
 bash ~/.claude/skills/xdev/bin/install.sh claude         # Claude Code
-bash ~/.claude/skills/xdev/bin/install.sh windsurf       # Windsurf
 bash ~/.claude/skills/xdev/bin/install.sh codex          # Codex CLI（prompts + skills 一起装）
 bash ~/.claude/skills/xdev/bin/install.sh claude codex   # 多选
-bash ~/.claude/skills/xdev/bin/install.sh all            # claude + windsurf + codex
+bash ~/.claude/skills/xdev/bin/install.sh all            # claude + codex
 ```
 
 装完即可使用 `/iterate` 和 `/ask`（rg 模式）。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 体检）需要额外 skill，见下方 [安装](#安装) 章节按需补装。缺 skill 时 xdev **优雅降级**到可运行子集，不会崩。
@@ -50,7 +88,7 @@ xdev 自动判断复杂度、选路径、执行、验证、发布，不需要手
 /xdev:ask  帮我体检一下，有哪些隐患？
 ```
 
-> 上面用的是 Claude Code 前缀。Windsurf 去掉 `xdev:` 前缀（`/full-dev …`）；Codex 用 `/prompts:xdev-full-dev …` 或 `$xdev-full-dev …`。
+> 上面用的是 Claude Code 前缀。Codex 用 `/prompts:xdev-full-dev …` 或 `$xdev-full-dev …`；dsh 用 `/xdev-full-dev …`。
 
 > xdev 自动评估严重程度 → 选择对应工作流 → 执行 → 验证 → 发布。
 
@@ -86,25 +124,29 @@ AI 命令集合已经很多了。xdev 的不同之处在于：
 | 失败处理 | ❌ | ❌ | ❌ | ✅ 重试上限 + 升级路径 |
 | 跨工具交接 | ❌ | ❌ | ❌ | ✅ Opus 做设计，Codex 做实现 |
 | 并行执行 | ❌ | ❌ | ✅ 显式的多 Agent 模式 | ✅ Subagent 并行派发已内建进工作流 |
-| 分级执行路径 | ❌ | ❌ | ❌ | ✅ Bug 分 S1/S2/S3（15 分钟 vs 90 分钟） |
-| 确认策略 | ❌ | ❌ | ❌ | ✅ 🔴/🟡/🟢 三级控制 |
-| **自适应执行** | ❌ | ❌ | ❌ — 由用户挑选模式 | ✅ 自判断难易等级，自选流程和 skill |
+| 分级执行路径 | ❌ | ❌ | ❌ | ✅ Bug 分 S1/S2/S3（单行快修 vs 跨模块调查） |
+| 确认策略 | ❌ | ❌ | ❌ | ✅ 明确的 🔴 用户确认门（不可逆操作、大功能设计） |
+| **自适应执行** | ❌ | ❌ | ❌ — 由用户挑选模式 | ✅ 自判断难易等级，自选流程和审查深度 |
 | **依赖感知并行** | ❌ | ❌ | ❌ — 按声明并行，不分析任务依赖 | ✅ 分析任务依赖，子代理并行无依赖项 |
 | **认知负荷** | 高 — 预判所有场景，手动串联工具 | 高 — 每次都要编写精准 Prompt | 中 — 每次任务需挑对模式和 Agent 组合 | **低 — 只需描述目标，xdev 决定怎么做** |
 
-> **确认三级说明：** 🔴 高风险操作（git push、PR 发布）—— 必须确认 · 🟡 中风险（批量文件修改）—— 默认提示 · 🟢 低风险（读文件、跑测试）—— 自动执行
+> **🔴 门禁**（唯一需要用户确认的点）：不可逆操作——部署生产、删数据、强制推送、对外发布（硬规则 4）——以及跨模块 / 不可逆功能的设计确认。其余一律告知即继续。
 
-**gstack 和 superpowers 是优秀的工具** —— xdev 是知道*何时、如何、按什么顺序*使用这些工具的编排层。把 gstack 理解成电动工具，xdev 是统一调度这些工具的施工方案。
+**gstack 和 superpowers 是优秀的工具** —— 但 xdev v2 起不再依赖它们：它们真正有用的审查逻辑已内化为内置 prompt（`full-dev.md` 附录 A–D），装了照常独立工作，只是 xdev 不再调用。
 
-### 核心理念：编排，而非重造
+### 核心理念：信息提取，而非仪式
 
-xdev **不重复造轮子**。superpowers、gstack 里已经有大量经过实战打磨的优秀 skill —— `investigate`、`health`、`qa`、`ship`、`browse`、`writing-plans`……这些 skill 本身已经足够好。
+模型已经很强——大多数"流程规则"只是在复述模型本来就会做的事，这些规则是死重。xdev v2 只保留**能提取出模型从自身上下文里拿不到的信息**的机制：
 
-**xdev 做的是另一件事：用更合理的方法论，把这些 skill 编排成一套自动化的工程流水线。**
+1. **fresh 独立审核**（无父对话偏见的独立审核员）
+2. **diff 对照设计的 drift check**（代码实际做了什么 vs 当初约定了什么）
+3. **真实执行的测试/命令**（客观输出，不是"应该会过"）
 
-> 正确的 skill，在正确的时机，以正确的顺序执行 —— 这才是 AI 辅助开发的真正杠杆。
+其余一切——阶段仪式、输出格式、分类表——都是*模型可偏离的默认值*，不是枷锁。所有审核 prompt 内置；**xdev 零必需外部 skill 依赖**。
 
-单独调用 `qa` skill 能测试一个功能；但 xdev 告诉你：这个 `qa` 应该在 TDD 全部通过、`health` 评分不低于修复前之后才跑，跑完发现的问题必须修复后重检，超过 2 次才降级手工验证。**方法论的差距，决定了最终交付质量的差距。**
+> 实验依据：三省模式 A/B 实验（`docs/experiments/sansheng/PROPOSAL.md`）显示强审核员之间仍有正交盲区——3 反思在已落地计划上漏掉 8 条真缺陷而 Gate 抓到了；Gate 的 BDD 维度只抓到 1/6 而反思专项 6/6。独立视角不会因为模型变强而变冗余，只是盲区换了位置。（成本：Gate 臂 token 为基线的 57–67%，未达 ≤55% 目标——所以它以可选项发布。）
+
+单独跑测试套件只能告诉你过没过；xdev 规定的是*什么时候才算数*：UI 验证只在全量测试 + lint/build 真实通过、相比改动前无新增失败之后才跑；发现的问题必须修复后重检，超过 2 轮才降级手工验证。**方法论的差距，决定了最终交付质量的差距。**
 
 ### 核心洞察
 
@@ -126,9 +168,9 @@ xdev 解决了这四个问题。
         │
         ▼
   自动判断难易等级
-  ├── S1: 根因一眼可见 → 快速路（不调 investigate，不跑 health/qa）
+  ├── S1: 根因一眼可见 → 快速路（不开 subagent，只跑聚焦测试）
   ├── S2: 单模块可复现 → 标准路（内联调查，只跑全量测试）
-  └── S3: 跨模块/偶发  → 深度路（完整 investigate + health + qa）
+  └── S3: 跨模块/偶发  → 深度路（fresh 调查 subagent + 全量测试 + UI 验证）
 ```
 
 **任务依赖分析驱动并行：**
@@ -148,14 +190,16 @@ xdev 解决了这四个问题。
 
 6 个工作流文件，覆盖完整开发生命周期：
 
-| 工作流 | Claude Code | Windsurf | 使用场景 | 目标时长 |
-|--------|-------------|----------|---------|---------|
-| **full-dev** | `/xdev:full-dev` | `/full-dev` | 新功能、大型重构、跨模块改动 | 数小时~数天 |
-| **full-dev-design** | `/xdev:full-dev-design` | `/full-dev-design` | 仅设计阶段 —— 产出计划后交给 Codex 执行 | 1~4 小时 |
-| **full-dev-impl** | `/xdev:full-dev-impl` | `/full-dev-impl` | 仅实现阶段 —— 读取设计计划并执行 | 数小时~数天 |
-| **bugfix** | `/xdev:bugfix` | `/bugfix` | Bug、崩溃、异常行为 | 15 分钟~90 分钟 |
-| **iterate** | `/xdev:iterate` | `/iterate` | 小改动、优化、配置调整 | 15~60 分钟 |
-| **ask** | `/xdev:ask` | `/ask` | 只读项目问答 + 主动体检；以"答案最新最准"为最高原则 | 1~5 分钟 |
+| 工作流 | Claude Code | Codex | dsh | 使用场景 | 目标时长 |
+|--------|-------------|-------|-----|---------|---------|
+| **full-dev** | `/xdev:full-dev` | `/prompts:xdev-full-dev` | `/xdev-full-dev` | 新功能、大型重构、跨模块改动 | 数小时~数天 |
+| **full-dev-design** | `/xdev:full-dev-design` | `/prompts:xdev-full-dev-design` | — | 仅设计阶段 —— 产出计划后交给实现方执行 | 1~4 小时 |
+| **full-dev-impl** | `/xdev:full-dev-impl` | `/prompts:xdev-full-dev-impl` | — | 仅实现阶段 —— 读取设计计划并执行 | 数小时~数天 |
+| **bugfix** | `/xdev:bugfix` | `/prompts:xdev-bugfix` | `/xdev-bugfix` | Bug、崩溃、异常行为 | 15 分钟~90 分钟 |
+| **iterate** | `/xdev:iterate` | `/prompts:xdev-iterate` | `/xdev-iterate` | 小改动、优化、配置调整 | 15~60 分钟 |
+| **ask** | `/xdev:ask` | `/prompts:xdev-ask` | `/xdev-ask` | 只读项目问答 + 主动体检；以"答案最新最准"为最高原则 | 1~5 分钟 |
+
+> **dsh 说明：** dsh 上 `full-dev-design` / `full-dev-impl` 并入 `/xdev-full-dev`——dsh 的子 agent 级 `model` 参数取代了跨工具交接文件（强模型规划、便宜模型实现）。
 
 > **跨工具交接：** `full-dev-design` + `full-dev-impl` 让你为不同阶段选择最合适的模型 —— 用强推理模型（如 Opus）做规划，用快速执行模型（如 Codex）做实现。xdev 通过共享计划文件自动完成交接。
 
@@ -167,7 +211,7 @@ xdev 解决了这四个问题。
 - 从 0 交付一个新功能：*"给用户中心新增订阅页 + Stripe 计费"*
 - 大型重构：*"把 API 路由从 Express 3 升到 Express 5"*
 - 会扩散的 schema / 接口契约改动：*"用户表加 organization_id + 历史数据回填 + 改所有读取方"*
-- 任何你希望写代码**之前**先做 CEO/Eng/Design/DevEx 审查的场景
+- 任何你希望写代码**之前**先由 3 个 fresh 审核员（覆盖 / 依赖 / BDD 质量）把计划过一遍的场景
 
 **`/xdev:full-dev-design`** —— 只做设计，把计划交给另一个模型 / agent 实现。
 - Opus / GPT-5 做设计，Codex / 更快的模型做实现
@@ -180,9 +224,9 @@ xdev 解决了这四个问题。
 - 想用快速执行模型跑已锁定的计划
 
 **`/xdev:bugfix`** —— 任何"坏了 / 崩了 / 行为不对"，自动分级。
-- *S1 快路（≤ 15 min）*：明显的 typo、off-by-one、漏 import、单行回归
-- *S2 标准（≤ 35 min）*：单模块可复现 bug —— *"注册表单拒绝合法的 `+` 邮箱地址"*
-- *S3 深度（≤ 90 min）*：跨模块 / 偶发 / 鉴权或支付敏感 —— *"结算偶发双扣"*
+- *S1 快路*：明显的 typo、off-by-one、漏 import、单行回归
+- *S2 标准*：单模块可复现 bug —— *"注册表单拒绝合法的 `+` 邮箱地址"*
+- *S3 深度*：跨模块 / 偶发 / 鉴权或支付敏感 —— *"结算偶发双扣"*
 
 **`/xdev:iterate`** —— 范围内的小改，无意外；超范围会自动升级。
 - 文案 / 超时 / 阈值 / 日志级别调整
@@ -207,103 +251,59 @@ xdev 解决了这四个问题。
 
 ## 工作流架构
 
-### /full-dev —— 8 阶段端到端流水线
+### /full-dev —— 4 阶段端到端流水线（v2）
 
 ```
-阶段 1：需求探索（brainstorming / office-hours）
-阶段 2：计划审查 —— 并行 subagent（eng + design + devex + ceo 按需选择）
-阶段 3：TDD 实现计划（含依赖标注）
+阶段 1：设计 —— 功能点 F1..Fn / Must-Not / 验收标准（规模自适应；大功能才需用户确认）
+阶段 2：计划与门 —— 任务拆分 → 3 个 fresh 审核（覆盖 ‖ 依赖 ‖ BDD 质量）
+        [+ 门下门（--menxia 可选）：approve/reject 二值裁决，封驳强制返工 ≤3 轮]
          ── 交接点（可选，用于跨工具拆分）──
-阶段 4：TDD 实现 —— 风险分级（L0–L3）+ 心跳监控 + L3 独立审计
-阶段 5+6：质量 + QA（并行）—— review(条件) ‖ cso --diff(条件) ‖ health ‖ qa ‖ design-review
-阶段 7：发布 —— 7.1 ship（含 pre-landing review + 自动 document-release）→ 7.2 land-and-deploy（可选）
-阶段 8：经验沉淀（learn —— 条件触发）
+阶段 3：实现与测试 —— TDD 红绿循环 + 任务图并行派发 + drift check + 条件深度审查
+阶段 4：交付 —— 全量测试真实通过 → 对抗性 pre-landing review → PR → 可选部署
 ```
+
+**5 条硬规则**（其余皆为可偏离的默认值）：验证必须真实执行 / fresh 裁决必须执行 / 不碰 base 分支 / 不可逆须确认 / 默认值可偏离（一句话说明）。
 
 ### 内置可靠性机制
 
-**会话恢复** —— 每个工作流在阶段 3 结束后写入状态文件到 `docs/state/`，并在后续各阶段更新。状态文件包含 `Handoff Summary`，并由阶段 4 主线控制者在每个批次边界刷新；同时记录 `mainline_checkpoints.next_batch`。下次调用时按三分支策略恢复：(a) **状态文件存在且三重校验通过**（分支匹配、锁定的 HEAD 在历史中、计划文件存在）→ 在阶段 4 内优先从 `next_batch` 继续；(b) **校验失败**（如 rebase / squash 让 HEAD 失效）→ 改名为 `<file>.invalid-<ts>.md`（保留 Handoff 和 checkpoints 用于诊断，下次扫描自动忽略），落到分支 (c)；(c) **状态文件缺失但 `docs/plans/` 下有含 `## Intent Contract` 的设计文档和实现计划** → 自动创建最小状态文件（写入当前 HEAD），从阶段 4 开始。仅当设计 / 计划 / Intent Contract 缺失时才硬暂停。这样即使状态文件因 gitignore 在跨机器、clean checkout 或误删后丢失，也能自动恢复，同时守住 Intent Contract 红线。状态文件加入 `.gitignore`，ship 完成后自动删除。
+**会话恢复 / 跨工具交接** —— 阶段 2 结束时写入最小状态文件 `docs/state/xdev--<branch>.md`（分支 / 阶段 / 计划路径 / next action）并 commit 计划。`/full-dev-impl` 以该文件的 next action 续跑，不回放对话；计划文件缺失或锚点 commit 不在历史中 → 提示用户重新规划，不猜。v2 格式状态文件（`full-dev-design--<branch>--<slug>.md`）不再解析——流程会明确告知"用 v2 完成或重新规划"。
 
-**实施 worktree 守卫** —— xdev 在产生任何 commit（包括设计 / 视觉 / 计划）之前，就检查当前分支是否是仓库 base/default 分支（通常是 `main`/`master`）。若命中，就在隔离的 git worktree 中创建 `xdev-*` feature branch，并在 worktree 中继续整个流程。full-dev/full-dev-design 在前置守卫时执行（让阶段 1 的设计 commit 也落在 feature 分支上，而非 base）；bugfix/iterate 在流程开头执行。worktree 位置按顺序解析：已有且 ignore 的 `.worktrees/` → 已有且 ignore 的 `worktrees/` → `${XDEV_WORKTREE_ROOT}`（环境变量，可指向 SSD / 共享存储）→ `~/.config/xdev/worktrees/<project>/`（默认）。`ship` 成功后自动清理 worktree；阶段 7 保留最终兜底检查防止在 base 分支调用 `ship`。守卫同时会把根级 `.env*` / `.envrc` 拷到新 worktree，并提示首次跑测试前需重新执行 `uv sync` / `npm ci`（`git worktree add` 不会带上 gitignored 的构建产物）。
+**base 分支守卫**（硬规则 3）—— 不向 `main`/`master` 提交。在 base 分支上时先建 `xdev-<slug>` feature 分支，可选放进 `git worktree`（注意 worktree 不带 `.env*` 与构建产物）。PR 合并后在阶段 4 清理 worktree。
 
-**主线控制者** —— 阶段 4 由主线程担任总控：保持干净上下文（只留设计文档、Intent Contract、计划、Handoff Summary、任务状态、subagent 回执），把计划拆成携带相关 Intent Contract 片段的窄 task packet，按风险 + 冲突矩阵 + 依赖派发给 TDD subagent / teamagent。Subagent 只执行被分配任务，所有输出回到主线汇总。主线在每个批次边界更新 `mainline_checkpoints` 并刷新 Handoff Summary，并在以下任一情况暂停以重新对齐用户意图：subagent 返回 `NEEDS_RECLASSIFY` / `BLOCKED`、Gatekeeper 报告 `DEVIATION`、证据不满足通过条件、或计划与代码现实偏离。防止长上下文漂移和单方面扩范围。
+**Intent Contract + drift check** —— 设计文档的 F1..Fn / Must Not / 验收标准经用户确认后即为 *Intent Contract*。每批次（~5 commits）后由 fresh subagent 只读契约、设计文档与 diff（附录 B），报告 `[偏离]`（接口 / 数据流 / 模块边界与设计不一致，附 file:line）与 `[超纲]`（用户可见新能力无契约对应）。有偏离 → 用户只能选修代码；要改设计必须显式回到阶段 1。
 
-**结构化通过条件** —— 阶段 3 生成的每个任务都带有可机械校验的通过条件：精确的验证命令、期望退出码、必须包含的输出文本、以及可选的额外断言（如 `curl` 探针）。Subagent 提交前必须逐项验收，全部满足才能提交。Subagent C 在计划反思阶段额外校验"输出必须包含"的文本片段是否能从验证命令的实际输出中推导。
+**Worker 回执 + 主线汇总** —— 独立任务并行派发给 subagent，worker 只返回回执（改了哪些文件 / 跑了什么命令 / 真实输出摘要 / 遇到的问题），不写状态；主线程合并回执并独占状态文件。保持总控上下文干净，防止单方面扩范围。
 
-**阶段 4 风险分级** —— 阶段 3 的每个任务都带 `risk` 分级（L0 微改 / L1 本地 / L2 跨模块 / L3 关键路径），驱动阶段 4 的编排：窄执行器 packet 按风险收敛；review 按风险抽样（L1 每模块 1 个）或强制（L2/L3）；L3 任务强制独立审计 subagent，sidecar 写入 `docs/state/audits/<slug>/`；subagent 进度由风险感知心跳监控（L1 5/10min、L2 8/15min、L3 15/25min），可能卡住的子任务先被自动 kill 重派，再升级给用户。典型阶段 4 耗时从 ~90min 降到 45–60min，同时保留共享模块 / auth / 金额敏感代码的质量门禁。
+**审核员失败防静默丢失** —— 计划反思的任一 fresh 审核员失败/超时，重派 1 次后仍失败则标 `missing`，其维度的 HIGH 问题计为「未知＝存在」而非 0，不得基于不完整数据判定「通过」。后台命令必须轮询到终态（"完成后会继续处理"式停轮违反硬规则 1）。
 
-**轻量影响面预检（Light Impact Gate）** —— 代码改动前后，xdev 会做轻量影响面预检，输出直接调用方、可能受影响的 workflow / 文档 / 测试、风险触发项、升级判断、验证建议和 Unknowns。它只使用限域 `rg`、`git diff`、邻近测试，以及已有且新鲜的 Graphify query 结果；不会安装 GitNexus，不会新建索引，也不会自动刷新 Graphify。目标不是替代项目理解，而是在开工前看清爆炸半径，在收尾时把 diff 转成精确验证和同步检查。
+**对抗性 pre-landing review** —— 开 PR 前由 fresh subagent 假设这份 diff *一定会*造成生产事故，找出最可能的 3 个途径（数据丢失 > 安全 > 功能回归 > 性能），每条给触发路径与 file:line 证据；找不到 3 条如实报告，不许凑数（附录 D）。diff 涉及 auth / 支付 / PII / schema / 新依赖时另加一轮条件深度审查（附录 C）。
 
-**自动代码库快照** —— 当工作流需要基础项目上下文（技术栈、目录结构、开发/测试命令）且当前 session 没有时，会内置执行一次浅层扫描，把结果写入 `docs/state/codebase-snapshot.md`（gitignore）。后续工作流调用时直接复用，省冷启动时间。快照含三层新鲜度校验（分支 + commit + 7 天过期）和截断标记。**没有单独的"了解项目"用户命令** —— 工作流自己判断何时刷快照；想交互式问答用 `/xdev:ask`，想要架构 / 调用链层面的理解则升级到 Graphify（第 2.6 步）。
+**门下门（可选，`--menxia`）** —— fresh 审核官对计划整体给出二值 approve/reject，带设计遵从条款（设计已批准 / 豁免 / 列为非目标的决策不构成封驳理由）与注入防护；reject 强制修订并附逐条修改说明，重审 ≤3 轮，第 2 轮起先校验修改说明与计划实际变更是否一致（N4 实验中 4/5 假修复被识破）。灰度：累计 ≥3 次真实任务后转正或移除。
 
-**并行子 agent 失败防静默丢失** —— 凡是 fan-out 到并行子 agent 的环节（`stage5-6-qa`、`parity-check`、`full-dev-design` 阶段 2 并行审查），失败 / 超时 / 崩溃的子 agent 不再被 `filter(Boolean)` 静默吞掉。每个聚合点都显式暴露 dropped 计数（`droppedSkills`、`droppedPairs`、`droppedVerify`）；阶段 5+6 中任一已触发 skill 掉线都会阻塞聚合结果，整维失败不能默认 pass。设计审查中，失败的 reviewer 重派 1 次后标 `missing`，其 HIGH 计为「未知」而非 0，并在 commit 标 `[partial-review]`。避免基于不完整数据判定「通过」。
+**单一源** —— 只有 `claude-code/` 是手写源。dsh preset 产物（`preset.yml`、`agent.cordis.yml`、`skills/xdev-*/`）由 `bin/gen-dsh.mjs` 生成并提交入库，保证 `git clone` 即完整安装；`tests/workflows.test.mjs` 在产物过期、工作流重新引入外部 skill 调用、或 `bugfix` / `iterate` 超出薄壳预算时失败。
 
-**端口漂移检测（`parity-check`）** —— 面向 contributor 的工作流，对比 `claude-code/` 与 `windsurf/` 两个源树，区分**刻意的 IDE 适配**（frontmatter 格式 / 命令命名空间 / 模型推荐）与**真行为漂移**，只对后者报警。两个源树保持故意不统一，parity-check 正是让这种漂移保持诚实、而非强行统一的守门人。
-
-### /bugfix —— 三级根因修复流水线
+### /bugfix —— 先找根因，再走 full-dev 阶段 3–4 循环
 
 ```
-严重性分级（S1 / S2 / S3）
-  │
-  ├── S1：直接修复 → 测试 → git push              （≤ 15 min）
-  ├── S2：内联调查 → TDD → 全量测试 → ship        （≤ 35 min）
-  └── S3：investigate → TDD → health+qa+design-review → ship → learn（≤ 90 min）
+分级（S1 快修 / S2 标准 / S3 深度 —— 按证据判定，不按时钟）
+  ├── S1：回归测试 → 修 → 聚焦测试 → 推分支（不开 PR）
+  ├── S2：内联定位 → TDD → 全量测试 → 交付
+  └── S3：git blame/bisect → 卡住则 fresh 调查 subagent → TDD → 全量测试 + UI 验证 → 交付
+范围检查的 Intent Contract = 根因报告中的"预期影响范围"
 ```
 
 ### /iterate —— 范围门控快速路径
 
 ```
-范围检查（6 维度：行数 / 文件数 / 模块数 / 新依赖 / API 契约 / 是否发现 bug）
-  │
-  ├── 超出范围 → 升级到 /full-dev
-  ├── 发现 bug → 切换到 /bugfix
-  └── 在范围内 → TDD → health → ship
+范围门（<100 行 · ≤5 文件 · ≤2 模块 · 不引新依赖 · 不改公开 API）
+  ├── auth / 支付 / schema / 公开 API / 新页面 → /full-dev
+  ├── 描述的是错误行为而非改动 → /bugfix
+  └── 在范围内 → rg 列出共享文件的直接调用方 → TDD → 全量测试 + lint/build → 交付
 ```
 
-### 项目上下文自主解析 —— 自动快照与 Graphify
+### 项目上下文 —— 不设仪式
 
-xdev **不需要单独的"了解项目"命令**。每个工作流启动时会根据任务复杂度、影响范围、已有上下文和缓存新鲜度自主选择上下文深度。
-
-```
-任务开始
-  │
-  ▼
-是否需要项目级理解？
-  ├── 否 → Level 0：不扫描，直接执行
-  └── 是
-       ├── 只需要基础结构 / 命令 / 测试模式
-       │     → Level 1：执行内置浅层扫描，读取 docs/state/codebase-snapshot.md
-       │
-       └── 需要架构 / 跨模块关系 / 调用链 / 设计意图 / 全局状态
-             ├── graphify-out/{graph.json, GRAPH_REPORT.md} 存在且新鲜
-             │     → Level 3：读 GRAPH_REPORT.md + 定向 `graphify query`
-             │
-             ├── `command -v graphify` 成功，但图谱不存在或过期
-             │     ├── 当前 agent 可调度 Graphify skill pipeline
-             │     │     → Level 2：先做隐私确认，再初始化 / 刷新图谱
-             │     └── 否则 → 降级到 Level 1
-             │
-             └── Graphify 未安装
-                   → 说明是可选增强（README 第 2.6 步），降级到 Level 1
-```
-
-关键约束：
-- **CLI ≠ skill pipeline。** `command -v graphify` 只证明 CLI 可用（够做已有图谱 query 和 `graphify update .` 代码 AST 刷新）；首次完整建图还要求当前 agent 环境能运行 Graphify skill pipeline。
-- **不自动安装、不自动持久化。** 工作流不会执行 `graphify install`、`graphify watch`、`graphify hook install`；安装只在 README 第 2.6 步、用户主动配置时进行。
-- **隐私门控。** 首次完整初始化或对文档 / PDF / 图片 / 音视频做语义重抽取属于 🔴 操作 —— 必须先说明可能调用底层模型 API 并等待用户确认；只对代码做 AST 刷新属于 🟡（通知即继续）。
-- **Token 节制。** 工作流只读取 `GRAPH_REPORT.md` 和定向 `graphify query "<问题>" --graph graphify-out/graph.json` 的子图，**不**把完整 `graph.json` 塞进上下文。
-- **降级永远可用。** Graphify 未安装、初始化失败、更新失败、快照过期都自动降级到 Level-1 浅层扫描（或跳过），工作流继续推进。
-
-各工作流默认值：
-
-| 工作流 | 默认深度 | 触发深度路径 |
-|--------|---------|-------------|
-| `/iterate` | 仅 Level 0/1 | 需要深度上下文 → 升级到 `/full-dev` 或 `/bugfix`（iterate 内部不深扫） |
-| `/bugfix` S1/S2 | Level 1 | S3 深度路径：先读 `GRAPH_REPORT.md` → `graphify query`；只在满足 Level 2 条件时初始化 |
-| `/full-dev` | 自适应 Level 0–3 | 生命周期与执行边界的“源”规则 |
-| `/full-dev-design` | Level 0/1，需要架构判断时进 Level 2 | 委托给 `/full-dev` 生命周期 |
-| `/full-dev-impl` | 默认信任设计计划，不足时再补 `graphify query` | 委托给 `/full-dev` 生命周期 |
-| `/ask` | 自适应 Level 1–3，以"答案最新最准"为最高原则；用户已装 Graphify 视为隐式授权 | 图谱新鲜 → 直接 query；代码变化 → 🟡 自动 `graphify update .`；语义变化或首次建图 → 🟡 自动调用 Graphify skill pipeline（`/graphify`，含 LLM 语义抽取的完整 pipeline；**`graphify` CLI 没有完整建图入口**），仅透明披露代价不二次确认；用户显式说"别刷新/别建图" → 立即跳过 + `Unknowns` 标注 |
+工作流读项目自己的 `CLAUDE.md` / `AGENTS.md`，用 `rg` + 读文件建立上下文。没有内置的"快照"或"先了解项目"步骤。`/ask` 在存在 Graphify 图谱时额外用它（见第 2.6 步），没有则降级 `rg`——每个答案都注明所依据的数据源。
 
 ---
 
@@ -313,10 +313,10 @@ xdev **不需要单独的"了解项目"命令**。每个工作流启动时会根
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
-~/.claude/skills/xdev/bin/install.sh claude    # 或：windsurf / codex / "claude codex" / "all"
+~/.claude/skills/xdev/bin/install.sh claude    # 或：codex / "claude codex" / "all"
 ```
 
-完事。`/iterate` 和 `/ask`（rg 模式）已经能用。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 的体检模式）需要额外 skill，但缺 skill 时 xdev **优雅降级**到能运行的子集，不会崩。
+完事。`/iterate` 和 `/ask`（rg 模式）已经能用。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 的体检模式）需要额外 skill，但缺 skill 时 xdev **优雅降级**到能运行的子集，不会崩。dsh 用户见上方[快速上手（dsh）](#快速上手dsh--deepseek-harness)——一条 `git clone` 即可，无需安装脚本。
 
 ### 选择安装层级（按需选）
 
@@ -324,13 +324,11 @@ xdev 自身只是工作流文件，重活由外部 skill 完成。按你要用�
 
 | 想用什么 | 需要装 | 累计时间 |
 |---------|--------|---------|
-| `/iterate`、`/ask`（rg 模式） | **xdev 本体**（必装） | 1 分钟 |
-| `/bugfix` 完整 S1/S2/S3 三档 | + **gstack**（第二步） | +3 分钟 |
-| `/full-dev` 完整流程（设计 + 多审查 + ship） | + **gstack** + **superpowers**（第一步 + 第二步） | +5 分钟 |
-| `/full-dev` 阶段 1.5 视觉设计 | + **ui-ux-pro-max**（第 2.5 步） | +2 分钟 |
-| `/ask` 体检模式 + `/full-dev` 深度架构判断 | + **Graphify**（第 2.6 步；用户已装视为隐式授权 LLM 抽取） | +2 分钟 |
+| `/iterate`、`/ask`、`/bugfix`、`/full-dev` 全部功能 | **xdev 本体** | 1 分钟 |
+| **dsh "xdev 模式" preset**（以上全部，以原生 dsh 技能形态） | `git clone` 到 `~/.dsh/.agent-presets/xdev`——见[快速上手（dsh）](#快速上手dsh--deepseek-harness) | 1 分钟 |
+| `/ask` 的代码图谱上下文 | + **Graphify**（第 2.6 步；已装视为隐式授权 LLM 抽取） | +2 分钟 |
 
-> **优雅降级保证**：缺哪个 skill，xdev 自动跳过相关阶段，不报错。可以从核心开始，按需加装。
+> Graphify 缺失时 `/ask` 自动降级 `rg`，不报错。
 
 ### 让 Claude Code 全自动安装（替代方案）
 
@@ -342,19 +340,9 @@ xdev 自身只是工作流文件，重活由外部 skill 完成。按你要用�
 1. xdev 本体（必装）：
    执行：git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
    然后：~/.claude/skills/xdev/bin/install.sh claude
-   （如果同时用 Codex CLI 或 Windsurf，把 `claude` 换成任意组合，例如 `claude codex` / `windsurf codex` / `all`。）
+   （如果同时用 Codex CLI，把 `claude` 换成任意组合，例如 `claude codex` 或 `all`。）
 
-2. gstack（推荐——/bugfix 全档 + /full-dev 主流程）：
-   执行：git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
-
-3. superpowers（推荐——brainstorming + 工程 skill 集）：
-   执行：/plugin install superpowers@claude-plugins-official
-
-4. ui-ux-pro-max（可选——UI/UX 设计 skill）：
-   执行：/plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
-   然后：/plugin install ui-ux-pro-max@ui-ux-pro-max-skill
-
-5. Graphify（可选——深度项目理解）：
+2. Graphify（可选——仅 /ask 使用）：
    执行：uv tool install graphifyy
    验证：graphify --help
    注意：PyPI 包名是 graphifyy，请勿安装无关的 graphify 包。
@@ -368,113 +356,20 @@ xdev 自身只是工作流文件，重活由外部 skill 完成。按你要用�
 
 ## 逐项详细安装
 
-### 第一步 —— 安装 superpowers
+> **v2 起 superpowers / gstack 步骤已移除**：xdev 不再依赖任何外部 skill 库。
+> 原先由 gstack/superpowers 提供的审查能力（计划反思、偏差检测、对抗性 pre-landing review）
+> 已内化为 `full-dev.md` 的内置 prompt（附录 A–D）。以下仅为可选增强。
 
-superpowers 提供 xdev 使用的 `brainstorming` skill（简单功能的轻量级需求探索），同时还包含一套更完整的开发工作流 skill（`writing-plans`、`test-driven-development`、`systematic-debugging`、`dispatching-parallel-agents` 等），Claude Code 代理在执行过程中可按需调用。
+### 第 2.6 步 —— Graphify（可选；只有 `/ask` 用它）
 
-**Claude Code（官方市场，最简单）：**
-```
-/plugin install superpowers@claude-plugins-official
-```
-
-**Claude Code（自定义市场）：**
-```
-/plugin marketplace add obra/superpowers-marketplace
-/plugin install superpowers@superpowers-marketplace
-```
-
-**Windsurf / Cursor：** 在插件市场搜索 `superpowers` 安装。
-
-**Codex / OpenCode：** 告诉 AI 获取并执行 `https://raw.githubusercontent.com/obra/superpowers/refs/heads/main/.codex/INSTALL.md`
-
-### 第二步 —— 安装 gstack
-
-gstack 提供 xdev 使用的核心工程 skill：`office-hours`、`plan-ceo-review`、`plan-eng-review`、`plan-design-review`、`plan-devex-review`、`design-consultation`、`review`、`cso`、`health`、`qa`、`qa-only`、`design-review`、`devex-review`、`browse`、`investigate`、`ship`、`land-and-deploy`、`canary`、`autoplan`、`learn`。
-
-**依赖：** Git、[Bun v1.0+](https://bun.sh)
-
-**Claude Code：**
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-cd ~/.claude/skills/gstack && ./setup
-```
-
-**Codex / OpenCode / Cursor / Windsurf / 其他支持的 agent：**
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host codex   # 或：opencode / kiro / factory / openclaw / hermes / gbrain，或 auto（自动探测）
-```
-
-> **gstack 自 v1.57.10 起 Codex 跨模型审查默认开启**：`/review`、`/ship`、四个 `/plan-*-review`、`/document-release`、`/autoplan` 会自动请求 Codex 第二意见审查，Codex 不可用时回退 Claude 子 agent —— 因此 xdev 的阶段 2 计划审查、阶段 5+6 / 阶段 7 的 review+ship 已经在享受跨模型覆盖。安装 [codex 插件](https://github.com/openai/codex-plugin-cc)（`/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex`）解锁真正的 Codex 覆盖。全局关闭：`gstack-config set codex_reviews disabled`。
-
-### 第 2.5 步 —— 安装 ui-ux-pro-max
-
-`ui-ux-pro-max` 提供端到端 UI/UX 设计支持：设计系统生成、产品类型推理、风格/配色/字体检索、交互指导和面向具体技术栈的 UI 规则。在 `full-dev` / `full-dev-design` 阶段 1.5 构建全新产品或复杂 UI 时调用。
-
-**Claude Code（插件市场）：**
-```
-/plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill
-/plugin install ui-ux-pro-max@ui-ux-pro-max-skill
-```
-
-**Codex / Windsurf / Cursor / OpenCode / 其他 agent（CLI —— 推荐）：**
-```bash
-npm install -g ui-ux-pro-max-cli
-uipro init --ai codex      # 或：claude / windsurf / cursor / opencode / all
-```
-
-> **包已更名：** npm 包从 `uipro-cli` 更名为 **`ui-ux-pro-max-cli`**（旧名冻结在 2.2.3），CLI 二进制仍叫 `uipro`。若 `uipro update` 撞 GitHub 限流，可从包内置资产离线刷新：`uipro init -g --ai claude --force --offline`，或设置 `UI_PRO_MAX_GITHUB_TOKEN`。
-
-**更新已有 CLI 安装：**
-```bash
-npm install -g ui-ux-pro-max-cli
-uipro update --ai codex    # 或你的 assistant target
-```
-
-### 第 2.6 步 —— 安装 Graphify（可选，深度项目理解推荐）
-
-Graphify 是 xdev 的**深度项目上下文层**：当工作流需要架构边界、跨模块关系、调用链、设计意图或全局项目状态判断时启用。
-
-Graphify 是**可选**的；未安装时 xdev 工作流会降级到内置 Level-1 浅层扫描并继续。
-
-**依赖：** Python 3.10+。
-
-**推荐：全局 CLI 安装**
-```bash
-uv tool install graphifyy
-graphify --help
-```
-
-> **从 < 0.9.0 升级？** v0.9.0 把节点 ID 改成完整仓库相对路径，已有的 `graphify-out/` 图谱需要一次性 `graphify extract --force` 重建（`graph.json` 会自动迁移）。仓库也已迁移到 [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify)（旧 `safishamsi/graphify` URL 会 301 跳转）。
-
-**备选（pipx）：**
-```bash
-pipx install graphifyy
-graphify --help
-```
-
-**重要：** 官方 PyPI 包名是 `graphifyy`，CLI 命令是 `graphify`。**不要**安装无关的 `graphify` 包。
-
-**可选：为 agent 启用 Graphify skill pipeline**
-
-CLI 已经够做已有图谱 query 和代码 AST 刷新；首次完整建图额外要求当前 agent 环境能运行 Graphify skill pipeline。
-
-Claude Code 示例：
+[Graphify](https://github.com/Graphify-Labs/graphify) 构建代码知识图谱，`/ask` 用它回答架构 / 调用链 / 死代码类问题。没装时 `/ask` 降级为 `rg` 并在 `Unknowns` 说明。xdev 其余部分不依赖它。
 
 ```bash
-graphify install --platform claude
+uv tool install graphifyy          # 需要 Python 3.10+
+graphify --version
 ```
 
-其他 agent 请运行 `graphify --help` 选择对应 install 目标。**xdev 工作流不会自动执行这些 install / 配置命令**。
-
-**xdev 工作流执行策略：**
-- 在 query / update / check-update 之前用 `command -v graphify` 检测 CLI；找不到就说明它是可选增强，降级到内置浅层扫描。
-- **绝不**在普通工作流运行中自动执行 `graphify install`。
-- 已有图谱时优先读 `graphify-out/GRAPH_REPORT.md` 和定向 `graphify query`，不读完整 `graph.json`。
-- 安装 Graphify 不等于扫描项目；只有 Level 2 任务、浅层快照不够、且当前 agent 能运行 Graphify skill pipeline 时才会触发首次建图。
-- 已有图谱：纯代码刷新走 `graphify check-update .` + `graphify update .`；文档 / 媒体 / 敏感资料的语义刷新需要用户确认。
-- `command -v graphify` 只证明 CLI 存在 —— 够做已有图谱 query 和代码 AST 刷新，但不足以保证首次完整建图。
-- 除非用户明确要求，**不**启用 `graphify install`、`graphify watch`、`graphify hook install` 或其他平台 / 持久化自动化。
+然后在项目里跑一次 `/graphify` skill 生成 `graphify-out/`。`/ask` 检测到过期会自动刷新（纯代码变化走 `graphify update .`；语义重抽取走 skill，会披露代价）。xdev 从不执行 `graphify install` / `watch` / `hook install`。
 
 ### 第三步 —— 安装 xdev 本体
 
@@ -490,31 +385,23 @@ git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
 # Claude Code 全局
 bash ~/.claude/skills/xdev/bin/install.sh claude
 
-# Windsurf 全局
-bash ~/.claude/skills/xdev/bin/install.sh windsurf
-
-# Windsurf 项目级（链到当前项目的 .windsurf/workflows/，随仓库版本管理）
-cd /path/to/your/project
-bash ~/.claude/skills/xdev/bin/install.sh windsurf --project
-
 # Codex CLI（同时安装 custom prompts 和 skills，调用方式见下）
 bash ~/.claude/skills/xdev/bin/install.sh codex
 
 # 多选：任意组合（等价于 all 减去你不想装的）
 bash ~/.claude/skills/xdev/bin/install.sh claude codex
-bash ~/.claude/skills/xdev/bin/install.sh windsurf codex
-bash ~/.claude/skills/xdev/bin/install.sh all                # = claude windsurf codex
+bash ~/.claude/skills/xdev/bin/install.sh all                # = claude codex
 
 # 预览不写入
-bash ~/.claude/skills/xdev/bin/install.sh windsurf --dry-run
+bash ~/.claude/skills/xdev/bin/install.sh claude --dry-run
 
 # 自定义目标目录（高级；codex 不支持）
-bash ~/.claude/skills/xdev/bin/install.sh windsurf --target /your/custom/path
+bash ~/.claude/skills/xdev/bin/install.sh claude --target /your/custom/path
 ```
 
 #### Windows（原生，通过 Git Bash）
 
-xdev 直接装到**原生 Windows** 的 Codex CLI / Claude Code / Windsurf 下——目录结构和 macOS/Linux 一致，只是放在 `%USERPROFILE%` 下。安装脚本是 bash 写的，所以从 **Git Bash** 跑（一次性配好，[Git for Windows](https://gitforwindows.org/) 自带）。**不走 WSL**。
+xdev 直接装到**原生 Windows** 的 Codex CLI / Claude Code 下——目录结构和 macOS/Linux 一致，只是放在 `%USERPROFILE%` 下。安装脚本是 bash 写的，所以从 **Git Bash** 跑（一次性配好，[Git for Windows](https://gitforwindows.org/) 自带）。**不走 WSL**。
 
 一次性配置：
 
@@ -537,9 +424,9 @@ bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" all
 | Agent | Windows 路径 |
 |---|---|
 | Claude Code | `%USERPROFILE%\.claude\commands\xdev\` |
-| Windsurf | `%USERPROFILE%\.codeium\windsurf\windsurf\workflows\` |
 | Codex prompts | `%USERPROFILE%\.codex\prompts\` |
 | Codex skills | `%USERPROFILE%\.agents\skills\` |
+| dsh preset | `%USERPROFILE%\.dsh\.agent-presets\xdev\`（git clone） |
 
 > 暂未提供原生 PowerShell 安装器。如果你需要 `pwsh bin/install.ps1`，欢迎开 issue 反馈。
 
@@ -547,9 +434,9 @@ bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" all
 
 ```
 Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask
-Windsurf:        /full-dev               /full-dev-design               /full-dev-impl               /bugfix               /iterate               /ask
 Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask
 Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask
+dsh preset:      /xdev-full-dev          （design/impl 已并入）         （design/impl 已并入）       /xdev-bugfix          /xdev-iterate          /xdev-ask
 ```
 
 > **Codex 安装结构。** 选 `codex` 会同时落两个入口，你按场景挑用即可：
@@ -563,36 +450,16 @@ cd ~/.claude/skills/xdev && git pull
 ```
 
 > Claude Code 用的是目录软链，`git pull` 后无需重跑安装脚本。
-> Windsurf 和 Codex 用的是逐文件软链（Codex 还附带生成的 `SKILL.md` 薄壳）；如果发布说明里有新增 / 改名 / 改 description 的工作流文件，请用相同的 agent 目标重跑安装脚本以刷新软链和重生成 skill 薄壳。
+> Codex 用的是逐文件软链（附带生成的 `SKILL.md` 薄壳）；如果发布说明里有新增 / 改名 / 改 description 的工作流文件，请用相同的 agent 目标重跑安装脚本以刷新软链和重生成 skill 薄壳。
+> dsh 用独立 clone——`git -C ~/.dsh/.agent-presets/xdev pull` 升级（或按 `DSH_HOME` 相应调整）。
 
 ### Skill 来源对照表
 
 | Skill | 来源 | 使用位置 |
 |-------|------|---------|
-| `superpowers:brainstorming` | [superpowers](https://github.com/obra/superpowers) | full-dev / full-dev-design 阶段 1（简单功能） |
-| `office-hours` | [gstack](https://github.com/garrytan/gstack) | full-dev / full-dev-design 阶段 1（大功能） |
-| `design-consultation` | gstack | full-dev / full-dev-design 阶段 1.1（全新产品且无设计系统时） |
-| `plan-eng-review` | gstack | full-dev 阶段 2（必选） |
-| `plan-design-review` | gstack | full-dev 阶段 2（UI 变更）|
-| `plan-devex-review` | gstack | full-dev 阶段 2（API 变更）|
-| `plan-ceo-review` | gstack | full-dev 阶段 2（大功能）|
-| `autoplan` | gstack | full-dev 阶段 2（全栈大功能，仅 Claude Code）|
-| `investigate` | gstack | bugfix S3 |
-| `health` | gstack | full-dev、bugfix S3、iterate |
-| `qa` | gstack | full-dev、bugfix S3（UI）、iterate |
-| `design-review` | gstack | full-dev 阶段 5+6（UI 变更）、bugfix S3（UI）|
-| `devex-review` | gstack | full-dev 阶段 5+6（API / CLI / SDK 变更）|
-| `review` | gstack | full-dev 阶段 5+6（条件：新依赖 / 架构变更 / 安全敏感）|
-| `cso` | gstack | full-dev 阶段 5+6（条件：认证 / 支付 / PII / Secret）|
-| `browse` | gstack | bugfix S2 UI 验证 |
-| `ship` | gstack | 所有工作流 |
-| `land-and-deploy` | gstack | full-dev 阶段 7.2（可选：merge PR + CI + 生产健康检查）|
-| `learn` | gstack | full-dev、bugfix S3 |
-| `graphify` CLI | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify)（`graphifyy` 包）| full-dev / full-dev-design / bugfix S3 可选深度项目上下文 |
-| `ui-ux-pro-max` | [nextlevelbuilder](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | full-dev / full-dev-design 阶段 1.5（全新产品 / 复杂 UI）|
-| `frontend-design` | [Anthropic skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design) / 本地已安装 skill | full-dev / full-dev-design 阶段 1.5（单页面 / 少量组件）|
-
-> 如果某个 skill 未安装，xdev 会优雅降级 —— 工作流文件会调用该 skill，未安装时跳过即可。
+| （gstack/superpowers 全部 skills） | **已内化，不再引用** | 计划反思 = `full-dev.md` 附录 A；偏差检测 = 附录 B；条件深度审查 = 附录 C；pre-landing 对抗审查 = 附录 D；health/qa = 真实执行的测试命令；ship/learn = 内联交付与可选复盘 |
+| `graphify` CLI | 可选 | 仅 `/ask`（第 2.6 步） |
+| `ui-ux-pro-max` | 不再被任何工作流引用 | 想要设计指引可独立安装 |
 
 ---
 
@@ -602,7 +469,7 @@ cd ~/.claude/skills/xdev && git pull
 2. **根因而非症状** —— 没有证据不做修复，没有调查不做假设。
 3. **测试先行** —— 回归测试必须先 FAIL，修复后 PASS。没有例外。
 4. **原子提交** —— 每个改动独立可 bisect。
-5. **独立时并行** —— 审查、health+QA 无依赖时并发执行。
+5. **独立时并行** —— 审查与独立任务无依赖时并发执行。
 6. **显式升级** —— 每条失败路径都有明确的下一步，没有无限循环。
 7. **最小足迹** —— 不重构没有破坏的代码，不审查没有改动的内容。
 
@@ -623,7 +490,7 @@ xdev 的所有质量门禁分两类，**不要混淆**——混淆是一个常�
 
 - **判定主体**：LLM 或人类
 - **信号**：语义评估——同输入两次运行可能略有差异
-- **举例**：`health ≥ 7/10`、`review` 无未解决 HIGH、`design-review` 视觉合规、`plan-*-review` 的 HIGH/MEDIUM 计数、轻量影响面预检的升级 / Unknowns 判断
+- **举例**：计划反思的 HIGH/MEDIUM 计数、drift check 的 `[偏离]`/`[超纲]` tally、门下门 approve/reject、pre-landing 审查发现项、`/iterate` 范围门的升级判断
 - **规则**：**接受量表和评分**，但**评估维度必须列明**（禁止黑盒"总体还行"）。每个维度独立通过，**不得将多维度平均为综合分**。
 
 ### 反模式
@@ -642,16 +509,18 @@ xdev 的所有质量门禁分两类，**不要混淆**——混淆是一个常�
 xdev/
 ├── README.md              ← 英文版文档
 ├── README.zh.md           ← 本文件（中文版文档）
-├── bin/                   ← 安装脚本
-│   └── install.sh         ← 创建软链，幂等可重跑
-├── windsurf/              ← .windsurf/workflows/ 软链源
-│   ├── full-dev.md
-│   ├── full-dev-design.md
-│   ├── full-dev-impl.md
-│   ├── bugfix.md
-│   ├── iterate.md
-│   └── ask.md
-└── claude-code/           ← .claude/commands/xdev/ 软链源
+├── preset.yml             ← dsh preset 元数据（生成产物——"xdev 模式"）
+├── agent.cordis.yml       ← dsh preset 组合（生成产物——persona + 工具栈）
+├── skills/                ← dsh preset 私有技能（生成产物，源自 claude-code/）
+│   ├── xdev-ask/SKILL.md
+│   ├── xdev-bugfix/SKILL.md
+│   ├── xdev-iterate/SKILL.md
+│   └── xdev-full-dev/SKILL.md
+├── docs/experiments/      ← 三省模式实验 + dsh 集成调研（preset 设计依据）
+├── bin/
+│   ├── install.sh         ← 创建软链，幂等可重跑（claude / codex）
+│   └── gen-dsh.mjs        ← 从 claude-code/ 生成 dsh preset 产物
+└── claude-code/           ← 唯一手写源；.claude/commands/xdev/ 与 Codex prompts 软链到这里
     ├── full-dev.md
     ├── full-dev-design.md
     ├── full-dev-impl.md
@@ -667,7 +536,7 @@ xdev/
 欢迎参与贡献！你可以：
 
 - 提 issue 反馈 bug、提问或建议新工作流
-- 提 PR 改进或扩展现有工作流文件
+- 提 PR 改进或扩展现有工作流文件——只改 `claude-code/`，然后跑 `node bin/gen-dsh.mjs` 与 `node --test tests/`
 - 分享你如何将 xdev 适配到自己的技术栈
 
 ---

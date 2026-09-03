@@ -1,13 +1,15 @@
 ---
-description: 快速迭代流程 — 已有功能的小改动、优化、配置调整；范围门控，超出即升级
-argument-hint: <改动描述>
+name: xdev-iterate
+description: 快速迭代流程
 ---
 
-# /xdev:iterate — 快速迭代流程
+<!-- 由 claude-code/iterate.md 经 bin/gen-dsh.mjs 生成，勿手改；改源文件后重跑生成。 -->
 
-**改动描述：** $ARGUMENTS
+# /xdev-iterate — 快速迭代流程
 
-> 本流程 = `full-dev.md` 阶段 3–4 去掉设计与计划，直接以用户描述为 Intent Contract。
+**改动描述：** 用户消息（手势之外的原文）
+
+> 本流程 = `/xdev-full-dev` 阶段 3–4 去掉设计与计划，直接以用户描述为 Intent Contract。
 > 硬规则 1–5 全部生效。本文件只写 iterate **不同于** full-dev 的部分：范围门控与升级触发。
 
 ## 阶段 0：范围门控（先判断，再动手）
@@ -18,9 +20,9 @@ argument-hint: <改动描述>
 
 | 信号 | 去向 |
 |---|---|
-| 金融计算 / 资金逻辑；认证 / 权限 / 安全；数据库 schema；第三方 API 集成；已发布 API 行为 | `/xdev:full-dev`（条件深度审查会触发） |
-| 新增页面 / 路由 / 含 ≥2 交互状态的新组件 | `/xdev:full-dev`（需要设计阶段） |
-| 描述的其实是错误行为而非改动需求 | `/xdev:bugfix` |
+| 金融计算 / 资金逻辑；认证 / 权限 / 安全；数据库 schema；第三方 API 集成；已发布 API 行为 | `/xdev-full-dev`（条件深度审查会触发） |
+| 新增页面 / 路由 / 含 ≥2 交互状态的新组件 | `/xdev-full-dev`（需要设计阶段） |
+| 描述的其实是错误行为而非改动需求 | `/xdev-bugfix` |
 
 留在本流程的 UI 改动仅限：现有组件的样式 / 文案 / 间距微调、现有 UI 的显示修正。
 
@@ -47,8 +49,8 @@ argument-hint: <改动描述>
 ## 阶段 2：交付（= full-dev 阶段 4）
 
 - 小改动（单文件、无行为变化）：推到分支即止
-- 其余：按 `full-dev.md` 阶段 4——pre-landing 对抗审查（附录 D）→ CHANGELOG 一行 → commit + push + PR → 合并后清理 worktree
+- 其余：按 `/xdev-full-dev` 阶段 4——pre-landing 对抗审查（附录 D）→ CHANGELOG 一行 → commit + push + PR → 合并后清理 worktree
 
 ## 升级信号（任一出现即切换，不硬撑）
 
-阶段 0 阈值被突破 · 测试暴露的失败不是本次改动引入 → `/xdev:bugfix` · 需要新依赖或改 API → `/xdev:full-dev` · FIX_REQUIRED 2 轮未解 → `/xdev:bugfix`
+阶段 0 阈值被突破 · 测试暴露的失败不是本次改动引入 → `/xdev-bugfix` · 需要新依赖或改 API → `/xdev-full-dev` · FIX_REQUIRED 2 轮未解 → `/xdev-bugfix`
