@@ -112,7 +112,21 @@ With this setup, the main thread keeps the higher-reasoning model for planning, 
 
 ## Why xdev?
 
-There are plenty of AI command collections out there. Here's why xdev is different:
+**The one sentence:** xdev keeps only the three mechanisms that extract truth a model cannot get from its own context — and deletes every other rule.
+
+Modern models are already strong. Most "workflow rules" just restate what the model would do anyway — dead weight. The three things worth keeping, in plain words:
+
+1. **A fresh pair of eyes on your work.** Every gate is a brand-new subagent that has never seen the main conversation — it can't be biased by the "I did it right" narrative. Your plan gets judged by someone who doesn't know the story, not by the person who wrote it.
+2. **Check the books against code, not memory.** Before coding: the plan goes through a binary gate (approve/reject, forced rework). After coding: the diff gets audited against the original design (drift check). What happened along the way doesn't matter — **whether the accounts reconcile** does.
+3. **Tests must actually run.** "Should pass" isn't passing. Commands execute for real, outputs are read for real, background jobs are watched to completion.
+
+Why this is worth it: strong models have blind spots that don't disappear — they just move. Our controlled experiment quantified it: the best review combination still misses 20% of planted defects, while an independent gate caught real bugs in already-shipped code. xdev doesn't teach the model to work (it already can) — it guarantees **a second pair of eyes is always present, and the cost of being wrong is always paid early**: bad plans get rejected before code is written, bad changes get caught by adversarial review before merge.
+
+And the hidden value: peace of mind. The whole workflow is 196 lines + 5 hard rules, which in plain words are: *"Verification must actually run · verdicts must be honored · don't touch the main branch · ask before irreversible actions · everything else, use your judgment."* That last clause is the point — a model with judgment should use it; the workflow only guards what it would miss when fooling itself.
+
+---
+
+There are plenty of AI command collections out there. Here's the detailed comparison:
 
 ### vs. gstack / superpowers / oh-my-codex / oh-my-openagent
 
