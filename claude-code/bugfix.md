@@ -20,6 +20,7 @@ argument-hint: <bug 描述或错误信息>
 | **S3 深度** | 跨模块 / 间歇性 / 竞态 / 数据损坏 | blame/bisect → 卡住则 fresh 调查 → TDD → 全量测试 → 交付 |
 
 升级规则：S1 修着发现牵涉 >1 文件 → S2；S2 两次取证或一次假设验证失败 → S3；任何级别修后全量测试失败 → 回到调查，不降级。修复涉及 >5 文件 → 🔴 停下请用户确认方向。
+若报错发生在研究/实验语境（复现论文、跑实验矩阵），修复完成后回到 `/xdev:research` 继续研究流程——bugfix 只负责修通，研究结论归 research 产出。
 
 分支：在 `main`/`master` 上则先 `git switch -c xdev-bugfix-<slug>`（或 worktree；注意 worktree 不带 `.env*` 与构建产物，首次跑测试前按需拷贝 / 重装）。
 
