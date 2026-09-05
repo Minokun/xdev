@@ -51,4 +51,4 @@ argument-hint: <改动描述>
 
 ## 升级信号（任一出现即切换，不硬撑）
 
-阶段 0 阈值被突破 · 测试暴露的失败不是本次改动引入 → `/xdev:bugfix` · 需要新依赖或改 API → `/xdev:full-dev` · FIX_REQUIRED 2 轮未解 → `/xdev:bugfix`
+阶段 0 阈值被突破 · 测试暴露的失败不是本次改动引入 → `/xdev:bugfix` · 需要新依赖或改 API → `/xdev:full-dev` · FIX_REQUIRED 2 轮未解 → `/xdev:bugfix` · 改动的真实目的是验证假设/找规律（要研究结论而非代码交付） → `/xdev:research`

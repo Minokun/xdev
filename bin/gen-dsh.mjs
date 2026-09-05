@@ -22,10 +22,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = join(root, 'claude-code')
 const OUT = join(root, 'skills') // repo-root skills/ — part of the dsh preset
 
-// The four user-facing workflows. full-dev-design / full-dev-impl are
+// The five user-facing workflows. full-dev-design / full-dev-impl are
 // cross-tool handoff entries and deliberately not preset skills (see
 // docs/experiments/dsh-integration/RESEARCH.md §11.2).
-const COMMANDS = ['ask', 'bugfix', 'iterate', 'full-dev']
+const COMMANDS = ['ask', 'bugfix', 'iterate', 'full-dev', 'research']
 
 export function toSkill(source, cmd) {
   const m = source.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
