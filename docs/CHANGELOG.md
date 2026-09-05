@@ -9,6 +9,24 @@
 
 ---
 
+## [Unreleased] - 2026-09-05 (/xdev-research 算法研究流程)
+
+**改动位置：** `claude-code/research.md`（新增）、`bin/gen-dsh.mjs`（注册）、`agent.cordis.yml`（路由）、`preset.yml`、`claude-code/iterate.md`/`bugfix.md`（回边）
+
+**What landed：**
+1. **第五条用户流程 /xdev-research**：算法思路/论文 → 材料源穷尽（用户输入>项目>网络>训练知识）→ 三视角调研 → directions.md 方向看板 → 逐方向预注册门禁（R1a 方法论/R1b 可行性/R1c 可验证性面板 + R1 门下门）→ 实验执行（blueprint 冻结/receipt 派发/哈希链）→ judge 脚本机器判定 → R2 溯源审计 → 结论回写看板驱动下一轮。终止五条件：证实/方向穷尽/预算耗尽/环境不可行/用户喊停（喊停不豁免报告义务）。
+2. **研究专属铁律 T1–T3**：预注册不可逆 / 数字必须溯源（哈希链校验）/ 负结果同样落盘。
+3. **六视角审查驱动修订**：38 项发现（红队/场景推衍/一致性/体系/工程/科研严谨性）全量修复——mini 档形态、matrix 冻结时序、SHA-256 哈希链信任锚、留出集访问记账、bootstrap CI 判定、primary 结局分级与多重比较声明、结局核对表、跨会话 runtime.json/pidfile、路由回边。
+
+**What was tried first（放弃的方向）：**
+- **口述 mini proposal** —— 放弃。无落盘则"事后改阈值"不可检测（R2 审计无对照物），mini 也必须落盘四行。
+- **Replan 不限轮数** —— 放弃。同一预注册内补跑 ≤2 次，超出即方向级判断要变，回阶段 2 重新预注册；补跑组与原矩阵禁止合并聚合（防变相事后调标）。
+- **CASP 双盲溯源表述** —— 放弃。fresh 审查员知方案知作者，是"独立"不是"盲"；如实改述为"机器盲判（judge）+ 独立审查"，流程自己的 T2 要求声明须有证据支撑。
+
+**Rationale：** 设计依据全部在线验证——OSF 严格预注册/Registered Reports（门禁+if-then 决策树+结局分级）、晶体学 R-free（留出集）、cryo-EM 金标准半图（双路复算）、wwPDB OneDep（机器验证产物归档）、FLT blueprint/Prove2Me（matrix 冻结、文件系统 DAG 共享记忆、编译器即裁判）、NCI WORM（哈希链）。机制全部复用 full-dev（面板/门下门/receipt/drift/对抗审查），只换审查维度——研究流是 xdev 体系的研究特化，不是自立门户。
+
+---
+
 ## [Unreleased] - 2026-09-05 (审查编排机制 + 流程审查配方)
 
 **改动位置：** `claude-code/full-dev.md`（附录 E + 阶段 2 编排段）、`docs/reviews/flow-review-recipe.md`（新增）
