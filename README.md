@@ -1,6 +1,6 @@
-# xdev — AI-Native Development Workflows
+# xdev — AI-Native Development & Research Workflows
 
-> **Ship features, not ceremonies.** xdev is a set of production-grade AI workflow files for Claude Code, Codex CLI, and dsh (DeepSeek Harness) that orchestrate the full development lifecycle — from brainstorming to production — with built-in quality gates, parallel execution, and tiered failure loops.
+> **Ship features, not ceremonies.** xdev is a set of production-grade AI workflow files for Claude Code, Codex CLI, and dsh (DeepSeek Harness) that orchestrate the full development lifecycle — from brainstorming to production — with built-in quality gates, parallel execution, and tiered failure loops. Since v3.1 it also ships **`/xdev-research`**: a preregistration-gated algorithm research flow with experiment provenance, machine judges, and honest negative results.
 
 English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
 
@@ -16,7 +16,7 @@ English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
 
 ## Quick Start (dsh / DeepSeek Harness)
 
-**dsh is the flagship target.** xdev ships as a first-class dsh agent preset — "xdev 模式" — with its own persona, tool stack, and preset-private skills. `git clone` IS the installer (the repo root already carries the generated preset files):
+**dsh is the flagship target.** xdev ships as a first-class dsh agent preset — "xdev 模式" — with its own persona, tool stack, and preset-private skills (registered via `customSkillDirs`). `git clone` IS the installer (the repo root already carries the generated preset files):
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.dsh/.agent-presets/xdev
@@ -27,10 +27,11 @@ Non-default dsh home? Use `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`.
 Start (or restart) dsh — the mode selector now shows **xdev 模式**. Invoke the workflows as dsh gestures (they also work mid-sentence; xdev auto-routes even without a gesture):
 
 ```
-/xdev-full-dev  Add dark mode support to the settings panel
+/xdev-full-dev   Add dark mode support to the settings panel
 /xdev-bugfix     Login timeout crashes the app after 30 seconds
 /xdev-iterate    Reduce homepage load timeout from 5s to 3s
 /xdev-ask        How does the auth flow work?
+/xdev-research   Test whether PRAGNE improves retrieval hit-rate over BM25 on our eval set
 ```
 
 **Why dsh is the best fit** — dsh gives xdev's core mechanisms first-class runtime primitives instead of prose conventions:
@@ -86,6 +87,9 @@ xdev classifies the complexity, picks the right path, executes, verifies, and sh
 # Need to understand the project, or audit it for hidden risks?
 /xdev:ask  How does the auth flow work?
 /xdev:ask  Audit this project — what risks should I worry about?
+
+# Algorithm research: turn an idea/paper into a preregistered experiment with a verdict
+/xdev:research  Does speculative decoding help at batch>1 on our workload?
 ```
 
 > Examples above use the Claude Code prefix. On Codex use `/prompts:xdev-full-dev …` or `$xdev-full-dev …`; on dsh use `/xdev-full-dev …`.
@@ -112,17 +116,17 @@ With this setup, the main thread keeps the higher-reasoning model for planning, 
 
 ## Why xdev?
 
-**The one sentence:** xdev keeps only the three mechanisms that extract truth a model cannot get from its own context — and deletes every other rule.
+**The one sentence:** xdev keeps only the mechanisms that extract truth a model cannot get from its own context — fresh independent review, execution-against-a-locked-baseline, and really-executed verification — and deletes every other rule.
 
 Modern models are already strong. Most "workflow rules" just restate what the model would do anyway — dead weight. The three things worth keeping, in plain words:
 
 1. **A fresh pair of eyes on your work.** Every gate is a brand-new subagent that has never seen the main conversation — it can't be biased by the "I did it right" narrative. Your plan gets judged by someone who doesn't know the story, not by the person who wrote it.
-2. **Check the books against code, not memory.** Before coding: the plan goes through a binary gate (approve/reject, forced rework). After coding: the diff gets audited against the original design (drift check). What happened along the way doesn't matter — **whether the accounts reconcile** does.
-3. **Tests must actually run.** "Should pass" isn't passing. Commands execute for real, outputs are read for real, background jobs are watched to completion.
+2. **Check the books against the record, not memory.** In dev: before coding, the plan passes a binary gate (approve/reject, forced rework) and, once approved, you confirm a **5-line decision brief** with one click instead of reading the plan; after coding, the diff is audited against the original design (drift check). In research: hypotheses and thresholds are **preregistered and frozen** — analysis may only judge, never re-tune — and every number in the report must trace to a hash-chained `runs/<id>/metrics.json` on disk.
+3. **Tests and experiments must actually run.** "Should pass" isn't passing. Commands execute for real, outputs are read for real, background jobs are watched to completion; research metrics are parsed from real logs by tested scripts and adjudicated by a mechanical judge — never hand-written by the model.
 
-Why this is worth it: strong models have blind spots that don't disappear — they just move. Our controlled experiment quantified it: the best review combination still misses 20% of planted defects, while an independent gate caught real bugs in already-shipped code. xdev doesn't teach the model to work (it already can) — it guarantees **a second pair of eyes is always present, and the cost of being wrong is always paid early**: bad plans get rejected before code is written, bad changes get caught by adversarial review before merge.
+Why this is worth it: strong models have blind spots that don't disappear — they just move. Our controlled experiment quantified it: the best review combination still misses 20% of planted defects, while an independent gate caught real bugs in already-shipped code. xdev doesn't teach the model to work (it already can) — it guarantees **a second pair of eyes is always present, and the cost of being wrong is always paid early**: bad plans get rejected before code is written, bad changes get caught by adversarial review before merge, and bad research gets caught by provenance audit before anyone believes the number.
 
-And the hidden value: peace of mind. The whole workflow is 196 lines + 5 hard rules, which in plain words are: *"Verification must actually run · verdicts must be honored · don't touch the main branch · ask before irreversible actions · everything else, use your judgment."* That last clause is the point — a model with judgment should use it; the workflow only guards what it would miss when fooling itself.
+And the hidden value: peace of mind. The dev workflow is 270 lines + 5 hard rules, which in plain words are: *"Verification must actually run · verdicts must be honored · don't touch the main branch · ask before irreversible actions · everything else, use your judgment."* That last clause is the point — a model with judgment should use it; the workflow only guards what it would miss when fooling itself.
 
 ---
 
@@ -132,33 +136,32 @@ There are plenty of AI command collections out there. Here's the detailed compar
 
 | | gstack / superpowers | oh-my-codex | oh-my-openagent | **xdev** |
 |--|---------------------|-------------|-----------------|---------|
-| What it is | Individual power tools | Prompt templates / slash commands | Multi-agent orchestration modes (team / ultrawork / autopilot) | **End-to-end workflow orchestration** |
-| Scope | Single task per command | Single task per prompt | Parallel agent dispatch per command | **Full dev lifecycle (design → ship)** |
-| Quality gates | ❌ | ❌ | ❌ | ✅ Pass/fail at every stage |
+| What it is | Individual power tools | Prompt templates / slash commands | Multi-agent orchestration modes (team / ultrawork / autopilot) | **End-to-end workflow orchestration (dev + research)** |
+| Scope | Single task per command | Single task per prompt | Parallel agent dispatch per command | **Full dev lifecycle + algorithm research lifecycle** |
+| Quality gates | ❌ | ❌ | ❌ | ✅ Pass/fail at every stage; plan gate default-ON |
 | Failure handling | ❌ | ❌ | ❌ | ✅ Retry limits + escalation paths |
 | Cross-tool handoff | ❌ | ❌ | ❌ | ✅ Design in Opus, implement in Codex |
 | Parallel execution | ❌ | ❌ | ✅ Explicit multi-agent modes | ✅ Subagent dispatch built into workflow |
-| Tiered execution paths | ❌ | ❌ | ❌ | ✅ S1/S2/S3 for bugs (one-line fix vs. cross-module investigation) |
-| Confirmation policy | ❌ | ❌ | ❌ | ✅ explicit 🔴 user-confirm gates (irreversible ops, big-feature design) |
+| Tiered execution paths | ❌ | ❌ | ❌ | ✅ S1/S2/S3 for bugs; mini/standard/攻坚 for research |
+| Confirmation policy | ❌ | ❌ | ❌ | ✅ explicit 🔴 user-confirm gates (irreversible ops, preregistration, budget) |
 | **Adaptive execution** | ❌ | ❌ | ❌ — user picks the mode | ✅ Self-assesses severity, auto-selects workflow and review depth |
 | **Dependency-aware parallelism** | ❌ | ❌ | ❌ — parallel by declaration, not by task graph | ✅ Analyzes task graph, runs independent tasks in parallel |
+| **Result provenance** | ❌ | ❌ | ❌ | ✅ Research numbers trace to hash-chained run artifacts |
 | **Cognitive load** | High — pre-map scenarios, manually chain tools | High — craft precise prompts for every variation | Medium — pick the right mode & agent mix per task | **Low — describe the goal, xdev decides how** |
 
-> **🔴 gates** (the only user-confirm points): irreversible ops — production deploy, data deletion, force-push, external release (hard rule 4) — and the design of cross-module / irreversible features. Everything else notifies and continues.
+> **🔴 gates** (the only user-confirm points): irreversible ops — production deploy, data deletion, force-push, external release (hard rule 4) — the design of cross-module / irreversible features, the **one-click decision brief** after the plan gate, and in research: preregistration confirmation, any budget dimension hitting 2× its declared value, and each new experiment round (unless covered by a pre-agreed authorization envelope). Everything else notifies and continues.
 
 ### Core philosophy: information extraction, not ritual
 
-Modern models are strong — most "workflow rules" just restate what the model would do anyway, and those rules are dead weight. xdev v2 keeps only mechanisms that **extract information the model cannot get for free from its own context**:
+Modern models are strong — most "workflow rules" just restate what the model would do anyway, and those rules are dead weight. xdev keeps only mechanisms that **extract information the model cannot get for free from its own context**:
 
 1. **Fresh-context review** (independent reviewers with no parent-conversation bias)
-2. **Diff-vs-design drift checking** (what the code actually does vs what was agreed)
-3. **Really executed tests/commands** (objective output, not "should pass")
+2. **Execution against a locked baseline** (dev: diff-vs-design drift check; research: diff-vs-preregistered-proposal drift check)
+3. **Really executed tests/commands/experiments** (objective output, not "should pass"; machine judges, not vibes)
 
 Everything else — stage rituals, output formats, taxonomy tables — is a *default the model may deviate from*, not a cage. All review prompts are built in; **xdev has zero required external skill dependencies** (gstack / superpowers no longer needed; their essence lives on in the built-in prompts).
 
-> Evidence: the Sansheng A/B experiment (`docs/experiments/sansheng/PROPOSAL.md`) showed strong reviewers still have orthogonal blind spots — 3 reflections missed 8 real defects that a gate caught on landed plans, and the gate caught only 1/6 BDD defects that a reflection caught 6/6. (Cost: the gate arm ran at 57–67% of baseline tokens, missing its ≤55% target — which is why it ships opt-in.) Independent perspectives don't become redundant as models get smarter; the blind spots just move.
-
-Running the test suite on its own tells you whether it passes. But xdev specifies *when* it counts: a UI check only runs *after* the full suite and lint/build really passed with no new failures versus the pre-change baseline; any issue found must be fixed and re-verified; only after 2 failed rounds does it fall back to manual verification. **The gap in methodology is what determines the gap in final delivery quality.**
+> Evidence: the Sansheng A/B experiment (`docs/experiments/sansheng/PROPOSAL.md`) showed strong reviewers still have orthogonal blind spots — 3 reflections missed 8 real defects that a gate caught on landed plans, and the gate caught only 1/6 BDD defects that a reflection caught 6/6. Independent perspectives don't become redundant as models get smarter; the blind spots just move. This is also why the plan gate was promoted from opt-in to **default-ON**.
 
 ### The core insight
 
@@ -168,7 +171,7 @@ Most AI workflows fail not because the AI can't code, but because:
 3. **No failure protocol** — when a hypothesis fails, the AI keeps guessing instead of escalating
 4. **Sequential when it should be parallel** — three independent reviews run one at a time
 
-xdev solves all four.
+xdev solves all four — in development *and* in research (where the equivalents are: unreviewed experimental plans, ceremony for a 3-run mini study, p-hacking instead of preregistration, and serialized experiment grids).
 
 ### Adaptive execution — self-assess, then choose the right path
 
@@ -184,14 +187,23 @@ Read bug description / code state / change scope
   └── S3: cross-module / intermittent → deep path (fresh investigation subagent + full tests + UI check)
 ```
 
+Research has the same shape — a three-level **effort tier** picked at stage 0:
+
+```
+mini (1–3 runs, half a day)  → no 3-perspective dispatch, no direction board, gate = 4-line
+                                preregistration; conclusions may only say "preliminary"
+standard (≤10 runs)          → full flow
+攻坚 (>10 runs or multi-day) → full flow + mandatory state.md header + report only at stage-3 end
+```
+
 **Dependency analysis drives parallel execution:**
 
 ```
 Analyze task dependency graph
   ├── Has dependencies → sequential, wait for prerequisites
   └── No dependencies → dispatch to subagents in parallel
-                        (3 independent reviews → run simultaneously,
-                         not queued one after another)
+                         (3 independent reviews → run simultaneously,
+                          independent experiment runs → parallel dispatch)
 ```
 
 This is **self-directed execution**, not blind script following. The AI reads context, decides how much effort to invest, which reviews to dispatch, and which tasks can run concurrently — always choosing the most appropriate path, not the most conservative full-suite one.
@@ -200,7 +212,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 
 ## What's inside
 
-6 workflow files that cover the complete development lifecycle:
+7 workflow files that cover the complete development **and research** lifecycle:
 
 | Workflow | Claude Code | Codex | dsh | When to use | Target time |
 |----------|-------------|-------|-----|-------------|------------|
@@ -210,6 +222,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 | **bugfix** | `/xdev:bugfix` | `/prompts:xdev-bugfix` | `/xdev-bugfix` | Bug, crash, unexpected behavior | 15 min–90 min |
 | **iterate** | `/xdev:iterate` | `/prompts:xdev-iterate` | `/xdev-iterate` | Small change, optimization, config tweak | 15–60 min |
 | **ask** | `/xdev:ask` | `/prompts:xdev-ask` | `/xdev-ask` | Read-only project Q&A or proactive audit; top priority is "most current, most accurate answer" | 1–5 min |
+| **research** | `/xdev:research` | `/prompts:xdev-research` | `/xdev-research` | Algorithm research: idea/paper → literature → preregistered hypothesis & experiment plan → real runs → judged verdict → provenance report | Hours–days |
 
 > **dsh note:** on dsh, `full-dev-design` / `full-dev-impl` are folded into `/xdev-full-dev` — dsh's per-subagent `model` option replaces the cross-tool handoff files (strong model plans, cheap model implements).
 
@@ -258,6 +271,13 @@ Commands self-classify and degrade, so when in doubt just describe the goal. The
   - *"Audit this project — what risks should I worry about?"*
   - Single-dimension focus: *"audit security"* / *"check test gaps"* / *"how's the architecture coupling?"*
   - Returns 5–10 high-value findings with file/line evidence; suggests `/bugfix` or `/iterate` for any actual fixes.
+- Negative high-impact claims ("X is never used", "nothing calls this") must be verified down the consumption chain before they're asserted.
+
+**`/xdev:research`** — algorithm research that ends in a verdict, not a vibe. Also self-routes.
+- Validate an idea against literature: *"does quantization-aware training help our recommender?"*
+- Reproduce-then-extend a paper: *"reproduce LoRA vs full FT on our data, then test rank ablation"*
+- Hyperparameter exploration with a conclusion: *"find the best LR schedule for this loss, with significance"*
+- Stage 0 routes misfits away: conceptual questions → `/ask`; repro errors → `/bugfix`; pure param rerun → `/iterate`; verified-algorithm engineering → `/full-dev`.
 
 ---
 
@@ -266,10 +286,15 @@ Commands self-classify and degrade, so when in doubt just describe the goal. The
 ### /full-dev — 4-stage end-to-end pipeline
 
 ```
-Stage 1: Design — features F1..Fn / Must-Not / acceptance criteria (scale-adaptive; 🔲 user confirm only for big/irreversible features)
+Stage 1: Design — features F1..Fn / Must-Not / acceptance criteria.
+         Every user-perceivable interaction channel (key/click/input/route) needs an
+         assertable "input → observable effect" criterion; blanket exemptions by layer are rejected.
 Stage 2: Plan & gates — task breakdown → 3 fresh reviewers (coverage ‖ dependency ‖ BDD quality)
-         [+ Menxia Gate (opt-in --menxia): binary approve/reject, forced rework ≤3 rounds]
-         ── handoff point (optional, for cross-tool split) ──
+         → Menxia Gate (DEFAULT ON, opt-out --no-menxia): binary approve/reject, forced rework ≤3 rounds.
+           No implementation before the approve verdict.
+         → Decision brief: the gate digests the plan into ≤5 lines (what / top risks / user-only decisions)
+           and you confirm with ONE click — you never have to read the plan raw.
+          ── handoff point (optional, for cross-tool split) ──
 Stage 3: Implement & test — TDD red-green per task, parallel dispatch by task graph,
          drift check (diff vs Intent Contract), conditional deep review (auth/payment/schema)
 Stage 4: Deliver — full tests (really executed) → adversarial pre-landing review → PR → optional deploy
@@ -278,6 +303,12 @@ Stage 4: Deliver — full tests (really executed) → adversarial pre-landing re
 **5 hard rules** (everything else is a deviable default): verification must really run · fresh verdicts must be honored · never commit to base branch · irreversible actions need user confirmation · defaults may be skipped with a one-line reason.
 
 ### Built-in reliability features
+
+**Menxia Gate (default ON; `--no-menxia` to skip)** — A fresh reviewer gives a binary approve/reject on the whole plan with design-deference (approved / exempted / non-goal decisions in the design are never grounds for rejection) and injection-guard clauses; rejection forces a revision with per-item change notes, re-reviewed ≤3 rounds, and from round 2 the reviewer first verifies the change notes against the actual plan diff (4/5 fake revisions were caught in the N4 experiment). **No code is written before the verdict** — waiting time is restricted to read-only prep. This clause is exempt from hard-rule-5 deviation: even small tasks run the gate (it costs one subagent).
+
+**Decision brief (one-click confirmation)** — On approve, the gate's `decision_brief` — what this plan does (1 line) / biggest risks (≤3) / decisions only the user can make (≤3, each with options + recommendation) — is presented via a single question. You read 5 lines and click once instead of reading the plan. Interaction channels whose acceptance relies on human eyeballing are surfaced in `decisions` explicitly. A 3-round rejection escalation package uses the same format.
+
+**Review orchestration (appendix E)** — Reviewers are not piled on; they're staffed. Default lineup = A1–A3 panel (finders: coverage / dependency / BDD quality) + A4 gate (adjudicator) + B/C/D verifiers. Conditional reviewers are added only on triggers: irreversible ops / production data / money / multi-tenant → **E1 red team**; multi-channel / multi-role / multi-device acceptance → **E2 scenario walkthrough**. The only legal reason to add a reviewer is a structurally different blind spot — the N1–N5 experiment showed stacking same-perspective reviewers adds tokens, not findings.
 
 **Session recovery / cross-tool handoff** — At the end of stage 2 the flow writes a minimal state file `docs/state/xdev--<branch>.md` (branch / stage / plan path / next action) and commits the plan. `/full-dev-impl` resumes from that file's next action without replaying the conversation; a missing plan or an anchor commit no longer in history → ask the user to re-plan, never guess. v2-format state files (`full-dev-design--<branch>--<slug>.md`) are not parsed — the flow tells you to finish them with v2 or re-plan.
 
@@ -290,8 +321,6 @@ Stage 4: Deliver — full tests (really executed) → adversarial pre-landing re
 **No silent loss of failed reviewers** — If any of the 3 plan-reflection subagents fails or times out it is retried once; on second failure it's marked `missing` and its dimension's HIGH count is treated as *unknown, i.e. present* — no pass verdict on incomplete data. Background commands must be polled to completion ("will handle it later" stop-turns violate hard rule 1).
 
 **Adversarial pre-landing review** — Before the PR, a fresh subagent is told to assume the diff *will* cause a production incident and to find the three most likely paths (data loss > security > regression > performance), each with a trigger path and file:line evidence — and to report fewer than three rather than invent them (appendix D). Conditional deep review (appendix C) is added when the diff touches auth / payment / PII / schema / new dependencies.
-
-**Menxia Gate (opt-in, `--menxia`)** — A fresh reviewer gives a binary approve/reject on the whole plan with design-deference (approved / exempted / non-goal decisions in the design are never grounds for rejection) and injection-guard clauses; rejection forces a revision with per-item change notes, re-reviewed ≤3 rounds, and from round 2 the reviewer first verifies the change notes against the actual plan diff (4/5 fake revisions were caught in the N4 experiment). Gray-release: after ≥3 real tasks, promote or remove.
 
 **Single source of truth** — `claude-code/` is the only hand-edited source. The dsh preset artifacts (`preset.yml`, `agent.cordis.yml`, `skills/xdev-*/`) are generated by `bin/gen-dsh.mjs` and committed so `git clone` is a complete install; `tests/workflows.test.mjs` fails if they are stale, if any workflow re-introduces external skill calls, or if `bugfix` / `iterate` grow past their thin-shell budget.
 
@@ -313,6 +342,49 @@ Scope gate (<100 lines · ≤5 files · ≤2 modules · no new deps · no public
   ├── describes wrong behaviour, not a change → /bugfix
   └── in scope → list direct callers of shared files (rg) → TDD → full tests + lint/build → deliver
 ```
+
+### /research — the algorithm research pipeline
+
+`/research` is not a separate system — it's the research specialization of the same machinery: the 3-reviewer panel + gate become **R1a methodology / R1b feasibility / R1c verifiability + R1 preregistration gate**; the Intent Contract becomes the **frozen preregistered proposal**; the drift check baseline becomes `proposal.md`; the pre-landing review becomes the **report adversarial review**. All 5 hard rules apply, plus three research-specific iron rules:
+
+- **T1 Preregistration is irreversible** — hypotheses (H0/H1), decision thresholds, eval sets, and seed counts are frozen at user confirmation. Analysis may only judge; changing anything means explicitly returning to stage 2 through the gate again, with an audit trail.
+- **T2 Numbers must be traceable** — every number in the report must point to a real `runs/<id>/metrics.json` that passes hash-chain verification, in a persistent location. Numbers recalled from model memory are invalid. Eval sets are fixed; cherry-picking subsamples is banned.
+- **T3 Negative results land on disk too** — falsified hypotheses, failed experiments, dead ends all go into the report. Stopping only halts new rounds; it never waives the duty to report the data already produced.
+
+```
+Stage 0: Scope gate — route misfits to /ask, /bugfix, /iterate, /full-dev; pick effort tier (mini/standard/攻坚)
+Stage 1: Literature & current state — exhaust material sources first (user input > in-repo > web > training
+         knowledge, each tagged), then 3 fresh perspectives (literature ‖ repo/data/preflight ‖ adversary).
+         Core deliverable: the DIRECTION BOARD (≥2 candidate directions, ranked by expected-gain ÷ cost,
+         updated after every round — the next round is driven by the last round's evidence, not vibes).
+Stage 2: Hypothesis & experiment plan — 🔴 PREREGISTRATION GATE (panel + gate + your one-click confirm):
+         falsifiable H0/H1, mechanical thresholds (+bootstrap CI, seed≥5), randomized run order, fixed eval
+         set w/ hash, holdout-set declaration (tune on tuning set only; holdout used exactly once, at final
+         judgment), if-then decision tree (no mid-run method swaps), MDE/power argument, outcome tiering
+         (primary ≤2, multiple-comparison correction), metrics schema + judge logic, budget (2× any
+         dimension → user confirm), effect record w/ content hashes.
+Stage 3: Run experiments — baseline reproduced first; matrix frozen before execution (append-only extensions);
+         parser scripts unit-tested against real-log fixtures before batch runs; detached long runs w/
+         runtime.json + heartbeat discipline (launch verified within 60s; no "running" entries without
+         measured evidence; monitoring failures are themselves logged as failure events); per-run SHA-256
+         manifests chained in state.md; batch drift check vs the preregistered proposal.
+Stage 4: Analyze & judge — a JUDGE SCRIPT mechanically adjudicates (compiler-as-judge, fail-closed on missing
+         runs / format drift); conclusions are only 证实/证伪/不确定; key numbers independently recomputed
+         by two blind fresh subagents; bounded top-up iterations (append-only, tuning set only, reported
+         separately — never merged with the original matrix).
+Stage 5: Report — every number keyed to run paths + preregistered-outcome checklist (nothing dropped,
+         including the ugly ones) + machine pre-check (path/numerical/cell-count/hash-chain/holdout-ledger
+         audit) + fresh provenance audit + adversarial review + delivery spot-check (re-run the cheapest run
+         and match its metrics).
+Round loop: conclusions written back to the direction board → next untried direction → back to stage 2
+         (new preregistration). Five legal terminations only: confirmed / directions exhausted (negative-
+         result report is a valid ending) / budget exhausted / environment infeasible / user stop.
+         Optional AUTHORIZATION ENVELOPE: agree direction order + budget envelope + auto-advance scope once;
+         rounds inside the envelope advance automatically (gate still runs; preregistration activates on
+         gate approve) and only stop on escalation triggers.
+```
+
+Upgrade paths between flows are first-class: verified algorithm → `/full-dev` for engineering delivery; repro failure → `/bugfix`; threshold change → explicitly back through the stage-2 gate.
 
 ### Project context — no ceremony
 
@@ -339,7 +411,7 @@ xdev v2 is **self-contained** — install xdev itself and everything works:
 
 | What you want to use | Install | Cumulative time |
 |----------------------|---------|-----------------|
-| `/iterate`, `/ask`, `/bugfix`, `/full-dev` (full pipeline) | **xdev itself** | 1 min |
+| `/iterate`, `/ask`, `/bugfix`, `/full-dev`, `/research` (full pipeline) | **xdev itself** | 1 min |
 | **dsh "xdev 模式" preset** (all of the above as native dsh skills) | `git clone` into `~/.dsh/.agent-presets/xdev` — see [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) | 1 min |
 | Optional: code-graph context for `/ask` | Graphify (installing = implicit authorization for LLM extraction) | +2 min |
 
@@ -447,10 +519,10 @@ Targets land in the standard Windows locations the agents already read from:
 Invoke with:
 
 ```
-Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask
-Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask
-Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask
-dsh preset:      /xdev-full-dev          (design/impl folded in)        (design/impl folded in)      /xdev-bugfix          /xdev-iterate          /xdev-ask
+Claude Code:     /xdev:full-dev          /xdev:full-dev-design          /xdev:full-dev-impl          /xdev:bugfix          /xdev:iterate          /xdev:ask          /xdev:research
+Codex (prompts): /prompts:xdev-full-dev  /prompts:xdev-full-dev-design  /prompts:xdev-full-dev-impl  /prompts:xdev-bugfix  /prompts:xdev-iterate  /prompts:xdev-ask  /prompts:xdev-research
+Codex (skills):  $xdev-full-dev          $xdev-full-dev-design          $xdev-full-dev-impl          $xdev-bugfix          $xdev-iterate          $xdev-ask          $xdev-research
+dsh preset:      /xdev-full-dev          (design/impl folded in)        (design/impl folded in)      /xdev-bugfix          /xdev-iterate          /xdev-ask          /xdev-research
 ```
 
 > **Codex install layout.** Picking the `codex` target installs both interfaces side-by-side so you can pick whichever fits the moment:
@@ -492,12 +564,12 @@ live on as built-in prompts inside the workflow files:
 ## Design Principles
 
 1. **Right-sized process** — Small bug = small process. Big feature = big process. Never the other way around.
-2. **Root cause, not symptoms** — No fix without evidence. No evidence without investigation.
+2. **Root cause, not symptoms** — No fix without evidence. No evidence without investigation. No conclusion without a run.
 3. **Tests first** — Regression tests must fail before the fix, pass after. No exceptions.
-4. **Atomic commits** — Every change is independently bisect-able.
-5. **Parallel when independent** — Reviews and independent tasks run concurrently when there are no dependencies.
-6. **Explicit escalation** — Every failure path has a defined next step. No infinite loops.
-7. **Minimal footprint** — Don't refactor what you didn't break. Don't review what you didn't change.
+4. **Atomic commits** — Every change is independently bisectable.
+5. **Parallel when independent** — Reviews, tasks, and experiment runs execute concurrently when there are no dependencies.
+6. **Explicit escalation** — Every failure path has a defined next step. No infinite loops. Negative results are endings, not failures.
+7. **Minimal footprint** — Don't refactor what you didn't break. Don't review what you didn't change. Don't re-run what the direction board already falsified.
 
 ---
 
@@ -509,14 +581,14 @@ xdev uses two fundamentally different kinds of quality gates. Mixing them up is 
 
 - **Adjudicator**: a script or command
 - **Signal**: exit code, exact string match (grep), reproducible byte-for-byte
-- **Examples**: `pass criteria` — `expected exit code = 0`, `output must contain "1 passed"`, `curl probe returns 200`
+- **Examples**: `pass criteria` — `expected exit code = 0`, `output must contain "1 passed"`, `curl probe returns 200`; in research, the **judge script** reading `runs/*/metrics.json` against preregistered thresholds (fail-closed on missing runs / format drift)
 - **Rule**: **must be strictly binary** (pass / fail). No grey zone, no "close enough".
 
 ### Judgement Gate
 
 - **Adjudicator**: an LLM or a human
 - **Signal**: semantic evaluation — two runs on the same input may differ slightly
-- **Examples**: plan reflection HIGH/MEDIUM count, drift-check `[偏离]`/`[超纲]` tally, Menxia approve/reject, pre-landing review findings, `/iterate` scope-gate escalation
+- **Examples**: plan reflection HIGH/MEDIUM count, drift-check `[偏离]`/`[超纲]` tally, Menxia approve/reject, preregistration panel R1a–R1c findings, pre-landing review findings, `/iterate` scope-gate escalation
 - **Rule**: rubrics and scores are acceptable **but the evaluation dimensions must be enumerated** (no opaque "overall good"). Each dimension passes independently — never average dimensions into a single comprehensive score.
 
 ### What not to do
@@ -541,8 +613,9 @@ xdev/
 │   ├── xdev-ask/SKILL.md
 │   ├── xdev-bugfix/SKILL.md
 │   ├── xdev-iterate/SKILL.md
-│   └── xdev-full-dev/SKILL.md
-├── docs/experiments/      ← Sansheng + dsh-integration research (dsh preset rationale)
+│   ├── xdev-full-dev/SKILL.md
+│   └── xdev-research/SKILL.md
+├── docs/experiments/      ← Sansheng + dsh-integration research (rationale & evidence)
 ├── bin/
 │   ├── install.sh         ← Idempotent symlink installer (claude / codex)
 │   └── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
@@ -552,7 +625,8 @@ xdev/
     ├── full-dev-impl.md
     ├── bugfix.md
     ├── iterate.md
-    └── ask.md
+    ├── ask.md
+    └── research.md
 ```
 
 ---
