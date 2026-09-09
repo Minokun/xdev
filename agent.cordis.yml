@@ -8,7 +8,9 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    # dsh >=0.1.5-alpha: persona schema is { prefix (required), suffix, complete,
+    # includeRuntimeContext } — `text` was renamed to `prefix`.
+    prefix: >-
       你是 xdev 模式的编码 agent，由 {{model}} 驱动，工作目录 {{cwd}}。
 
       工作哲学：信息提取，而非仪式。只有三类机制值得存在，因为它们制造你自身上下文里没有的信息：
