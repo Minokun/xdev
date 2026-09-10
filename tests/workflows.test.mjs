@@ -468,3 +468,152 @@ test('cost-report: 多帧 zstd 必须解出全部帧（Node 原生只解第一�
     'multi-frame decompression must beat the naive single-frame result on a real transcript',
   )
 })
+
+// --- bin/drift-check.mjs：交付声明 vs 仓库实际的机械比对 ----------------------
+// 为什么测它：这类缺陷（文档里的数字/引注与仓库实际不符）是**唯一反复复发**的
+// 一类——门下门两轮封驳、终态仍 17 处。审查抓不住是因为它靠人（模型）去比对；
+// 这个脚本的价值全在"机械、不遗漏"，所以它自己必须被证明**真的会红**。
+
+test('drift-check: 通用事实从文件系统正确统计', async () => {
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { generalFacts } = await import('../bin/drift-check.mjs')
+
+  const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
+  await mkdir(join(root, 'src'), { recursive: true })
+  await mkdir(join(root, 'tests'), { recursive: true })
+  await mkdir(join(root, 'node_modules', 'junk'), { recursive: true })
+  await writeFile(join(root, 'src', 'game.js'), 'export const x = 1\n')
+  await writeFile(join(root, 'tests', 'game.test.js'), 'test("a", () => {})\ntest("b", () => {})\n')
+  await writeFile(join(root, 'tests', 'other.test.js'), 'it("c", () => {})\n')
+  // 依赖目录必须被跳过——否则任何项目都会算出天文数字
+  await writeFile(join(root, 'node_modules', 'junk', 'dep.test.js'), 'test("nope", () => {})\n')
+
+  const f = generalFacts(root)
+  assert.equal(f.testFiles, 2, 'node_modules must be skipped')
+  assert.equal(f.testCases, 3, 'it() and test() both count as cases')
+})
+
+test('drift-check: 声称与实际不符必须报 DRIFT（复现真实失真）', async () => {
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { mkdir: mkdirp } = await import('node:fs/promises')
+  const { checkClaims } = await import('../bin/drift-check.mjs')
+
+  const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
+  await mkdirp(join(root, '.xdev'), { recursive: true })
+
+  // 真实案例复现：计划自称"任务数: 25"，实际脚本算出 27
+  await writeFile(
+    join(root, 'plan.md'),
+    ['任务数: 25', '依赖边数: 50', '基地周围 8 大格变钢', 'A1..A28 逐条验收'].join('\n'),
+  )
+  // README 里写的是**夸大**的那个值（A28）——这才是真实失真的形态：
+  // 交付报告声称覆盖到 A28，而验收工具的 CASES 只到 A27。
+  // 反向写（README 写 A27、断言 equals A27）就没有漂移可测了——本测试第一版
+  // 就是那样，结果"修"掉了被测对象本身。
+  await writeFile(
+    join(root, 'README.md'),
+    ['共 26 个测试文件', '验收矩阵覆盖 A1..A28'].join('\n'),
+  )
+
+  const claims = [
+    // 文档写 25，实际 27 → DRIFT
+    { doc: 'plan.md', pattern: '任务数:\\s*(\\d+)', equals: '27', detail: '计划自称的任务数' },
+    // 文档写 50，实际 59 → DRIFT
+    { doc: 'plan.md', pattern: '依赖边数:\\s*(\\d+)', equals: '59', detail: '计划自称的依赖边数' },
+    // 文档写 8 格，实际 5 格 → DRIFT（README 与交付物不符那一条）
+    { doc: 'plan.md', pattern: '基地周围 (\\d+) 大格', equals: '5', detail: '铁锹生效格数' },
+    // 真实失真：README 声称覆盖到 A28，而验收工具只到 A27 → DRIFT
+    { doc: 'README.md', pattern: '覆盖 A1\\.\\.(A\\d+)', equals: 'A27', detail: '验收矩阵实际覆盖范围' },
+    // 范围断言：25 落在 [20,30] → 通过
+    { doc: 'plan.md', pattern: '任务数:\\s*(\\d+)', min: 20, max: 30, detail: '任务数应在合理区间' },
+    // 范围断言：25 不在 [30,40] → **必须报**。只测"界内通过"会漏掉 min/max
+    // 被整个忽略的情况（第一版就是这样，被变异探针判为空转 D5）。
+    { doc: 'plan.md', pattern: '任务数:\\s*(\\d+)', min: 30, max: 40, detail: '任务数应落在更高区间' },
+  ]
+
+  const problems = checkClaims(root, claims)
+  const drifts = problems.filter((p) => p.kind === 'DRIFT')
+  assert.equal(drifts.length, 5, `期望 5 处 DRIFT，实得 ${drifts.length}: ${JSON.stringify(problems)}`)
+  assert.ok(drifts.some((p) => p.detail === '任务数应落在更高区间'), 'out-of-range claim must be reported')
+  assert.ok(drifts.some((p) => p.claimed === '27' && p.actual === '25'), 'must report claimed vs actual')
+  assert.ok(drifts.some((p) => p.detail === '铁锹生效格数'), 'must report the shovel case')
+  // 区间断言不应误报
+  assert.ok(!problems.some((p) => p.detail === '任务数应在合理区间'), 'range claim within bounds must pass')
+})
+
+test('drift-check: 声称在文档里消失也要报（不是静默通过）', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { checkClaims } = await import('../bin/drift-check.mjs')
+
+  const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
+  await writeFile(join(root, 'doc.md'), '这一行里没有那个数字\n')
+  // 断言写了一个文档里根本不存在的声称 → MISSING，而不是"未发现问题"
+  const problems = checkClaims(root, [{ doc: 'doc.md', pattern: '(\\d+) 个模块', equals: '9' }])
+  assert.equal(problems.length, 1)
+  assert.equal(problems[0].kind, 'MISSING')
+  // 文档不存在同样要报，不能当成通过
+  const missing = checkClaims(root, [{ doc: 'nope.md', pattern: '(\\d+)', equals: '1' }])
+  assert.equal(missing[0].kind, 'DRIFT')
+})
+
+test('drift-check: 命令引用的本地文件不存在必须报', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { checkCommands } = await import('../bin/drift-check.mjs')
+
+  const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
+  await writeFile(join(root, 'real.mjs'), '// exists\n')
+  const problems = checkCommands(root, [
+    'node real.mjs',
+    'node tools/check-plan.py', // 真实案例：计划里写了这条，而该脚本从未被创建
+    './scripts/gen.sh',
+  ])
+  assert.equal(problems.length, 2, `期望 2 处不存在，实得 ${JSON.stringify(problems)}`)
+  assert.ok(problems.some((p) => p.claimed === 'tools/check-plan.py'))
+  assert.ok(problems.some((p) => p.claimed === './scripts/gen.sh'))
+  assert.ok(!problems.some((p) => p.claimed === 'real.mjs'), 'existing file must not be reported')
+})
+
+test('drift-check: 报告渲染与退出码语义（有漂移即失败）', async () => {
+  const { renderMarkdown, driftReport } = await import('../bin/drift-check.mjs')
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+
+  const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
+  await mkdir(join(root, '.xdev'), { recursive: true })
+  await writeFile(join(root, 'doc.md'), '任务数: 25\n')
+  await writeFile(join(root, '.xdev', 'drift.json'), JSON.stringify({ claims: [{ doc: 'doc.md', pattern: '任务数:\\s*(\\d+)', equals: '27' }] }))
+
+  const r = driftReport(root)
+  assert.equal(r.problems.length, 1)
+  const md = renderMarkdown(r)
+  assert.match(md, /发现 1 处问题/)
+  assert.match(md, /DRIFT/)
+
+  // 干净仓库必须报 ✅ —— 否则脚本永远红，等于没有信号
+  const clean = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
+  await mkdir(join(clean, '.xdev'), { recursive: true })
+  await writeFile(join(clean, 'doc.md'), '任务数: 27\n')
+  await writeFile(join(clean, '.xdev', 'drift.json'), JSON.stringify({ claims: [{ doc: 'doc.md', pattern: '任务数:\\s*(\\d+)', equals: '27' }] }))
+  const rc = driftReport(clean)
+  assert.equal(rc.problems.length, 0)
+  assert.match(renderMarkdown(rc), /未发现漂移/)
+})
+
+test('xdev 自身零漂移：文档里的数字/命令与仓库实际一致', async () => {
+  // 自食其果（dogfooding）：xdev 要求交付物"文档数字不得手抄失真"，那就必须先要求自己。
+  // 这条测试让 .xdev/drift.json 里的断言成为 CI 级约束——
+  // 改了 tests/workflows.test.mjs 的用例数却忘了同步 CHANGELOG，这里会红。
+  const { driftReport } = await import('../bin/drift-check.mjs')
+  const r = driftReport(repoRoot)
+  assert.ok(r.config.exists, '.xdev/drift.json must exist (dogfooding the drift check)')
+  assert.ok(r.config.claims > 0, 'config must carry at least one claim')
+  assert.deepEqual(
+    r.problems,
+    [],
+    `xdev 自身存在漂移，请修文档或改断言：\n${JSON.stringify(r.problems, null, 1)}`,
+  )
+})

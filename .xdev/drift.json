@@ -1,0 +1,31 @@
+{
+  "$comment": "xdev 自己的漂移断言表。每条 = 文档里手抄的一个数字/文件，配一个能从文档中抽出的正则（第 1 个捕获组是实际值）。改文档时若忘了同步，node bin/drift-check.mjs 会红。",
+  "claims": [
+    {
+      "doc": "CHANGELOG.md",
+      "pattern": "workflows\\.test\\.mjs` grew from 11 to (\\d+) tests",
+      "equals": "29",
+      "detail": "CHANGELOG 声称的守卫测试条数（实际跑 node --test tests/workflows.test.mjs 的数字）"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "the dev workflow is ~(\\d+) lines",
+      "min": 380,
+      "max": 460,
+      "detail": "README 声称的开发流程行数（full-dev.md 实际行数，带容差）",
+      "flags": "i"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "(\\d+) hard rules",
+      "equals": "5",
+      "detail": "README 声称的硬规则条数（full-dev.md 的『## 硬规则』小节）"
+    }
+  ],
+  "commands": [
+    "node bin/gen-dsh.mjs --check",
+    "node bin/cost-report.mjs --latest",
+    "node bin/drift-check.mjs",
+    "node --test tests/workflows.test.mjs"
+  ]
+}
