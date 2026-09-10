@@ -610,6 +610,37 @@ Corollary: when tightening a gate, first ask "is this mechanical or judgement?".
 
 ---
 
+## Built-in tooling (plain `node`, no dependencies)
+
+Two measurement scripts ship with xdev. Both exist because a specific, measured failure
+mode kept recurring — they are not generic utilities.
+
+```bash
+node bin/cost-report.mjs --latest        # what did this session actually cost?
+node bin/cost-report.mjs --session <id> --json
+node bin/drift-check.mjs                 # do the docs still match the repo?
+node bin/drift-check.mjs --init          # scaffold a claims table (.xdev/drift.json)
+```
+
+**`cost-report.mjs` — the cost ledger.** Process overhead used to be invisible, which is
+the only reason a 7.3× token gap went unnoticed for so long. Reports total tokens
+(uncached / cache-read / output), wall clock, turns, time-to-first-delivery, tool calls,
+subagents, **phase-2 subagent share**, and the metric that matters most:
+**cache amplification = cacheRead ÷ output**, which reflects orchestration efficiency only
+and is unaffected by task size. Measured: `standard` 107×, xdev/flash **346×**, xdev/pro 67×
+— the same machinery is fine for a model that knows when to stop and 3.2× worse for one that
+doesn't, which is why the fix is an **envelope**, not fewer mechanisms.
+
+**`drift-check.mjs` — documented claim vs repo reality.** The only defect class that
+recurred *after* being caught: two gate rounds rejected the plan over it (4 review
+subagents), and the final state still carried 17 mismatches, most of them overstatements
+("8 cells" that was 5, "35 levels" that was 9 layouts, "A1..A28" where the tool covered
+A27). Reviews caught the *class* and the last rewrite reintroduced it, with no seventh
+round to catch it. `rg` does not get tired, so this is mechanical now. xdev runs it on
+itself: `.xdev/drift.json` holds its own claims and a test asserts the repo is drift-free.
+
+---
+
 ## File Structure
 
 ```
@@ -625,9 +656,12 @@ xdev/
 │   ├── xdev-full-dev/SKILL.md
 │   └── xdev-research/SKILL.md
 ├── docs/experiments/      ← Sansheng + dsh-integration research (rationale & evidence)
+├── .xdev/drift.json       ← Claims table: "what the docs say" vs "what the repo is" (dogfooded)
 ├── bin/
 │   ├── install.sh         ← Idempotent symlink installer (claude / codex)
-│   └── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
+│   ├── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
+│   ├── cost-report.mjs    ← Cost ledger for a session (tokens, cache amplification, phase-2 share)
+│   └── drift-check.mjs    ← Mechanical "documented claim vs repo reality" comparison
 └── claude-code/           ← Single hand-edited source; .claude/commands/xdev/ + Codex prompts symlink here
     ├── full-dev.md
     ├── full-dev-design.md

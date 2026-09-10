@@ -590,6 +590,34 @@ xdev 的所有质量门禁分两类，**不要混淆**——混淆是一个常�
 
 ---
 
+## 内置工具（纯 `node`，零依赖）
+
+两个测量脚本随 xdev 一起分发。它们的存在理由都是**一个已被实测的具体失效模式**，
+不是通用小工具。
+
+```bash
+node bin/cost-report.mjs --latest        # 这次会话到底花了多少？
+node bin/cost-report.mjs --session <id> --json
+node bin/drift-check.mjs                 # 文档还对得上仓库吗？
+node bin/drift-check.mjs --init          # 生成断言表模板（.xdev/drift.json）
+```
+
+**`cost-report.mjs` —— 成本账本。** 流程开销原本不透明，这是 7.3× 的 token 差距
+拖了很久才被发现的唯一原因。输出：总 token（未命中/缓存重读/输出）、墙钟、轮数、
+首轮交付时刻、工具调用、subagent 数、**阶段 2 的 subagent 占比**，以及最关键的一列
+**缓存放大倍数 = cacheRead ÷ 输出**——它只反映编排效率，不受任务规模影响。
+实测：`standard` 107×、xdev/flash **346×**、xdev/pro 67×。同一套机制，在一个知道
+何时该停的模型上没事，在不会停的模型上恶化 3.2 倍——**所以要治的是信封，不是砍机制**。
+
+**`drift-check.mjs` —— 交付声明 vs 仓库实际。** 这是**唯一在被抓到之后仍然复发**的
+缺陷类：门下门两轮封驳都在抓它（4 个审核 subagent），而终态仍带 17 处不符，且多为高估
+（"8 格"实为 5 格、"35 关"实为 9 种布局、README 称 A1..A28 而工具只到 A27）。
+审查抓到了**类**，最后一次改写又把它引入了，且没有第 7 轮来抓。`rg` 不会累，
+所以这条现在是机械检查。xdev 对自己也跑它：`.xdev/drift.json` 存着 xdev 自己的断言，
+另有一条测试断言本仓库零漂移。
+
+---
+
 ## 文件结构
 
 ```
@@ -605,9 +633,12 @@ xdev/
 │   ├── xdev-full-dev/SKILL.md
 │   └── xdev-research/SKILL.md
 ├── docs/experiments/      ← 三省模式实验 + dsh 集成调研（preset 设计依据）
+├── .xdev/drift.json       ← 漂移断言表："文档说了什么" vs "仓库实际是什么"（自食其果）
 ├── bin/
 │   ├── install.sh         ← 创建软链，幂等可重跑（claude / codex）
-│   └── gen-dsh.mjs        ← 从 claude-code/ 生成 dsh preset 产物
+│   ├── gen-dsh.mjs        ← 从 claude-code/ 生成 dsh preset 产物
+│   ├── cost-report.mjs    ← 会话成本账本（token / 缓存放大倍数 / 阶段 2 占比）
+│   └── drift-check.mjs    ← 机械比对"交付声明 vs 仓库实际"
 └── claude-code/           ← 唯一手写源；.claude/commands/xdev/ 与 Codex prompts 软链到这里
     ├── full-dev.md
     ├── full-dev-design.md

@@ -18,6 +18,31 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 
 - **`tool-web` reinstated — read-only external grounding.** The v3.0 refactor dropped web tools on the theory that "offline dev" means fewer distractions, and a guard test enforced their absence. The field comparison showed the price: the task was *"replicate the original game faithfully"*, the authoritative level data was publicly available, and the xdev runs never looked for it — so the design was built on a false premise ("copyright forbids it, approximate by hand") that all six gate rounds were then structurally forbidden to question. `web_fetch` + `web_search` are back as **read-only** access for authoritative external truth (original behaviour, upstream API contracts, standards, the real data behind a reimplementation), tied to the 阶段 1 grounding check. The guard test is inverted accordingly: the row must stay, must keep `fetch: true`, and must gain no write/post capability. Scope discipline is explicit — fetch the truth a criterion depends on, cite it, move on; this is not open-ended browsing.
 
+- **Two measurement scripts ship with xdev** (`bin/`, plain `node`, zero dependencies):
+  - **`cost-report.mjs`** — the cost ledger for a session: total tokens (uncached / cache-read / output),
+    wall clock, turns, time-to-first-delivery, tool calls, subagents, phase-2 subagent share, and
+    **cache amplification = `cacheRead ÷ output`**. That last metric is the diagnostic one: it reflects
+    orchestration efficiency only, independent of task size. Measured on the same model: `standard` 107×,
+    xdev/flash **346×**, xdev/pro 67× — the machinery is fine for a model that stops itself and 3.2× worse
+    for one that doesn't, which is why the remedy is an envelope rather than fewer mechanisms.
+  - **`drift-check.mjs`** — mechanical "documented claim vs repo reality" comparison against a
+    `.xdev/drift.json` claims table, plus repo-wide facts (test file/ case counts, branch, worktree state)
+    and command-existence checks. This is the one defect class that recurred *after* being caught:
+    two gate rounds rejected the plan over it and the final state still carried 17 mismatches, mostly
+    overstatements. xdev dogfoods it — a test asserts this repo is drift-free.
+- **阶段 2 gains a cost envelope (the brake it never had)**: ≤2 gate rounds, ≤6 phase-2 subagents,
+  ≤150 phase-2 tool calls, ≤20% of context. Any breach downgrades to a spoken plan plus a pre-gate
+  Q&A, with the reason recorded in the decision brief. Baseline it replaces: 6 rounds / 12 subagents
+  (50% of all) / 194 calls / 37.4% of context, for zero lines of code.
+- **Reviewer hit-rate ledger**: every dispatch appends "reported N / confirmed M / verdict" to
+  `<plan>.menxia.log`; a dimension with five consecutive runs of zero confirmed findings is removed
+  from the default roster. Downsize on evidence — but never delete independent review, which caught
+  both models' most lethal defects while 143/52 green tests missed them.
+- **阶段 4 now runs `bin/drift-check.mjs` before the manual claim review and records
+  `bin/cost-report.mjs` output in the delivery report**, both before commit. The ledger carries its own
+  cost cap: call it once, never re-read transcripts to fill the table, and record "cost unknown" when
+  data is missing rather than investigating.
+
 ### Changed
 
 - **阶段 4 order is now non-invertible: probes → full test run → adversarial review → commit.** The previous order allowed commit-then-review, which in practice landed deliverables carrying an unadjudicated review.
