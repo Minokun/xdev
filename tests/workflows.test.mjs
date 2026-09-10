@@ -187,7 +187,17 @@ test('dsh preset statics: preset.yml and agent.cordis.yml are structurally sound
   assert.match(cordis, /id:\s*persona/)
   assert.match(cordis, /dsh-tool-workflow/) // workflow tool present (RESEARCH §10.2)
   assert.match(cordis, /dsh-tool-goal/) // goal kept (RESEARCH §12.3 correction)
-  assert.doesNotMatch(cordis, /dsh-tool-web/) // web dropped
+  // v3.1: tool-web reinstated as READ-ONLY external grounding. Dropping it again would
+  // silently remove the ability to check a "we can't get the real data" premise — the
+  // exact failure that let a false design premise survive six gate rounds (2026-09-10).
+  // The guard is now the inverse of v3.0: the row must stay, and must stay read-only.
+  assert.match(cordis, /dsh-tool-web/, 'tool-web must be present (external grounding needs it)')
+  assert.match(cordis, /dsh-tool-web[\s\S]{0,120}fetch:\s*true/, 'tool-web must keep fetch enabled')
+  assert.doesNotMatch(
+    cordis,
+    /dsh-tool-web[\s\S]{0,200}(write|upload|post|publish|mutate):\s*true/,
+    'external access must stay read-only — no write/post capability on the web row',
+  )
 })
 
 test('dsh preset: every row with required config carries it (plan-mode section)', async () => {
