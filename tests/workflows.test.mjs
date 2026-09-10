@@ -507,10 +507,13 @@ test('drift-check: 通用事实从文件系统正确统计', async () => {
   // `specs/` 是**歧义目录**：多数场合是"规格文档"而不是测试。
   // 实测本仓库的 `docs/superpowers/specs/*-design.md` 就被算成测试文件（报 2，真实 1）。
   // 这个 fixture 必须包含该形态，否则把 specs 放回白名单也照样绿（变异探针实测）。
+  // **必须是代码文件**：`.md` 会被扩展名过滤挡掉，那样即使把 specs/ 放回白名单
+  // 也测不出来（变异探针实测：第一版 fixture 用了 .md，属空转）。
+  // 真实场景是 `specs/foo.ts` —— 名字像源码、目录叫 specs、但它不是测试。
   await mkdir(join(root, 'docs', 'specs'), { recursive: true })
   await mkdir(join(root, 'spec'), { recursive: true })
-  await writeFile(join(root, 'docs', 'specs', '2026-01-01-thing-design.md'), '# spec doc, not a test\n')
-  await writeFile(join(root, 'spec', 'notes.md'), '# more spec prose\n')
+  await writeFile(join(root, 'docs', 'specs', 'thing-design.ts'), 'export const spec = 1\n')
+  await writeFile(join(root, 'spec', 'notes.ts'), 'export const notes = 1\n')
   const f2 = generalFacts(root)
   assert.equal(f2.testFiles, 2, 'ambiguous spec/specs dirs must NOT count as tests')
   // 但 `*.spec.ts` 这类**文件名**本身就是测试，任何目录下都要算
@@ -921,7 +924,11 @@ test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的�
   assert.match(stage2, /args\.round.*不要手写|不要手写/, 'must warn against hand-writing round')
   // 两种 runtime 形式都要写清楚（dsh 不接受按名字查找）
   assert.match(stage2, /Claude Code/, 'must document the Claude Code invocation form')
-  assert.match(stage2, /② dsh/, 'must document the dsh invocation form (numbered, not just the word)')
+  assert.match(
+    stage2,
+    /② dsh：把脚本正文作为 script 传入/,
+    'must document the dsh invocation form on the actual header line',
+  )
   assert.match(stage2, /script:/, 'dsh form must pass the script body')
   assert.match(stage2, /meta:/, 'dsh form must pass meta as a parameter')
   assert.match(stage2, /去掉 export const meta|删掉脚本首行的 export const meta/, 'must state the export-const-meta constraint')
