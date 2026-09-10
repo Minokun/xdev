@@ -315,7 +315,10 @@ test('persona 的硬规则与 full-dev 一致（不得只改一处）', async ()
   assert.match(cordis, /判据必须可伪证/, 'persona must carry the falsifiability rule')
   assert.match(cordis, /把实现改坏/, 'persona must carry the mutation recipe')
   assert.match(cordis, /外部接地/, 'persona must carry the grounding duty')
-  assert.match(cordis, /轮次上限 ≤3/, 'persona must carry the round cap')
+  // 从 workflow 读真源，避免把上限数字硬编码进测试（那正是刚修掉的漂移来源）
+  const gateSrc = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  const cap = gateSrc.match(/const MAX_ROUNDS = (\d+)/)[1]
+  assert.match(cordis, new RegExp(`轮次上限\\s*≤\\s*${cap}`), 'persona must carry the round cap')
   assert.match(cordis, /missing/, 'persona must carry the missing-verdict rule')
   // 语义必须钉住，不能只匹配关键词——否则"不得…就当已通过"→"等不到时可视为通过"
   // 这种反转不会被发现（本测试自己就是被变异探针抓到过一次）。
@@ -854,7 +857,9 @@ test('轮次上限在所有文件里必须一致（代码是唯一真源）', as
   assert.ok(m, 'the workflow must define MAX_ROUNDS')
   const cap = m[1]
 
-  const files = ['claude-code/full-dev.md', 'claude-code/research.md', 'README.md', 'README.zh.md']
+  // persona 也必须在内——第一版漏了它，结果 agent.cordis.yml 里还留着"轮次上限 ≤3"
+  // （而且它在 preset 里，模型每轮都会读到，比 README 更该一致）
+  const files = ['claude-code/full-dev.md', 'claude-code/research.md', 'agent.cordis.yml', 'README.md', 'README.zh.md']
   for (const f of files) {
     const src = await readFile(join(repoRoot, f), 'utf8')
     // 找出所有"≤N 轮"形式的声明（含"重审 ≤N 轮""返工 ≤N 轮"）
