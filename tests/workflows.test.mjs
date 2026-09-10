@@ -311,8 +311,7 @@ test('阶段 4 顺序不可倒置：探针 → 全量测试 → 对抗审查 →
   assert.match(stage4, /停止交付/, 'a green probe must block delivery')
 })
 
-test('persona 的硬规则与 full-dev 一致（不得只改一处）', async () => {
-  const cordis = await readFile(join(repoRoot, 'agent.cordis.yml'), 'utf8')
+test('persona 的硬规则与 full-dev 一致（不得只改一处）', async () => {  const cordis = await readFile(join(repoRoot, 'agent.cordis.yml'), 'utf8')
   assert.match(cordis, /判据必须可伪证/, 'persona must carry the falsifiability rule')
   assert.match(cordis, /把实现改坏/, 'persona must carry the mutation recipe')
   assert.match(cordis, /外部接地/, 'persona must carry the grounding duty')
@@ -345,4 +344,127 @@ test('若 ~/.dsh 下装着本 preset，它与仓库源不得偏离', async () =>
       `${rel} 已安装副本与仓库源不一致 — 重新同步（cp ${rel} ~/.dsh/.agent-presets/xdev/${rel}）`,
     )
   }
+})
+
+// --- bin/cost-report.mjs：成本账本 ---------------------------------------------
+// 为什么测它：这份脚本的作用是让"流程自己花了多少"可见。它自己算错的唯一后果
+// 就是让所有基于成本的决策建立在错误数字上——而它读的 transcript 是**多帧**
+// zstd，Node 的 zstdDecompressSync 只解第一帧且**不报错**（实测 2.4MB → 214 字符）。
+// 所以这里的第一条测试专门钉住"必须解出全部帧"。
+
+/** 用真实事件形状构造一个 fixture（不依赖本机 ~/.dsh）。 */
+function fixtureEvents() {
+  return [
+    { type: 'session', time: 1000, data: { id: 'fixture' } },
+    { type: 'turn/start', time: 1000, data: { turn: 1 } },
+    // 计划阶段：两个文档写入
+    { type: 'tool/call', time: 2000, data: { turn: 1, step: 1, callId: 'c1', name: 'write', arguments: JSON.stringify({ file_path: '/w/proj/docs/plans/d-design.md' }) } },
+    // 脚手架（早于实现）
+    { type: 'tool/call', time: 3000, data: { turn: 1, step: 2, callId: 'c2', name: 'write', arguments: JSON.stringify({ file_path: '/w/proj/index.html' }) } },
+    // 三个计划审查员——都在首行实现代码之前
+    { type: 'tool/call', time: 4000, data: { turn: 1, step: 3, callId: 'c3', name: 'subagent', arguments: JSON.stringify({ description: 'A1' }) } },
+    { type: 'tool/call', time: 4000, data: { turn: 1, step: 3, callId: 'c4', name: 'subagent', arguments: JSON.stringify({ description: 'A2' }) } },
+    { type: 'tool/call', time: 5000, data: { turn: 1, step: 4, callId: 'c5', name: 'subagent', arguments: JSON.stringify({ description: 'A4 gate' }) } },
+    // 工具目录里的脚本——**故意放在 src/ 之前**：若 NON_PROD_DIR 守卫失效，
+    // 它会抢先成为 firstImpl。放在后面就测不到这条守卫（本 fixture 第一版即如此）。
+    { type: 'tool/call', time: 6000, data: { turn: 1, step: 5, callId: 'c8', name: 'write', arguments: JSON.stringify({ file_path: '/w/proj/tools/check.py' }) } },
+    // 首个实现代码（源码目录内）
+    { type: 'tool/call', time: 7000, data: { turn: 1, step: 6, callId: 'c6', name: 'write', arguments: JSON.stringify({ file_path: '/w/proj/src/game.js' }) } },
+    // 首个测试文件
+    { type: 'tool/call', time: 8000, data: { turn: 1, step: 7, callId: 'c7', name: 'write', arguments: JSON.stringify({ file_path: '/w/proj/tests/game.test.js' }) } },
+    { type: 'tool/call', time: 10000, data: { turn: 1, step: 9, callId: 'c9', name: 'bash', arguments: '{"command":"npm test"}' } },
+    { type: 'turn/end', time: 13000, data: { turn: 1, reason: { kind: 'completed' } } },
+  ]
+}
+
+const FIXTURE_TOKENS = {
+  uncachedInput: 100000,
+  cacheRead: 9000000,
+  cacheWrite: 0,
+  output: 100000,
+  total: 9200000,
+  amplification: 90,
+}
+
+test('cost-report: 指标从事件流正确计算（步数/subagent/首行实现/脚手架/测试）', async () => {
+  const { computeMetrics } = await import('../bin/cost-report.mjs')
+  const m = computeMetrics(fixtureEvents(), FIXTURE_TOKENS, 'fixture')
+
+  assert.equal(m.turns, 1)
+  assert.equal(m.toolCalls, 9, 'tool calls must be counted from tool/call events')
+  assert.equal(m.steps, 8, 'steps come from unique turn:step pairs')
+  assert.equal(m.subagents, 3)
+  assert.equal(m.spanMin, 0.2, 'span = (13000-1000)ms = 12s = 0.2min')
+  assert.equal(m.firstResultAtMin, 0.2, 'turn 1 ended at 13000ms, i.e. 12000ms after t0')
+
+  // 脚手架先于实现代码出现——两者必须是不同的量，不能混成一个"首行源码"
+  assert.equal(m.firstScaffold.path, '/w/proj/index.html')
+  assert.equal(m.firstImpl.path, '/w/proj/src/game.js', '实现代码只认源码目录内的文件')
+  assert.equal(m.firstTest.path, '/w/proj/tests/game.test.js')
+  assert.ok(m.firstScaffold.at < m.firstImpl.at, 'scaffold precedes implementation in this fixture')
+
+  // tools/ 不是交付物：它在本 fixture 里**先于** src/ 被写，守卫失效就会顶掉 firstImpl
+  assert.notEqual(m.firstImpl.path, '/w/proj/tools/check.py', 'tools/ must not count as implementation')
+  assert.ok(!m.firstImpl.path.includes('/tools/'), 'no tooling path may ever become firstImpl')
+
+  // 阶段 2 = 首行实现代码之前的 subagent
+  assert.equal(m.planPhase.subagents, 3)
+  assert.equal(m.planPhase.shareOfAll, 1)
+})
+
+test('cost-report: 缓存放大倍数是 cacheRead ÷ 输出，且不受任务规模影响', async () => {
+  const { computeMetrics } = await import('../bin/cost-report.mjs')
+  const m = computeMetrics(fixtureEvents(), FIXTURE_TOKENS, 'fixture')
+  assert.equal(m.tokens.amplification, 90)
+
+  // 输出为 0 时必须是 null（未知），不得除零得到 Infinity/NaN
+  const zero = computeMetrics(fixtureEvents(), { ...FIXTURE_TOKENS, output: 0 }, 'fixture')
+  assert.equal(zero.tokens.amplification, null, 'zero output must yield null, not Infinity/NaN')
+})
+
+test('cost-report: token 缺失时记「未知」而不是抛错或填 0', async () => {
+  const { computeMetrics, renderMarkdown } = await import('../bin/cost-report.mjs')
+  const m = computeMetrics(fixtureEvents(), null, 'fixture')
+  assert.equal(m.tokens, null)
+  assert.equal(m.missing.tokens, true)
+  const md = renderMarkdown(m)
+  assert.match(md, /成本未知/, 'missing token data must render as 成本未知')
+  assert.doesNotMatch(md, /\| 总 token \| 0/, 'must NOT silently render 0')
+})
+
+test('cost-report: 多帧 zstd 必须解出全部帧（Node 原生只解第一帧且不报错）', async () => {
+  const { readEvents, decompressAll, decompressViaFrames } = await import('../bin/cost-report.mjs')
+  const fs = await import('node:fs')
+  const zlib = await import('node:zlib')
+
+  // 造一个两帧的 zstd 流，每帧一行合法 JSON
+  const frames = Buffer.concat([
+    zlib.zstdCompressSync(Buffer.from('{"type":"session","time":1}\n')),
+    zlib.zstdCompressSync(Buffer.from('{"type":"tool/call","time":2,"data":{"name":"bash"}}\n')),
+  ])
+  // 先证明这个 fixture 真的能暴露 bug：原生 API 只返回第一帧
+  const naive = zlib.zstdDecompressSync(frames).toString('utf8')
+  assert.ok(!naive.includes('tool/call'), 'fixture sanity: native API must truncate to frame 1')
+
+  const all = decompressAll(frames)
+  assert.match(all, /tool\/call/, 'decompressAll must recover every frame')
+  // 直接钉住**帧扫描**这条路径。只测 decompressAll 是不够的——它优先调系统 zstd，
+  // 于是"帧扫描"整段可以是坏的而测试照样绿（本测试的第一版就是这样，被变异探针
+  // 抓到 C1 空转）。zstd 二进制在别的机器上可能不存在，这条回退路径必须独立成立。
+  const viaFrames = decompressViaFrames(frames)
+  assert.match(viaFrames, /tool\/call/, 'frame-scan fallback must recover every frame')
+  assert.equal(viaFrames, all, 'frame-scan path must agree with the cli path')
+
+  // 真实 transcript 上做一次端到端校验（本机没有会话时跳过）
+  const { listSessions } = await import('../bin/cost-report.mjs')
+  const s = listSessions()[0]
+  if (!s) return
+  const buf = fs.readFileSync(s.transcript)
+  const text = decompressAll(buf)
+  const events = readEvents(s.transcript)
+  assert.ok(events.length > 1, 'real transcript must yield many events')
+  assert.ok(
+    text.length > zlib.zstdDecompressSync(buf).toString('utf8').length,
+    'multi-frame decompression must beat the naive single-frame result on a real transcript',
+  )
 })
