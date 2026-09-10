@@ -65,6 +65,20 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
   the A/B is now one command plus a pre-registered decision rule. Ratios are computed same-scope only —
   the discipline that was violated when this release's own 7.3× was first written as 8.9×.
 
+- **`tests/probes/mutations.mjs` — the mutation-probe runner, now in the repo.** Earlier the probes
+  lived only in `/tmp`, which made claims like *"12 mutations, all caught"* **unreproducible by anyone** —
+  an unfalsifiable claim, i.e. exactly the defect class this release exists to remove. It is now one
+  command: each probe rewrites a source file, runs the suite, **must go red**, then restores via
+  `git checkout` (with a worktree-integrity check). 44 probes across doc / bugfix / research / ask /
+  cost / drift / gate.
+  Its first full run found **7 decorative guards of my own** — assertions that matched a keyword while
+  the rule's meaning was inverted, compared with a prefix (`includes('≤6')` passing `≤60`), checked
+  order by `indexOf` without pinning the step number, or were simply missing (research T1/T2 and the
+  `/ask` clause had no guard at all). All 7 were repaired and the suite now reports
+  **44 caught / 0 vacuous**. Two of those fixes required fixing the *fixture*, not the assertion:
+  a `specs/` fixture built from `.md` files could never exercise the directory logic, and a `--latest`
+  assertion run against real data was empty because the newest real session happened to be top-level.
+
 ### Changed
 
 - **阶段 4 order is now non-invertible: probes → full test run → adversarial review → commit.** The previous order allowed commit-then-review, which in practice landed deliverables carrying an unadjudicated review.
