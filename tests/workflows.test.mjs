@@ -649,3 +649,158 @@ test('阶段 4 同时携带机械漂移比对与成本账本，且都在 commit 
   assert.match(stage4, /只调用一次/, 'the cost ledger must bound its own cost')
   assert.match(stage4, /成本未知/, 'missing cost data must be recorded as unknown, not fabricated')
 })
+
+// --- .claude/workflows/full-dev-gate.js：阶段 2 门禁编排 ----------------------
+// 为什么测它：这个脚本存在的唯一理由是"把轮次上限/超时重派/缺失维度从自觉变成代码"。
+// 它自己要是把上限算错、或者把失败审核员静默放过，那它比不做更糟——
+// 因为它会给人一种"已经机械保证了"的错觉。
+
+/** 跑 full-dev-gate 并允许检查 agent 派发记录。agentStub 收到 (prompt, opts) 返回结果或 null。 */
+async function runGate({ args = {}, agentStub = () => null } = {}) {
+  const source = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  const runnable = source.replace(/^export const meta =/m, 'const meta =')
+  const calls = []
+  const agent = async (prompt, opts) => {
+    calls.push({ prompt, opts })
+    return agentStub(prompt, opts, calls.length)
+  }
+  const phase = () => {}
+  const log = () => {}
+  const parallel = async (tasks) => Promise.all(tasks.map((t) => t()))
+  const pipeline = async (items, ...stages) =>
+    Promise.all(items.map(async (item) => {
+      let v = item
+      for (const s of stages) v = await s(v, item)
+      return v
+    }))
+  const execute = new Function('phase', 'log', 'parallel', 'agent', 'pipeline', 'args',
+    `return (async () => {\n${runnable}\n})()`)
+  const out = await execute(phase, log, parallel, agent, pipeline, args)
+  return { out, calls }
+}
+
+const APPROVE = { verdict: 'approve', reasons: [], decision_brief: { what: 'do the thing' } }
+const REJECT = { verdict: 'reject', reasons: ['task-003 Then 不可断言'], decision_brief: { what: 'x' } }
+
+test('gate: approve 路径放行并给出决策简报', async () => {
+  const { out } = await runGate({
+    args: { plan: 'docs/plans/p.md', design: 'docs/plans/d.md', round: 1, size: 'small' },
+    agentStub: () => APPROVE,
+  })
+  assert.equal(out.verdict, 'approve')
+  assert.equal(out.escalate, false)
+  assert.equal(out.decisionBrief.what, 'do the thing')
+  assert.match(out.nextAction, /决策简报/)
+  // small 档位只留门下门 —— 面板一个都不派
+  assert.equal(out.panelFindings.length, 0)
+})
+
+test('gate: 轮次上限是硬约束——到上限仍 reject 必须升级而不是继续', async () => {
+  // 实盘教训：skill 写 ≤3 轮，实际跑到第 6 轮；第 4、5 轮纯粹是返工自造的簿记缺陷。
+  const r1 = await runGate({ args: { plan: 'p.md', round: 1, size: 'small' }, agentStub: () => REJECT })
+  assert.equal(r1.out.verdict, 'reject')
+  assert.equal(r1.out.escalate, false, 'round 1 must allow a revision')
+  assert.match(r1.out.nextAction, /重新调用本脚本/)
+
+  const r2 = await runGate({ args: { plan: 'p.md', round: 2, size: 'small' }, agentStub: () => REJECT })
+  assert.equal(r2.out.escalate, true, 'round 2 (== MAX_ROUNDS) must escalate')
+  assert.match(r2.out.nextAction, /不得开下一轮/)
+})
+
+test('gate: 审核员失败不静默通过——重派 1 次，仍失败则该轮不得 approve', async () => {
+  // 实盘教训：一个 A3 挂死 5 分钟，编排层既不重派也不标 missing，直接宣告"审核完毕"。
+  let n = 0
+  const { out, calls } = await runGate({
+    args: { plan: 'p.md', round: 1, size: 'default' }, // 默认档位 = quality 面板
+    agentStub: () => {
+      n++
+      if (n === 1) return null // 面板审核员第一次失败
+      return APPROVE // 重派成功
+    },
+  })
+  const qualityCalls = calls.filter((c) => c.opts.label.includes('plan:quality'))
+  assert.equal(qualityCalls.length, 2, 'must re-dispatch exactly once')
+  assert.equal(out.droppedDimensions.length, 0, 're-dispatch succeeded → no missing dimension')
+  assert.equal(out.verdict, 'approve')
+
+  // 重派仍失败 → 该维度计"未知"，本轮强制 reject，且理由里点名
+  const hard = await runGate({
+    args: { plan: 'p.md', round: 1, size: 'default' },
+    agentStub: (p, o) => (o.label.includes('plan:quality') ? null : APPROVE),
+  })
+  assert.deepEqual(hard.out.droppedDimensions, ['quality'])
+  assert.equal(hard.out.verdict, 'reject', 'an unknown dimension must block approval')
+  assert.ok(hard.out.reasons.some((r) => /维度缺失/.test(r)), 'reason must name the missing dimension')
+  assert.ok(hard.out.ledger.some((e) => e.missing && /quality/.test(e.role)), 'ledger must record it as missing')
+})
+
+test('gate: 门下门自己挂掉 → 无有效裁决，禁止 approve', async () => {
+  let n = 0
+  const { out } = await runGate({
+    args: { plan: 'p.md', round: 1, size: 'small' },
+    agentStub: () => {
+      n++
+      return n <= 2 ? null : APPROVE // 门下门首次 + 重派均失败
+    },
+  })
+  assert.equal(out.verdict, 'reject')
+  assert.equal(out.premisesChecked, false, 'no verdict → premises were never challenged')
+  assert.ok(out.reasons.some((r) => /无有效裁决/.test(r)))
+})
+
+test('gate: subagent 预算上限生效（阶段 2 ≤6）', async () => {
+  // 实盘：阶段 2 用了 12 个 subagent（占全部 50%）。预算必须由代码兜住，不能靠自觉。
+  const { out, calls } = await runGate({
+    args: { plan: 'p.md', round: 1, size: 'large' },
+    agentStub: () => null, // 全部失败 → 每个都重派，逼到预算
+  })
+  assert.ok(calls.length <= 6, `must not exceed the phase-2 subagent cap, got ${calls.length}`)
+  assert.ok(out.budgetUsed <= 6)
+  assert.equal(out.verdict, 'reject')
+})
+
+test('gate: 台账由脚本填、确认数由主线程回填（脚本不自评）', async () => {
+  const { out } = await runGate({
+    args: { plan: 'p.md', round: 1, size: 'default' },
+    agentStub: (p, o) =>
+      o.label.includes('plan:')
+        ? { dimension: 'quality', high: ['task-001 恒绿断言', 'task-007 命令不存在'], medium: ['x'], note: '' }
+        : APPROVE,
+  })
+  const q = out.ledger.find((e) => e.role === 'panel:quality')
+  assert.equal(q.reported, 3, 'reported = high + medium')
+  assert.equal(q.high, 2)
+  assert.equal(q.confirmed, null, 'the script must NOT self-confirm findings')
+  assert.match(out.ledgerNote, /confirmed/, 'must tell the main thread to backfill confirmations')
+  assert.match(out.ledgerNote, /连续 5 次/, 'must define the downsizing criterion')
+})
+
+test('gate: 缺少 plan 参数时拒绝执行而不是空跑放行', async () => {
+  const { out, calls } = await runGate({ args: { round: 1 } })
+  assert.equal(out.verdict, 'reject')
+  assert.equal(out.escalate, true)
+  assert.equal(calls.length, 0, 'must not dispatch anyone without a plan path')
+})
+
+test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的回退路径', async () => {
+  // §3.2 兑现 RESEARCH.md §12.1 的 Tier 1：轮次/超时/预算从 prose 变成代码。
+  // 但预设未必都有 workflow runtime（claude-code / codex 端形态不同），
+  // 所以必须同时保留手工回退，否则流程在无 runtime 环境下直接断掉。
+  const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
+  assert.match(stage2, /full-dev-gate\.js/, 'stage 2 must point at the gate workflow')
+  assert.match(stage2, /Workflow\(\{ name: "full-dev-gate"/, 'must give the exact invocation')
+  assert.match(stage2, /round: 1/, 'must pass the round counter')
+  assert.match(stage2, /ledger/, 'must carry the ledger across rounds')
+  assert.match(stage2, /escalate: false/, 'must define the reject-but-continue branch')
+  assert.match(stage2, /escalate: true/, 'must define the escalate branch')
+  assert.match(stage2, /无 runtime 时的回退路径/, 'must keep a fallback for runtimes without Workflow')
+
+  // 脚本本身必须存在且导出 meta（workflow runtime 要求）
+  const wf = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  assert.match(wf, /export const meta = \{/)
+  assert.match(wf, /name: 'full-dev-gate'/)
+  assert.match(wf, /MAX_ROUNDS/)
+  assert.match(wf, /MAX_PANEL_SUBAGENTS/)
+  assert.match(wf, /MAX_REVIEWER_RETRY/)
+})

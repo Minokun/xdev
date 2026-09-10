@@ -133,16 +133,45 @@ description: 端到端开发工作流
 验收涉及多交互通道 / 多用户角色 / 多端 → E2 场景推衍。每加一个审查员必须能写出一句
 "它看什么，是已选审查员看不到的"——写不出就不加（编排完整规则见附录 E）。
 
-计划完成后，**并行派发 3 个 fresh 审核 subagent**（prompt 见附录 A）：
+### 🚦 首选执行路径：`.claude/workflows/full-dev-gate.js`（让控制流变成代码）
 
-| 审核员 | 检查 | HIGH 判定 |
-|---|---|---|
-| A 覆盖 | 设计功能点 ↔ 任务配对 | 功能点无任务承接 |
-| B 依赖 | 依赖图：环/悬空/缺标/假依赖 | 循环、悬空、硬前提缺标 |
-| C 质量 | BDD 可断言性 + 通过条件可推导 + 字段齐全 + 探针可伪证 | 模糊 Then、断言不可从命令输出推导、判据恒绿 |
+**有 workflow runtime 时必须走这条**——本节的轮次上限、超时重派、缺失维度阻断，
+写成 prose 就是"纪律"，写成脚本才是"保证"。实盘三次失守都属后者：
+门下门跑到第 6 轮、挂死的审核员被当作"审核完毕"、阶段 2 用掉 12 个 subagent。
+
+```
+Workflow({ name: "full-dev-gate",
+           args: { plan: "docs/plans/<date>-<slug>.md",
+                   design: "docs/plans/<date>-<slug>-design.md",
+                   round: 1, size: "standard"|"small"|"large",
+                   ledger: [] } })          // 第 2 轮把上轮返回的 ledger 原样传回
+```
+
+返回 `{ verdict, reasons, missing, bookkeeping, premisesChecked, decisionBrief,
+panelFindings, droppedDimensions, ledger, budgetUsed, escalate, nextAction }`：
+
+| 返回 | 下一步 |
+|---|---|
+| `verdict: "approve"` | 向用户呈决策简报（单次点选确认）→ 进阶段 3 |
+| `verdict: "reject"` 且 `escalate: false` | 主线程**只改计划不改代码**，改完带 `round+1` + 本次 `ledger` 再调一次 |
+| `escalate: true` | 🔴 **停止返工**：带升级包（分歧点 + 修订轨迹 + 选项）请用户拍板，**不得开下一轮** |
+
+脚本内已强制：轮次上限（`MAX_ROUNDS=2`，到顶即 `escalate`）、审核员失败**重派 1 次**、
+重派仍失败 → 该维度标 `missing` 且**本轮禁止 approve**、阶段 2 subagent 预算 ≤6、
+台账记账（`confirmed` 字段留空由主线程回填——**脚本不自评**，自评即自证）。
+
+**无 runtime 时的回退路径（手工，等价语义）**：并行派发下列审核员（prompt 见附录 A）：
+
+| 审核员 | 检查 | HIGH 判定 | 默认是否派出 |
+|---|---|---|---|
+| A 覆盖 | 设计功能点 ↔ 任务配对 | 功能点无任务承接 | 仅当 F 点 ≥5 且任务 ≥8 |
+| B 依赖 | 依赖图：环/悬空/缺标/假依赖 | 循环、悬空、硬前提缺标 | 仅当任务 ≥8 或存在跨模块依赖 |
+| C 质量 | BDD 可断言性 + 通过条件可推导 + 探针可伪证 + 命令存在性 | 模糊 Then、断言不可推导、判据恒绿 | **总是** |
 
 - HIGH 必须修复后重审受影响项；MEDIUM 权衡处理并记一句理由。
-- 审核员失败/超时的处理见硬规则 3（重派 1 次 → 标 `missing` → 该维度计未知 → 本轮不得 approve）。
+- 审核员失败/超时的处理见硬规则 3（重派 1 次 → 标 `missing` → 该维度计未知 → **本轮不得 approve**）。
+- A/B 默认不派出不是省事：小计划里覆盖与依赖**主线程一眼能对齐**，而阶段 3 的 drift check
+  本来就对照 Intent Contract 兜这两条。加审查员的门槛仍是"它看什么，是别人看不到的"。
 
 **门下门（默认开启；跳过仅限 `--no-menxia` 显式标志——本环节不受规模自适应豁免，即使小任务也须执行；成本仅一次 subagent）**：fresh subagent 以二值裁决（approve/reject）。
 **裁决未出前禁止进入实现**（等待期间只允许只读准备：读代码/跑基线测试/查环境——写代码须待 approve；
