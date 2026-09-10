@@ -497,69 +497,71 @@ test('drift-check: 通用事实从文件系统正确统计', async () => {
   assert.equal(f.testCases, 3, 'it() and test() both count as cases')
 })
 
-test('drift-check: 声称与实际不符必须报 DRIFT（复现真实失真）', async () => {
-  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+test('drift-check: 声称必须与仓库真实值比较（而不是与字面量比较）', async () => {
+  // 这是本工具最重要的性质。第一版只支持 `equals: "29"`——那只是把同一个数字
+  // 抄进两个文件，两边一起过期就永远绿。实测：README 写 ~459、full-dev.md 实际 463，
+  // 工具照样报 ✅。现在 actual 必填，且真的去读文件。
+  const { mkdtemp, writeFile, mkdir } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
-  const { mkdir: mkdirp } = await import('node:fs/promises')
   const { checkClaims } = await import('../bin/drift-check.mjs')
 
   const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
-  await mkdirp(join(root, '.xdev'), { recursive: true })
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(join(root, 'README.md'), '流程共 400 行\n覆盖 A1..A28 逐条\n')
+  // 真值文件：实际 9 行
+  await writeFile(join(root, 'docs', 'flow.md'), Array.from({ length: 9 }, (_, i) => `line ${i}`).join('\n') + '\n')
 
-  // 真实案例复现：计划自称"任务数: 25"，实际脚本算出 27
-  await writeFile(
-    join(root, 'plan.md'),
-    ['任务数: 25', '依赖边数: 50', '基地周围 8 大格变钢', 'A1..A28 逐条验收'].join('\n'),
-  )
-  // README 里写的是**夸大**的那个值（A28）——这才是真实失真的形态：
-  // 交付报告声称覆盖到 A28，而验收工具的 CASES 只到 A27。
-  // 反向写（README 写 A27、断言 equals A27）就没有漂移可测了——本测试第一版
-  // 就是那样，结果"修"掉了被测对象本身。
-  await writeFile(
-    join(root, 'README.md'),
-    ['共 26 个测试文件', '验收矩阵覆盖 A1..A28'].join('\n'),
-  )
+  // ① 声称 400，真值 9 → 必须报 DRIFT
+  const drift = checkClaims(root, [
+    { doc: 'README.md', pattern: '流程共 (\\d+) 行', actual: { kind: 'fileLines', path: 'docs/flow.md' } },
+  ])
+  assert.equal(drift.length, 1)
+  assert.equal(drift[0].kind, 'DRIFT')
+  assert.equal(drift[0].claimed, '400')
+  // fileLines 用 split('\n') 语义：9 行 + 尾换行 → 10 个元素。这与 `wc -l` 差 1，
+  // 所以断言值取 10 并在此写明口径，避免下一个人以为是 bug。
+  assert.equal(drift[0].actual, '10', 'must report the REAL value, not a hardcoded expectation')
 
-  const claims = [
-    // 文档写 25，实际 27 → DRIFT
-    { doc: 'plan.md', pattern: '任务数:\\s*(\\d+)', equals: '27', detail: '计划自称的任务数' },
-    // 文档写 50，实际 59 → DRIFT
-    { doc: 'plan.md', pattern: '依赖边数:\\s*(\\d+)', equals: '59', detail: '计划自称的依赖边数' },
-    // 文档写 8 格，实际 5 格 → DRIFT（README 与交付物不符那一条）
-    { doc: 'plan.md', pattern: '基地周围 (\\d+) 大格', equals: '5', detail: '铁锹生效格数' },
-    // 真实失真：README 声称覆盖到 A28，而验收工具只到 A27 → DRIFT
-    { doc: 'README.md', pattern: '覆盖 A1\\.\\.(A\\d+)', equals: 'A27', detail: '验收矩阵实际覆盖范围' },
-    // 范围断言：25 落在 [20,30] → 通过
-    { doc: 'plan.md', pattern: '任务数:\\s*(\\d+)', min: 20, max: 30, detail: '任务数应在合理区间' },
-    // 范围断言：25 不在 [30,40] → **必须报**。只测"界内通过"会漏掉 min/max
-    // 被整个忽略的情况（第一版就是这样，被变异探针判为空转 D5）。
-    { doc: 'plan.md', pattern: '任务数:\\s*(\\d+)', min: 30, max: 40, detail: '任务数应落在更高区间' },
-  ]
+  // ② 声称与真值一致 → 通过
+  await writeFile(join(root, 'README.md'), '流程共 10 行\n')
+  assert.deepEqual(checkClaims(root, [
+    { doc: 'README.md', pattern: '流程共 (\\d+) 行', actual: { kind: 'fileLines', path: 'docs/flow.md' } },
+  ]), [])
 
-  const problems = checkClaims(root, claims)
-  const drifts = problems.filter((p) => p.kind === 'DRIFT')
-  assert.equal(drifts.length, 5, `期望 5 处 DRIFT，实得 ${drifts.length}: ${JSON.stringify(problems)}`)
-  assert.ok(drifts.some((p) => p.detail === '任务数应落在更高区间'), 'out-of-range claim must be reported')
-  assert.ok(drifts.some((p) => p.claimed === '27' && p.actual === '25'), 'must report claimed vs actual')
-  assert.ok(drifts.some((p) => p.detail === '铁锹生效格数'), 'must report the shovel case')
-  // 区间断言不应误报
-  assert.ok(!problems.some((p) => p.detail === '任务数应在合理区间'), 'range claim within bounds must pass')
+  // ③ **自证防线**：没有 actual 规格的断言必须被拒绝执行，不能悄悄绿
+  const selfCert = checkClaims(root, [{ doc: 'README.md', pattern: '流程共 (\\d+) 行', equals: '9' }])
+  assert.equal(selfCert.length, 1)
+  assert.equal(selfCert[0].kind, 'CONFIG', 'a claim without an actual spec must be refused, not passed')
+
+  // ④ actual 求值失败（文件不存在）也要报，不得当成通过
+  const badActual = checkClaims(root, [
+    { doc: 'README.md', pattern: '流程共 (\\d+) 行', actual: { kind: 'fileLines', path: 'nope.md' } },
+  ])
+  assert.equal(badActual[0].kind, 'CONFIG')
+  assert.match(badActual[0].detail, /文件不存在/)
 })
 
-test('drift-check: 声称在文档里消失也要报（不是静默通过）', async () => {
-  const { mkdtemp, writeFile } = await import('node:fs/promises')
+test('drift-check: 行数/条数/抓取三类 actual 都能解析出仓库真值', async () => {
+  const { mkdtemp, writeFile, mkdir } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
-  const { checkClaims } = await import('../bin/drift-check.mjs')
+  const { resolveActual } = await import('../bin/drift-check.mjs')
 
   const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
-  await writeFile(join(root, 'doc.md'), '这一行里没有那个数字\n')
-  // 断言写了一个文档里根本不存在的声称 → MISSING，而不是"未发现问题"
-  const problems = checkClaims(root, [{ doc: 'doc.md', pattern: '(\\d+) 个模块', equals: '9' }])
-  assert.equal(problems.length, 1)
-  assert.equal(problems[0].kind, 'MISSING')
-  // 文档不存在同样要报，不能当成通过
-  const missing = checkClaims(root, [{ doc: 'nope.md', pattern: '(\\d+)', equals: '1' }])
-  assert.equal(missing[0].kind, 'DRIFT')
+  await mkdir(join(root, 'sub'), { recursive: true })
+  await writeFile(join(root, 'sub', 'a.md'), 'x\ny\nz\n')                       // 3 行
+  await writeFile(join(root, 'sub', 'cfg.js'), 'const MAX = 7\n')                 // grepCapture → 7
+  await writeFile(join(root, 'sub', 'rules.md'), '## 硬规则\n1. **a**\n2. **b**\n## 下一节\n9. **z**\n')
+
+  assert.equal(resolveActual(root, { kind: 'fileLines', path: 'sub/a.md' }).value, 4, "split('\\n') 口径：3 行 + 尾换行 = 4")
+  assert.equal(resolveActual(root, { kind: 'grepCapture', path: 'sub/cfg.js', regex: 'const MAX = (\\d+)' }).value, '7')
+  // countMatches + within 必须**只在锚点小节内**计数（不能把后面的 9. **z** 也算进来）
+  assert.equal(
+    resolveActual(root, { kind: 'countMatches', path: 'sub/rules.md', within: '## 硬规则', regex: '^\\d+\\. \\*\\*' }).value,
+    2,
+    'countMatches must be scoped by `within`',
+  )
+  assert.ok(resolveActual(root, { kind: 'nope' }).error, 'unknown kind must error, not silently pass')
+  assert.ok(resolveActual(root, null).error, 'missing spec must error')
 })
 
 test('drift-check: 命令引用的本地文件不存在必须报', async () => {
@@ -588,7 +590,8 @@ test('drift-check: 报告渲染与退出码语义（有漂移即失败）', asyn
   const root = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
   await mkdir(join(root, '.xdev'), { recursive: true })
   await writeFile(join(root, 'doc.md'), '任务数: 25\n')
-  await writeFile(join(root, '.xdev', 'drift.json'), JSON.stringify({ claims: [{ doc: 'doc.md', pattern: '任务数:\\s*(\\d+)', equals: '27' }] }))
+  await writeFile(join(root, 'truth.txt'), 'a\nb\n')  // 真值 3 行 ≠ 25
+  await writeFile(join(root, '.xdev', 'drift.json'), JSON.stringify({ claims: [{ doc: 'doc.md', pattern: '任务数:\\s*(\\d+)', actual: { kind: 'fileLines', path: 'truth.txt' } }] }))
 
   const r = driftReport(root)
   assert.equal(r.problems.length, 1)
@@ -599,8 +602,9 @@ test('drift-check: 报告渲染与退出码语义（有漂移即失败）', asyn
   // 干净仓库必须报 ✅ —— 否则脚本永远红，等于没有信号
   const clean = await mkdtemp(join(tmpdir(), 'xdev-drift-'))
   await mkdir(join(clean, '.xdev'), { recursive: true })
-  await writeFile(join(clean, 'doc.md'), '任务数: 27\n')
-  await writeFile(join(clean, '.xdev', 'drift.json'), JSON.stringify({ claims: [{ doc: 'doc.md', pattern: '任务数:\\s*(\\d+)', equals: '27' }] }))
+  await writeFile(join(clean, 'doc.md'), '任务数: 3\n')
+  await writeFile(join(clean, 'truth.txt'), 'a\nb\n')  // 真值 3 行 = 3
+  await writeFile(join(clean, '.xdev', 'drift.json'), JSON.stringify({ claims: [{ doc: 'doc.md', pattern: '任务数:\\s*(\\d+)', actual: { kind: 'fileLines', path: 'truth.txt' } }] }))
   const rc = driftReport(clean)
   assert.equal(rc.problems.length, 0)
   assert.match(renderMarkdown(rc), /未发现漂移/)

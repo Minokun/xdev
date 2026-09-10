@@ -26,7 +26,15 @@ const IGNORE_DIRS = new Set([
   'vendor', 'target', '__pycache__', '.venv', 'venv', '.cache', '.turbo',
 ])
 const TEST_FILE_RE = /\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_.*\.py$|_test\.go$/i
-const TEST_DIR_RE = /\/(tests?|spec|specs|__tests__|e2e)\//
+/**
+ * 目录白名单**只留无歧义的**：`tests/`、`__tests__/`、`e2e/`。
+ * 刻意不收 `spec/`、`specs/` —— 它们多数场合是"规格文档"而不是测试，
+ * 实测 `docs/superpowers/specs/*-design.md` 就被误算成测试文件，
+ * 于是"测试文件数"报 2（真实 1）。歧义目录要配合文件名模式才算测试。
+ */
+const TEST_DIR_RE = /\/(tests?|__tests__|e2e)\//
+/** 文件名本身就是测试（`*.test.*` / `*.spec.*` / `test_*.py` / `*_test.go`）。 */
+const TEST_NAME_RE = TEST_FILE_RE
 const CASE_RE = /^\s*(it|test)\s*\(/gm
 
 /** 递归枚举文件（跳过依赖/构建目录）。 */
@@ -51,7 +59,10 @@ export function walk(dir, base = dir, out = []) {
 /** A. 通用事实——无需配置，任何仓库都能算。 */
 export function generalFacts(root) {
   const files = walk(root)
-  const testFiles = files.filter((f) => TEST_FILE_RE.test(f) || TEST_DIR_RE.test(f))
+  // 测试文件 = 目录白名单命中**且**文件名像测试，或者文件名本身就是测试模式。
+  // 两者取并集会让 `tests/README.md` 也算测试，交集则让 `src/foo.test.ts` 漏掉——
+  // 这里用「目录命中 + 名字像测试」或「名字本身就是测试模式」的折中：
+  const testFiles = files.filter((f) => TEST_FILE_RE.test(f) || (TEST_DIR_RE.test(f) && /\.(t|j)sx?$|\.py$/.test(f)))
   let cases = 0
   for (const f of testFiles) {
     try {
@@ -99,13 +110,88 @@ export function loadConfig(root) {
   }
 }
 
-/** B. 断言比对。返回问题清单。 */
+/**
+ * B. 断言比对。返回问题清单。
+ *
+ * **核心纪律：声称必须与"仓库实际值"比较，而不是与一个字面量比较。**
+ * 早期版本只支持 `equals: "29"` 这种写法——那只是把同一个数字抄进两个文件，
+ * 一旦两边都过期它就永远绿（实测：README 写 ~459、full-dev.md 实际 463，
+ * 工具照样报 ✅）。现在 `actual` 为**必填**，它描述"真值怎么算出来"：
+ *
+ *   { "doc": "README.md", "pattern": "~(\\d+) lines", "actual": { "kind": "fileLines", "path": "claude-code/full-dev.md" }, "tolerance": 0.15 }
+ *   { "doc": "CHANGELOG.md", "pattern": "11 to (\\d+) tests", "actual": { "kind": "testCases" } }
+ *   { "doc": "README.zh.md", "pattern": "(\\d+) 条硬规则", "actual": { "kind": "countMatches", "path": "claude-code/full-dev.md", "regex": "^\\d+\\. \\*\\*", "within": "## 硬规则" } }
+ *   { "doc": "preset.yml", "pattern": "≤(\\d+) 轮", "actual": { "kind": "grepCapture", "path": ".claude/workflows/full-dev-gate.js", "regex": "const MAX_ROUNDS = (\\d+)" } }
+ *
+ * 只写 `equals` 而不写 `actual` 的断言会被报为 CONFIG —— 那是自证，不是检查。
+ */
+export function resolveActual(root, spec) {
+  if (!spec || !spec.kind) return { error: '缺少 actual 规格（只与字面量比较 = 自证，不允许）' }
+  try {
+    switch (spec.kind) {
+      case 'fileLines': {
+        const p = join(root, spec.path)
+        if (!existsSync(p)) return { error: `文件不存在: ${spec.path}` }
+        return { value: readFileSync(p, 'utf8').split('\n').length }
+      }
+      case 'testCases': {
+        const facts = generalFacts(root)
+        return { value: facts.testCases }
+      }
+      case 'testFiles': {
+        const facts = generalFacts(root)
+        return { value: facts.testFiles }
+      }
+      case 'countMatches': {
+        const p = join(root, spec.path)
+        if (!existsSync(p)) return { error: `文件不存在: ${spec.path}` }
+        let text = readFileSync(p, 'utf8')
+        if (spec.within) {
+          const i = text.indexOf(spec.within)
+          if (i === -1) return { error: `within 锚点未找到: ${spec.within}` }
+          text = text.slice(i)
+          const j = text.indexOf('\n## ', 1)
+          if (j > 0) text = text.slice(0, j)
+        }
+        const re = new RegExp(spec.regex, spec.flags ?? 'gm')
+        return { value: (text.match(re) ?? []).length }
+      }
+      case 'grepCapture': {
+        const p = join(root, spec.path)
+        if (!existsSync(p)) return { error: `文件不存在: ${spec.path}` }
+        const text = readFileSync(p, 'utf8')
+        const m = text.match(new RegExp(spec.regex, spec.flags ?? ''))
+        if (!m) return { error: `grepCapture 未命中: ${spec.regex}` }
+        return { value: m[1] ?? m[0] }
+      }
+      case 'exists': {
+        return { value: existsSync(join(root, spec.path)) ? '存在' : '不存在' }
+      }
+      default:
+        return { error: `未知的 actual.kind: ${spec.kind}` }
+    }
+  } catch (e) {
+    return { error: `actual 求值失败: ${e.message}` }
+  }
+}
+
 export function checkClaims(root, claims) {
   const problems = []
   for (const c of claims) {
     const docPath = join(root, c.doc)
     if (!existsSync(docPath)) {
       problems.push({ kind: 'DRIFT', doc: c.doc, detail: `文档不存在`, claimed: null, actual: null })
+      continue
+    }
+    // 自证防线：没有 actual 规格的断言拒绝执行（不留"悄悄绿"的余地）
+    if (!c.actual) {
+      problems.push({
+        kind: 'CONFIG',
+        doc: c.doc,
+        detail: `断言缺少 actual 规格 —— 只与字面量比较是自证，drift-check 拒绝这种断言`,
+        claimed: c.pattern,
+        actual: null,
+      })
       continue
     }
     const text = readFileSync(docPath, 'utf8')
@@ -121,20 +207,31 @@ export function checkClaims(root, claims) {
       problems.push({ kind: 'MISSING', doc: c.doc, detail: `断言未命中（文档里再也找不到这个声称）`, claimed: c.pattern, actual: null })
       continue
     }
-    const actual = m[1] ?? m[0]
-    let ok = true
-    if (c.equals != null) ok = String(actual) === String(c.equals)
-    else if (c.min != null || c.max != null) {
-      const n = Number(actual)
+    const claimed = m[1] ?? m[0]
+    const got = resolveActual(root, c.actual)
+    if (got.error) {
+      problems.push({ kind: 'CONFIG', doc: c.doc, detail: got.error, claimed, actual: null })
+      continue
+    }
+    const truth = String(got.value)
+
+    let ok
+    if (c.tolerance != null && !Number.isNaN(Number(claimed)) && !Number.isNaN(Number(truth))) {
+      const a = Number(claimed), b = Number(truth)
+      ok = b === 0 ? a === 0 : Math.abs(a - b) / b <= c.tolerance
+    } else if (c.min != null || c.max != null) {
+      const n = Number(claimed)
       ok = !Number.isNaN(n) && (c.min == null || n >= c.min) && (c.max == null || n <= c.max)
+    } else {
+      ok = String(claimed) === truth
     }
     if (!ok) {
       problems.push({
         kind: 'DRIFT',
         doc: c.doc,
-        detail: c.detail ?? '声称与实际不符',
-        claimed: c.equals ?? (c.min != null || c.max != null ? `${c.min ?? ''}..${c.max ?? ''}` : '(未指定期望值)'),
-        actual,
+        detail: c.detail ?? '声称与仓库实际不符',
+        claimed,
+        actual: truth,
       })
     }
   }
