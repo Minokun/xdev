@@ -47,15 +47,53 @@ const MAX_ROUNDS = 2 // 第 3 轮 reject 直接升级用户，不再返工
 const MAX_PANEL_SUBAGENTS = 6 // 阶段 2 subagent 上限
 const MAX_REVIEWER_RETRY = 1 // 审核员失败重派次数
 
-const ROUND = Number((args && args.round) || 1)
+// ── 轮次真源：由**台账**推导，而不是由调用方声明 ────────────────────────────
+// 独立审核抓到的真问题：早期版本 `ROUND = args.round` 是纯调用方输入，
+// 于是**连调 4 次都传 round:1 就永远不升级**——上限退化回自觉。
+// 脚本不能写文件（无状态），所以唯一的持久真相就是调用方交回的 ledger。
+// 规则：本轮次 = 台账里已记的 menxia 轮数 + 1；调用方多报（想跳过轮次）以台账为准。
+const LEDGER_IN = (args && Array.isArray(args.ledger) && args.ledger) || []
+const roundsAlreadyRecorded = LEDGER_IN.filter((e) => e && e.role === 'menxia').length
+const ROUND = roundsAlreadyRecorded + 1
+const CLAIMED_ROUND = args && args.round != null ? Number(args.round) : null
+
 const PLAN = (args && args.plan) || ''
 const DESIGN = (args && args.design) || ''
-const LEDGER_IN = (args && Array.isArray(args.ledger) && args.ledger) || []
 const SIZE = (args && args.size) || 'standard' // standard | small | large
 
 if (!PLAN) {
   return { verdict: 'reject', escalate: true, reasons: ['未提供 args.plan —— 无法派发计划审核'], ledger: LEDGER_IN, round: ROUND }
 }
+
+// 轮次已到上限还来调用 → 不再派发任何审核员，直接升级（这才是硬上限）
+if (roundsAlreadyRecorded >= MAX_ROUNDS) {
+  return {
+    round: ROUND,
+    verdict: 'reject',
+    escalate: true,
+    reasons: [`台账显示已进行 ${roundsAlreadyRecorded} 轮（MAX_ROUNDS=${MAX_ROUNDS}），不再开启第 ${ROUND} 轮`],
+    missing: [],
+    bookkeeping: [],
+    premisesChecked: false,
+    decisionBrief: null,
+    panelFindings: [],
+    droppedDimensions: [],
+    ledger: LEDGER_IN,
+    budgetUsed: 0,
+    nextAction: '🔴 已达到轮次上限：带升级包（分歧点 + 修订轨迹 + 选项）请用户拍板。**不得**再调用本脚本。',
+    ledgerNote: '轮次来自台账（ledger 里 menxia 条目数），不是调用方声明的 args.round。',
+  }
+}
+
+// 篡改/丢状态检测：调用方声明的轮次与台账推导不符（例如每轮都传 round:1，
+// 或声称第 N 轮却没交回台账）。以台账为准并显式告警——
+// **脚本无状态，台账是唯一持久真相**：主线程必须每轮把返回的 ledger 落盘再传回，
+// 否则上限会悄悄退化为无限（这正是"靠代码不靠自觉"的边界，必须写清楚）。
+const roundTamperNote =
+  CLAIMED_ROUND != null && CLAIMED_ROUND !== ROUND
+    ? `⚠️ args.round=${CLAIMED_ROUND} 与台账推导的 ${ROUND} 不符（漏交或篡改 ledger）——以台账为准。` +
+      '主线程必须在每次调用后把返回的 ledger 落盘（`<plan>.menxia.ledger.json`）并在下一轮原样传回。'
+    : null
 
 // 规模档位：小任务只留门下门（编排完整性规则：加审查员的唯一理由是它有结构性不同的盲区）。
 // 覆盖/依赖在任务数少时没有信息量——主线程一眼能对齐；drift check（阶段 3）本来就兜这两条。
@@ -162,20 +200,33 @@ const GATE_SCHEMA = {
 }
 
 // ── 执行 ────────────────────────────────────────────────────────────────────
-const budget = { used: 0 }
+const budget = { used: 0, starved: [], failed: [] }
 
-/** 派发一个审核员；失败重派 ≤MAX_REVIEWER_RETRY 次；仍失败返回 null（调用方记 missing）。 */
-async function dispatch(prompt, { label, phase, schema }) {
+/**
+ * 派发一个审核员；失败重派 ≤MAX_REVIEWER_RETRY 次；仍失败返回 null（调用方记 missing）。
+ *
+ * `reserve` = 必须为**后续角色**保留的槽位数。独立审核抓到的真问题：面板 3 人 × 重派 1 次
+ * 就能吃光 6 个槽位，**门下门根本没被派发**，而返回值却报"门下门审核员失败…无有效裁决"
+ * ——一个从未发生的失败。现在面板派发时 reserve=1（给门下门留位），
+ * 且**"一次都没派出去"（starved）与"派了但重派用尽"（failed）分开记账**，
+ * 理由里也不再混（早期把重派消耗误记成 starved，导致一条已成功派发的角色被写成"未获派发"）。
+ */
+async function dispatch(prompt, { label, phase, schema, reserve = 0 }) {
+  let dispatched = false
   for (let attempt = 0; attempt <= MAX_REVIEWER_RETRY; attempt++) {
-    if (budget.used >= MAX_PANEL_SUBAGENTS) {
-      log(`⛔ 阶段 2 subagent 预算已用尽（${MAX_PANEL_SUBAGENTS}），不再派发 ${label}`)
+    if (budget.used + reserve >= MAX_PANEL_SUBAGENTS) {
+      log(`⛔ 阶段 2 subagent 预算不足（已用 ${budget.used}，需保留 ${reserve}），未派发 ${label}`)
+      // 只有**一次都没派出去**才算 starved；派过但重派用尽属 failed（下面补记）
+      if (!dispatched) budget.starved.push(label)
       return null
     }
     budget.used++
+    dispatched = true
     const r = await agent(prompt, { label: attempt === 0 ? label : `${label} (retry)`, phase, schema })
     if (r) return r
     log(`⚠️ ${label} 失败（第 ${attempt + 1} 次）——按纪律重派或标 missing，绝不静默当作通过`)
   }
+  budget.failed.push(label)
   return null
 }
 
@@ -184,7 +235,7 @@ const panelKeys = panelFor()
 
 phase('Panel')
 const panelRaw = panelKeys.length
-  ? await parallel(panelKeys.map((k) => () => dispatch(PANEL_PROMPTS[k], { label: `plan:${k}`, phase: 'Panel', schema: FINDINGS_SCHEMA })))
+  ? await parallel(panelKeys.map((k) => () => dispatch(PANEL_PROMPTS[k], { label: `plan:${k}`, phase: 'Panel', schema: FINDINGS_SCHEMA, reserve: 1 })))
   : []
 
 const dropped = []
@@ -221,7 +272,18 @@ const dimensionsUnknown = dropped.length > 0
 const verdict = gateFailed || dimensionsUnknown ? 'reject' : gate.verdict
 
 const reasons = []
-if (gateFailed) reasons.push('门下门审核员失败且重派后仍失败 → 无有效裁决，本轮不得 approve')
+const gateStarved = budget.starved.includes(`menxia:r${ROUND}`)
+if (gateStarved) {
+  reasons.push(
+    `门下门**未获派发**（阶段 2 subagent 预算 ${MAX_PANEL_SUBAGENTS} 被面板占满）→ 无有效裁决，本轮不得 approve。` +
+      '这是编排缺陷而非审核员失败——上调预算或收紧面板阵容后重跑本论。',
+  )
+} else if (gateFailed) {
+  reasons.push('门下门审核员失败且重派后仍失败 → 无有效裁决，本轮不得 approve')
+}
+if (budget.starved.length) {
+  reasons.push(`因预算不足**未派发**的角色：${budget.starved.join('、')}`)
+}
 if (dimensionsUnknown) reasons.push(`维度缺失（计"未知"，按存在处理）：${dropped.join('、')}`)
 if (gate && Array.isArray(gate.reasons)) reasons.push(...gate.reasons)
 
@@ -255,6 +317,8 @@ const out = {
   droppedDimensions: dropped,
   ledger,
   budgetUsed: budget.used,
+  starvedRoles: budget.starved,
+  failedRoles: budget.failed,
   escalate,
   nextAction: escalate
     ? '🔴 停止返工：轮次上限已到且仍 reject。带升级包（分歧点 + 修订轨迹 + 选项）请用户拍板，不得开下一轮。'

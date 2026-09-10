@@ -94,29 +94,42 @@ export function listSessions(root = SESSIONS_ROOT) {
       } catch {
         continue
       }
-      found.push({ id, dir: join(root, slug.name, entry.name), transcript, mtime })
+      // 子 agent 会话：目录名不是 `session-<uuid>` 形态
+      const isChild = !entry.name.startsWith('session-')
+      found.push({ id, dir: join(root, slug.name, entry.name), transcript, mtime, isChild })
     }
   }
   return found.sort((a, b) => b.mtime - a.mtime)
 }
 
+/**
+ * 选 --latest 的目标：**只认顶层会话**（成本账本记的是"这次开发花了多少"，
+ * 不是某个审核员的）。导出以便测试——子会话混入会让被强制要求的那条命令
+ * 记错对象并报"成本未知"。
+ */
+export function pickLatest(sessions) {
+  return sessions.filter((s) => !s.isChild)[0] ?? null
+}
+
 /** 解析 --session 或 --latest，返回会话记录。 */
-function resolveSession(opts) {
+export function resolveSession(opts, sessions = null) {
   if (opts.session) {
     if (existsSync(opts.session) && statSync(opts.session).isFile()) {
       const id = opts.session.split('/').slice(-2)[0].replace(/^session-/, '')
       return { id, transcript: opts.session, dir: join(opts.session, '..'), mtime: 0 }
     }
     const wanted = opts.session.replace(/^session-/, '')
-    const all = listSessions()
+    const all = sessions ?? listSessions()
     const hit =
       all.find((s) => s.id === wanted) ??
       all.find((s) => s.id.startsWith(wanted)) ??
       all.find((s) => s.transcript.includes(wanted))
     return hit ?? null
   }
-  const all = listSessions()
-  return all[0] ?? null
+  // 只认**顶层会话**：子 agent 会话的目录名是裸 uuid（没有 `session-` 前缀）。
+  // 若不过滤，--latest 会选中最后一个派发出去的 subagent，
+  // 账本记成它的成本并报"未知 token"——而这是流程强制要求跑的那条命令。
+  return pickLatest(sessions ?? listSessions())
 }
 
 // ── 事件读取 ────────────────────────────────────────────────────────────────
@@ -192,10 +205,21 @@ function decompressViaCli(buf) {
   return null
 }
 
-/** 读 projcache 的 token 累计。 */
+/**
+ * 读 projcache 的 token 累计。
+ *
+ * **文件名有两种形态**（独立审核实测）：顶层会话是 `session-<uuid>.json`，
+ * 而子 agent 会话是裸的 `<uuid>.json`。早期只试前者，于是任何子会话都读成
+ * "成本未知"——而 `--latest` 又可能选中子会话，导致**被流程强制要求的那条命令
+ * 报出未知成本**。两种都试，并在返回值里标明来源文件便于排查。
+ */
 function readTokens(sessionId) {
-  const p = join(PROJCACHE_ROOT, `session-${sessionId}.json`)
-  if (!existsSync(p)) return null
+  const candidates = [
+    join(PROJCACHE_ROOT, `session-${sessionId}.json`),
+    join(PROJCACHE_ROOT, `${sessionId}.json`),
+  ]
+  const p = candidates.find((f) => existsSync(f))
+  if (!p) return null
   try {
     const d = JSON.parse(readFileSync(p, 'utf8'))
     const totals = d?.record?.rows?.tokenUsage?.val?.totals
@@ -210,6 +234,7 @@ function readTokens(sessionId) {
       // 缓存放大倍数 = 同一批上下文被重读多少遍。它比总 token 更能定位病灶：
       // 总 token 受任务规模影响，放大倍数只反映编排自身的效率。
       amplification: outputTokens > 0 ? cacheReadTokens / outputTokens : null,
+      source: p.split('/').pop(),
     }
   } catch {
     return null
@@ -452,7 +477,8 @@ function main() {
   const opts = parseArgs(process.argv.slice(2))
   if (opts.list) {
     for (const s of listSessions()) {
-      console.log(`${s.id}  ${new Date(s.mtime).toISOString().slice(0, 16)}  ${s.transcript}`)
+      const kind = s.isChild ? 'subagent' : 'top     '
+      console.log(`${s.id}  ${kind}  ${new Date(s.mtime).toISOString().slice(0, 16)}  ${s.transcript}`)
     }
     return 0
   }

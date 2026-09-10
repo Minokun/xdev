@@ -136,25 +136,44 @@ description: 端到端开发工作流 — 设计 → 计划与门 → 实现与�
 写成 prose 就是"纪律"，写成脚本才是"保证"。实盘三次失守都属后者：
 门下门跑到第 6 轮、挂死的审核员被当作"审核完毕"、阶段 2 用掉 12 个 subagent。
 
-```
+**两种 runtime 的调用形式不同，别混用**（独立审核指出：早期只写了 Claude Code 形式，
+而 dsh 的 workflow 工具**不接受按名字查找**，它要 `script` + `meta`，且明确禁止脚本内
+`export const meta` —— 于是"门禁靠代码"在 dsh 上会静默退化成 prose，而本 preset 正是 dsh 形态）：
+
+```js
+// ① Claude Code：按名字调用（install.sh 会把脚本 link 到 ~/.claude/workflows/）
 Workflow({ name: "full-dev-gate",
            args: { plan: "docs/plans/<date>-<slug>.md",
                    design: "docs/plans/<date>-<slug>-design.md",
-                   round: 1, size: "standard"|"small"|"large",
-                   ledger: [] } })          // 第 2 轮把上轮返回的 ledger 原样传回
+                   size: "standard"|"small"|"large",
+                   ledger: [] } })
+
+// ② dsh：把脚本正文作为 script 传入、meta 作为参数（**删掉脚本首行的 export const meta**）
+Workflow({
+  meta: { name: "full-dev-gate", description: "stage-2 gate",
+          phases: [{ title: "Panel" }, { title: "Gate" }, { title: "Ledger" }] },
+  args: { plan: "…", design: "…", size: "standard", ledger: [] },
+  script: "<full-dev-gate.js 去掉 export const meta 后的正文>",
+})
 ```
 
+**`args.round` 不要手写**：轮次由 `ledger` 推导（脚本无状态，台账是唯一持久真相）。
+主线程必须在每次调用后把返回的 `ledger` **落盘**（`<plan>.menxia.ledger.json`）并在下一轮
+原样传回；漏传会让上限退化为无限——脚本会在返回值里显式告警这种不一致。
+
 返回 `{ verdict, reasons, missing, bookkeeping, premisesChecked, decisionBrief,
-panelFindings, droppedDimensions, ledger, budgetUsed, escalate, nextAction }`：
+panelFindings, droppedDimensions, ledger, budgetUsed, starvedRoles, failedRoles,
+escalate, nextAction }`：
 
 | 返回 | 下一步 |
 |---|---|
 | `verdict: "approve"` | 向用户呈决策简报（单次点选确认）→ 进阶段 3 |
-| `verdict: "reject"` 且 `escalate: false` | 主线程**只改计划不改代码**，改完带 `round+1` + 本次 `ledger` 再调一次 |
-| `escalate: true` | 🔴 **停止返工**：带升级包（分歧点 + 修订轨迹 + 选项）请用户拍板，**不得开下一轮** |
+| `verdict: "reject"` 且 `escalate: false` | 主线程**只改计划不改代码**，改完**带本次 `ledger`** 再调一次 |
+| `escalate: true` | 🔴 **停止返工**：带升级包（分歧点 + 修订轨迹 + 选项）请用户拍板，**不得再调用本脚本** |
 
-脚本内已强制：轮次上限（`MAX_ROUNDS=2`，到顶即 `escalate`）、审核员失败**重派 1 次**、
-重派仍失败 → 该维度标 `missing` 且**本轮禁止 approve**、阶段 2 subagent 预算 ≤6、
+脚本内已强制：轮次上限（`MAX_ROUNDS=2`；到顶后**一个审核员都不派发**，直接升级）、
+审核员失败**重派 1 次**、重派仍失败 → 该维度标 `missing` 且**本轮禁止 approve**、
+阶段 2 subagent 预算 ≤6 且**为门下门保留一槽**（面板吃不满，门下门不会被饿死）、
 台账记账（`confirmed` 字段留空由主线程回填——**脚本不自评**，自评即自证）。
 
 **无 runtime 时的回退路径（手工，等价语义）**：并行派发下列审核员（prompt 见附录 A）：

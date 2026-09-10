@@ -702,16 +702,34 @@ test('gate: approve 路径放行并给出决策简报', async () => {
   assert.equal(out.panelFindings.length, 0)
 })
 
-test('gate: 轮次上限是硬约束——到上限仍 reject 必须升级而不是继续', async () => {
-  // 实盘教训：skill 写 ≤3 轮，实际跑到第 6 轮；第 4、5 轮纯粹是返工自造的簿记缺陷。
-  const r1 = await runGate({ args: { plan: 'p.md', round: 1, size: 'small' }, agentStub: () => REJECT })
-  assert.equal(r1.out.verdict, 'reject')
+test('gate: 轮次上限由台账推导（不是调用方声明）——到上限不再派发任何审核员', async () => {
+  // 实盘教训：skill 写 ≤3 轮，实际跑到第 6 轮。
+  // 独立审核又抓到：早期版本 ROUND 纯由 args.round 决定，**连调 4 次都传 round:1
+  // 就永远不升级**——上限退化回自觉。现在轮次 = 台账里 menxia 条目数 + 1。
+  const r1 = await runGate({ args: { plan: 'p.md', size: 'small' }, agentStub: () => REJECT })
+  assert.equal(r1.out.round, 1)
   assert.equal(r1.out.escalate, false, 'round 1 must allow a revision')
-  assert.match(r1.out.nextAction, /重新调用本脚本/)
+  assert.ok(r1.calls.length > 0, 'round 1 must actually dispatch reviewers')
 
-  const r2 = await runGate({ args: { plan: 'p.md', round: 2, size: 'small' }, agentStub: () => REJECT })
+  // 带着台账再来一轮 → 到上限，升级
+  const r2 = await runGate({ args: { plan: 'p.md', size: 'small', ledger: r1.out.ledger }, agentStub: () => REJECT })
+  assert.equal(r2.out.round, 2)
   assert.equal(r2.out.escalate, true, 'round 2 (== MAX_ROUNDS) must escalate')
-  assert.match(r2.out.nextAction, /不得开下一轮/)
+
+  // 第三轮：台账已满 → **一个审核员都不派**，直接升级
+  const r3 = await runGate({ args: { plan: 'p.md', size: 'small', ledger: r2.out.ledger }, agentStub: () => REJECT })
+  assert.equal(r3.out.escalate, true)
+  assert.equal(r3.calls.length, 0, 'past the cap, the script must dispatch nobody at all')
+  assert.match(r3.out.nextAction, /不得.*再调用本脚本/)
+})
+
+test('gate: 谎报轮次（每轮都传 round:1）不能绕过上限', async () => {
+  // 关键性质：轮次真源是台账，不是 args.round。第一轮故意把 round 谎报成 5，
+  // 脚本必须以台账为准（round=1），并在返回值里点出这个不一致。
+  const r = await runGate({ args: { plan: 'p.md', size: 'small', round: 5 }, agentStub: () => REJECT })
+  assert.equal(r.out.round, 1, 'round must come from the ledger, not the caller')
+  const note = `${r.out.roundTamperNote || ''}${JSON.stringify(r.out)}`
+  assert.match(note, /不符|台账/, 'must flag the discrepancy')
 })
 
 test('gate: 审核员失败不静默通过——重派 1 次，仍失败则该轮不得 approve', async () => {
@@ -755,15 +773,64 @@ test('gate: 门下门自己挂掉 → 无有效裁决，禁止 approve', async (
   assert.ok(out.reasons.some((r) => /无有效裁决/.test(r)))
 })
 
-test('gate: subagent 预算上限生效（阶段 2 ≤6）', async () => {
-  // 实盘：阶段 2 用了 12 个 subagent（占全部 50%）。预算必须由代码兜住，不能靠自觉。
+test('gate: 预算上限生效，且不得饿死门下门（保留位）', async () => {
+  // 实盘：阶段 2 用了 12 个 subagent（占全部 50%）。
+  // 独立审核抓到的真问题：面板 3 人 × 重派 1 次吃光 6 个槽位，**门下门根本没被派发**，
+  // 而返回值报"门下门审核员失败…无有效裁决"——一个从未发生的失败。
   const { out, calls } = await runGate({
-    args: { plan: 'p.md', round: 1, size: 'large' },
+    args: { plan: 'p.md', size: 'large' },
     agentStub: () => null, // 全部失败 → 每个都重派，逼到预算
   })
   assert.ok(calls.length <= 6, `must not exceed the phase-2 subagent cap, got ${calls.length}`)
   assert.ok(out.budgetUsed <= 6)
+  assert.ok(
+    calls.some((c) => c.opts.label.startsWith('menxia')),
+    'the gate must get its reserved slot — a starved gate means no verdict at all',
+  )
   assert.equal(out.verdict, 'reject')
+  // starved（从未派出）与 failed（派了但失败）必须分开记账，不得混为一谈
+  assert.ok(Array.isArray(out.starvedRoles), 'must report starved roles separately')
+  assert.ok(Array.isArray(out.failedRoles), 'must report failed roles separately')
+  assert.ok(
+    !out.starvedRoles.some((l) => l.includes('retry')),
+    'a role that was dispatched and retried is FAILED, not starved',
+  )
+  // 互斥性：派发过且重派用尽的角色必须进 failedRoles，**不得**同时出现在 starvedRoles
+  // （早期把重派消耗误记成 starved，于是"未获派发"这个理由指向了一个已经派发过的角色）
+  for (const role of out.failedRoles) {
+    assert.ok(
+      !out.starvedRoles.includes(role),
+      `${role} was dispatched (so it FAILED, not starved) — the two lists must be disjoint`,
+    )
+  }
+  assert.deepEqual(
+    out.failedRoles.filter((r) => out.starvedRoles.includes(r)),
+    [],
+    'starved and failed must be mutually exclusive',
+  )
+
+  // 结构性不变量（比构造不可达的剧本更有价值）：面板 reserve=1 ⇒ 面板最多吃到
+  // MAX-1 槽，门下门那一槽**在结构上**永远不会被饿死。因此"starved"分支在实践中
+  // 不可达，`!dispatched` 守卫是防御性死代码。
+  // 我原本写了一个"重派时才耗尽预算"的剧本想区分 starved/failed —— 它**不可构造**：
+  // 面板首次调用时 used<=3，重派时 used<=5，都够不到 3+1>=6 / 5+1>=6 之外的边界；
+  // 而门下门 reserve=0 需要面板吃满 6 槽，与 reserve=1 直接矛盾。
+  // 与其留一条假的"已覆盖"，不如把不变量本身钉住：
+  for (const size of ['small', 'default', 'large']) {
+    const r = await runGate({ args: { plan: 'p.md', size }, agentStub: () => null })
+    assert.ok(
+      r.calls.some((c) => c.opts.label.startsWith('menxia')),
+      `size=${size}: the gate must always receive its reserved slot`,
+    )
+    assert.ok(
+      r.out.starvedRoles.length === 0,
+      `size=${size}: with the reserve in place nothing may be starved (invariant)`,
+    )
+  }
+  assert.ok(
+    out.starvedRoles.length === 0 && out.failedRoles.length > 0,
+    'all-null reviewers are FAILED (dispatched, exhausted retries), never starved',
+  )
 })
 
 test('gate: 台账由脚本填、确认数由主线程回填（脚本不自评）', async () => {
@@ -797,8 +864,15 @@ test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的�
   const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
   assert.match(stage2, /full-dev-gate\.js/, 'stage 2 must point at the gate workflow')
   assert.match(stage2, /Workflow\(\{ name: "full-dev-gate"/, 'must give the exact invocation')
-  assert.match(stage2, /round: 1/, 'must pass the round counter')
+  // 轮次不再由调用方手写（那正是"上限退化为自觉"的洞）：脚本从 ledger 推导。
+  // 因此这里断言的是"必须回传 ledger"，而不是"必须传 round"。
   assert.match(stage2, /ledger/, 'must carry the ledger across rounds')
+  assert.match(stage2, /落盘/, 'must require persisting the ledger between rounds')
+  assert.match(stage2, /args\.round.*不要手写|不要手写/, 'must warn against hand-writing round')
+  // 两种 runtime 形式都要写清楚（dsh 不接受按名字查找）
+  assert.match(stage2, /Claude Code/, 'must document the Claude Code invocation form')
+  assert.match(stage2, /dsh/, 'must document the dsh invocation form')
+  assert.match(stage2, /script:/, 'dsh form must pass the script body')
   assert.match(stage2, /escalate: false/, 'must define the reject-but-continue branch')
   assert.match(stage2, /escalate: true/, 'must define the escalate branch')
   assert.match(stage2, /无 runtime 时的回退路径/, 'must keep a fallback for runtimes without Workflow')
@@ -880,4 +954,36 @@ test('轮次上限在所有文件里必须一致（代码是唯一真源）', as
     const escalateOnNext = new RegExp(`第\\s*${nextRound}\\s*轮[^。\\n]{0,12}(仍\\s*reject|即升级|升级用户)`)
     assert.doesNotMatch(src, escalateOnNext, `${f}: 把升级挂在第 ${nextRound} 轮 —— 超出 MAX_ROUNDS=${cap}`)
   }
+})
+
+test('cost-report: --latest 只选顶层会话，且子会话的 token 也读得到', async () => {
+  // 独立审核抓到的两个真问题：① 子 agent 会话的 projcache 文件名是裸 `<uuid>.json`，
+  // 早期只试 `session-<uuid>.json` → 一律"成本未知"；② --latest 会选中最后一个派发的
+  // subagent → 流程**强制要求**跑的那条命令记错对象。
+  const { listSessions, pickLatest, report, resolveSession } = await import('../bin/cost-report.mjs')
+  const all = listSessions()
+  if (all.length === 0) return // 本机无会话时跳过（CI 场景）
+
+  const top = all.filter((s) => !s.isChild)
+  const kids = all.filter((s) => s.isChild)
+  assert.ok(top.length > 0, 'fixture sanity: there must be at least one top-level session')
+
+  // ① --latest 必须是顶层会话
+  const latest = pickLatest(all)
+  assert.ok(latest && !latest.isChild, '--latest must never select a subagent session')
+  assert.equal(resolveSession({ compare: [], latest: true }, all).isChild, false)
+
+  // ② 子会话的 token 要能读到（两种文件名形态都要试）
+  if (kids.length > 0) {
+    const kid = report(kids[0])
+    if (kid.tokens) {
+      assert.ok(kid.tokens.source, 'must report which projcache file was used')
+      assert.ok(kid.tokens.total > 0, 'child session tokens must be readable')
+    }
+    // 不得因为文件名形态不同就静默报 0
+    assert.ok(!(kid.missing.tokens && kid.tokens), 'missing and tokens must not both be set')
+  }
+
+  // ③ listSessions 必须标注 isChild，便于排查
+  assert.ok(all.every((s) => typeof s.isChild === 'boolean'), 'every session must carry isChild')
 })

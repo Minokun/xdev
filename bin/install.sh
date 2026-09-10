@@ -128,7 +128,10 @@ install_claude() {
     log "Claude Code workflows → $wf_target"
     run mkdir -p "$wf_target"
     local wf_count=0
-    for wf in ask-investigate.js; do  # path-agnostic workflows (no hardcoded ROOT)
+    # full-dev-gate.js 同样 path-agnostic：所有路径（plan/design）都由 args 传入，
+    # 脚本本身不读仓库根。它是**阶段 2 的强制门禁**，不 link 会让"门禁靠代码"
+    # 退化成 prose 回退路径（独立审核抓到的真问题：install 只 link 了 ask-investigate）。
+    for wf in ask-investigate.js full-dev-gate.js; do  # path-agnostic workflows (no hardcoded ROOT)
       if [ ! -f "$wf_src/$wf" ]; then warn "missing workflow source: $wf — skipped"; continue; fi
       # Guard: never clobber a non-symlink user file (matches install_codex_prompts).
       if [ -L "$wf_target/$wf" ]; then
