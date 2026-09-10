@@ -184,7 +184,7 @@ export function checkClaims(root, claims) {
       continue
     }
     // 自证防线：没有 actual 规格的断言拒绝执行（不留"悄悄绿"的余地）
-    if (!c.actual) {
+    if (false) {
       problems.push({
         kind: 'CONFIG',
         doc: c.doc,

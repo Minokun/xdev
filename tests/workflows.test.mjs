@@ -539,6 +539,16 @@ test('drift-check: 声称必须与仓库真实值比较（而不是与字面量�
   ])
   assert.equal(badActual[0].kind, 'CONFIG')
   assert.match(badActual[0].detail, /文件不存在/)
+
+  // ⑤ 容差比较必须真的生效：界内通过、界外报错。
+  // 独立审核指出原断言只覆盖"界内通过"——把容差比较改成 `ok = true` 照样绿（真盲区）。
+  await writeFile(join(root, 'README.md'), '流程共 10 行\n')
+  const within = { doc: 'README.md', pattern: '流程共 (\\d+) 行', actual: { kind: 'fileLines', path: 'docs/flow.md' }, tolerance: 0.1 }
+  assert.deepEqual(checkClaims(root, [within]), [], 'within tolerance must pass')
+  await writeFile(join(root, 'README.md'), '流程共 100 行\n')
+  const outside = checkClaims(root, [within])
+  assert.equal(outside.length, 1, 'outside tolerance MUST be reported')
+  assert.equal(outside[0].kind, 'DRIFT')
 })
 
 test('drift-check: 行数/条数/抓取三类 actual 都能解析出仓库真值', async () => {
