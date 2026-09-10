@@ -46,8 +46,11 @@ const PROBES = [
     old: '伪证探针', new: '补充说明' },
   { group: 'doc', name: '删除冻结被审件', file: 'claude-code/full-dev.md',
     old: '冻结被审件', new: '无需冻结' },
-  { group: 'doc', name: '删除发现后扫类', file: 'claude-code/full-dev.md',
-    old: '发现后扫类', new: '逐条修复' },
+  // 锚点必须**唯一**：加入硬规则 2 的"测试覆盖版扫类"后，'发现后扫类' 在文件里出现两次，
+  // 只替换第一次会改到硬规则那段，而阶段 2 的副本仍在 → 测试照绿（探针空转，实测抓到）。
+  // 故锚到阶段 2 那一条的完整开头。
+  { group: 'doc', name: '删除阶段 2 的发现后扫类', file: 'claude-code/full-dev.md',
+    old: '6. **发现后扫类**（防止"修了实例、放过类"）', new: '6. **逐条修复**' },
   { group: 'doc', name: '阶段 2 成本信封的 subagent 上限改宽', file: 'claude-code/full-dev.md',
     old: '| 本阶段 subagent 总数 | **≤6**', new: '| 本阶段 subagent 总数 | **≤60**' },
   { group: 'doc', name: '删除阶段 4 探针成本上限', file: 'claude-code/full-dev.md',
