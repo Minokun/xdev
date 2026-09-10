@@ -112,7 +112,7 @@ Same prompt, same model (`deepseek-flash`), same empty directory — only the pr
 | tokens (whole session) | 18.22 M | 132.93 M (**7.3×**) |
 | wall clock (whole session) | 24.5 min | 76.6 min (**3.1×**) |
 | **time to first delivered result** (turn 1) | **13.8 min** | **39.7 min** (**2.9×**) |
-| first game source line written | 1.8 min | 26.7 min (**14.8×**) |
+| first game source line written | 1.7 min | 24.8 min (**14.8×**) |
 | subagents dispatched | 0 | 24 |
 | 阶段 2 (plan + 6 gate rounds) | — | 194 tool calls / **12 subagents** / 37.4 % of context, **0 lines of code** |
 

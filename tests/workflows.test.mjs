@@ -408,11 +408,15 @@ test('cost-report: 指标从事件流正确计算（步数/subagent/首行实现
   assert.equal(m.spanMin, 0.2, 'span = (13000-1000)ms = 12s = 0.2min')
   assert.equal(m.firstResultAtMin, 0.2, 'turn 1 ended at 13000ms, i.e. 12000ms after t0')
 
-  // 脚手架先于实现代码出现——两者必须是不同的量，不能混成一个"首行源码"
-  assert.equal(m.firstScaffold.path, '/w/proj/index.html')
-  assert.equal(m.firstImpl.path, '/w/proj/src/game.js', '实现代码只认源码目录内的文件')
+  // 语义（A/B 实验暴露后修正）：**根级源码文件也算实现**——单文件交付形态
+  // （任务要求"单文件 cronspec.py"）里根级文件就是实现本身。
+  // 因此 index.html（根级、5.2min 前）先于 src/game.js 成为 firstImpl；
+  // 脚手架现在只认包管理/构建文件，本 fixture 里没有 → null。
+  assert.equal(m.firstImpl.path, '/w/proj/index.html', 'root-level source counts as implementation')
+  assert.equal(m.firstScaffold, null, 'source files are no longer misclassified as scaffolding')
   assert.equal(m.firstTest.path, '/w/proj/tests/game.test.js')
-  assert.ok(m.firstScaffold.at < m.firstImpl.at, 'scaffold precedes implementation in this fixture')
+  // tools/ 不是交付物：它在本 fixture 里**先于**任何实现被写，守卫失效就会顶掉 firstImpl
+  assert.ok(!m.firstImpl.path.includes('/tools/'), 'no tooling path may ever become firstImpl')
 
   // tools/ 不是交付物：它在本 fixture 里**先于** src/ 被写，守卫失效就会顶掉 firstImpl
   assert.notEqual(m.firstImpl.path, '/w/proj/tools/check.py', 'tools/ must not count as implementation')

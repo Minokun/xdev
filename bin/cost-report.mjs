@@ -45,7 +45,13 @@ const TEST_DIR = /\/(tests?|spec|specs|__tests__|e2e)\//
  * 项目"的首行源码时刻报「未检测到」：实测 standard 会话把整个游戏写在 `js/*.js`，
  * 早期的目录白名单完全没命中，于是它最重要的那个指标变成"未知"。
  */
-const ROOT_ENTRY = /^(index|main|app|server|cli|game|bot)\.(html?|js|mjs|cjs|ts|py|go|rs|java|rb|php)$/i
+/**
+ * 根级入口文件。**不要用固定文件名词表**——实测踩坑：A/B 实验的任务要求交付单文件
+ * `cronspec.py`，而白名单里只有 index/main/app/…，于是"首个实现代码"报「未检测到」，
+ * 尽管实现明明就在根目录。改为"任何源码扩展名的根级文件"，
+ * 并用 ROOT_EXCLUDE 挡掉构建配置。
+ */
+const ROOT_ENTRY = /^[^/]+\.(html?|js|jsx|mjs|cjs|ts|tsx|py|go|rs|java|kt|rb|php|c|cc|cpp|h|hpp|swift|cs|sh)$/i
 const ROOT_EXCLUDE = /(^|\/)(vite|webpack|rollup|vitest|jest|playwright|eslint|tailwind|postcss|babel|tsup|esbuild|next|nuxt|svelte)\.config\.|(^|\/)tsconfig|(^|\/)package(-lock)?\.json$/i
 
 // ── 输入解析 ────────────────────────────────────────────────────────────────
@@ -251,20 +257,28 @@ function readTokens(sessionId) {
 const hasSourceExt = (p) => Boolean(p) && SOURCE_EXT.test(p)
 /** 实现代码：写在某个源码目录里 = 真正开始实现。 */
 const isImplSource = (p) =>
-  hasSourceExt(p) && PROD_DIR.test(p) && !NON_PROD_DIR.test(p) && !TEST_DIR.test(p)
+  hasSourceExt(p) &&
+  !NON_PROD_DIR.test(p) &&
+  !TEST_DIR.test(p) &&
+  !ROOT_EXCLUDE.test(p) &&
+  // 源码目录内的文件，**或**根级源码文件（单文件交付形态）。
+  // 后者是补的：A/B 实验的任务要求交付单文件 `cronspec.py`，
+  // 而它既不在 src/ 也不是 index/main 这类固定名——原实现把它算成"脚手架"，
+  // 于是"首个实现代码"报未检测到。单文件项目里根级文件就是实现本身。
+  (PROD_DIR.test(p) || ROOT_ENTRY.test(p.split('/').pop() ?? ''))
 /**
  * 脚手架：入口文件名（`index.html` / `main.ts` …），且不在任何源码/测试/工具目录里。
  * **注意**：这里刻意不判"路径深度"——传进来的是绝对路径，斜杠数量恒 > 1，
  * 早期版本用 (p.match(/\//g)).length <= 1 判根级，结果这条谓词**恒为假**、
  * 静默报「未检测到」。用文件名集合判定既准确又不依赖 cwd。
  */
+/**
+ * 脚手架：与实现代码**互斥**（否则同一个文件会同时出现在两行，报告自相矛盾——
+ * 这个坑早先踩过一次）。根级源码已归入"实现"，因此脚手架只认
+ * 包管理/构建类文件（`package.json` / `Makefile` / `pyproject.toml` …）。
+ */
 const isScaffold = (p) =>
-  hasSourceExt(p) &&
-  !PROD_DIR.test(p) &&
-  !TEST_DIR.test(p) &&
-  !NON_PROD_DIR.test(p) &&
-  !ROOT_EXCLUDE.test(p) &&
-  ROOT_ENTRY.test(p.split('/').pop() ?? '')
+  /(^|\/)(package\.json|pyproject\.toml|setup\.py|Cargo\.toml|go\.mod|Makefile|CMakeLists\.txt|build\.gradle|pom\.xml)$/i.test(p)
 /** 测试代码：写在测试目录里（TDD 先写测试属正常，单独计）。 */
 const isTestSource = (p) => hasSourceExt(p) && TEST_DIR.test(p) && !NON_PROD_DIR.test(p)
 /** 任意源码（实现 ∪ 脚手架 ∪ 测试）——用于"第一行代码"这类粗粒度问题。 */
@@ -348,9 +362,17 @@ export function computeMetrics(events, tokens, id) {
     }
   }
 
-  // 阶段 2 的边界 = **首个实现代码**时刻。不能锚在 firstSource 上——firstSource 可能
-  // 是设计文档（阶段 1 的产物），会让边界前移、阶段 2 的 subagent 数恒为 0（实测踩过）。
-  const phase2End = firstImpl?.at ?? null
+  // 阶段 2（计划与门）的边界取**信号最强者**：
+  //   · 首选**首个测试文件**——TDD 流程里"开始写测试"最接近"开始实现"这个语义事件；
+  //   · 备选首个实现代码；两者取**较晚者**（max）。
+  // 为什么不单用 firstImpl：A/B 实验暴露的坑——单文件交付里根级源码文件
+  // （cronspec.py / index.html）**既是脚手架也是实现**，在 0.03min 就被判为 firstImpl，
+  // 于是边界前移到计划阶段内部，阶段 2 的 subagent 数直接变成 0（实测踩过两次：
+  // 一次是锚在 firstSource=设计文档，一次是锚在过晚/过早的 firstImpl）。
+  // 也不能只锚 firstImpl：xdev 会话先写 src/render/palette.ts（26.7min）才写测试（24.8min）——
+  // 取 max 才能覆盖两种顺序。
+  const candidates = [firstImpl?.at, firstTest?.at].filter((x) => x != null)
+  const phase2End = candidates.length ? Math.max(...candidates) : null
   const inPhase2 = subagentDispatch.filter((s) => phase2End != null && s.at != null && s.at < phase2End)
 
   // 放大倍数在这里归一，而不是在 readTokens 里——否则把 tokens 直接传给
