@@ -15,8 +15,10 @@ https://raw.githubusercontent.com/cronie-crond/cronie/master/man/crontab.5
    以及星期的 `7` 与 `0` 都表示星期日
 4. 必须支持规范里列出的全部特殊写法（`@reboot` `@yearly` `@annually` `@monthly`
    `@weekly` `@daily` `@hourly`）；`@reboot` 在 `check` 下合法、在 `next` 下报错
-5. 必须附一份**校验报告**，证明工具对规范里定义的**每一种**非法情形都能检出
-6. 必须附一个**可复现的验收脚本**，一条命令跑完全部判据
+5. 必须附一份**校验报告** `report.md`，逐条列出规范里定义的非法情形与对应的检出方式
+6. 必须附一个**可复现的验收脚本** `acceptance.py`，一条命令跑完全部判据
+7. 验收脚本必须自带一条**自我证伪测试** `--selftest`：故意构造一份错误实现，
+   证明脚本对每个判据**确实会失败**（而不是只会在正确实现上通过）
 
 ## 约束
 
