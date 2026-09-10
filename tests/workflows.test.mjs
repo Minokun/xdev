@@ -997,10 +997,22 @@ test('cost-report: --latest 只选顶层会话，且子会话的 token 也读得
   const kids = all.filter((s) => s.isChild)
   assert.ok(top.length > 0, 'fixture sanity: there must be at least one top-level session')
 
-  // ① --latest 必须是顶层会话
+  // ① --latest 必须是顶层会话。**用合成数据、把子会话排在最前面**——
+  // 直接拿真实 listSessions() 断言是空的：真实数据里最新的恰好是顶层会话，
+  // 于是把 pickLatest 改成"不过滤"也照样绿（变异探针抓到的空转）。
+  const synthetic = [
+    { id: 'child-newest', isChild: true, transcript: '/x', mtime: 9 },
+    { id: 'top-older', isChild: false, transcript: '/y', mtime: 8 },
+    { id: 'child-mid', isChild: true, transcript: '/z', mtime: 7 },
+  ]
+  const picked = pickLatest(synthetic)
+  assert.equal(picked.id, 'top-older', '--latest must skip child sessions and take the newest TOP-level one')
+  assert.equal(resolveSession({ compare: [], latest: true }, synthetic).id, 'top-older')
+  // 全是子会话 → 返回 null（不得退而求其次选中一个 subagent）
+  assert.equal(pickLatest(synthetic.filter((s) => s.isChild)), null)
+  // 真实数据上再确认一次（弱断言，仅防止 isChild 标记整体失效）
   const latest = pickLatest(all)
   assert.ok(latest && !latest.isChild, '--latest must never select a subagent session')
-  assert.equal(resolveSession({ compare: [], latest: true }, all).isChild, false)
 
   // ② 子会话的 token 要能读到（两种文件名形态都要试）
   if (kids.length > 0) {
