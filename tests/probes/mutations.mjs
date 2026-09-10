@@ -79,7 +79,14 @@ const PROBES = [
 
   // ── bin/cost-report.mjs ─────────────────────────────────────────────────
   { group: 'cost', name: '阶段 2 边界锚回 firstSource（原 bug）', file: 'bin/cost-report.mjs',
-    old: 'const phase2End = firstImpl?.at ?? null', new: 'const phase2End = firstSource?.at ?? null' },
+    old: 'const candidates = [firstImpl?.at, firstTest?.at].filter((x) => x != null)',
+    new: 'const candidates = [firstSource?.at].filter((x) => x != null)' },
+  { group: 'cost', name: '阶段 2 边界只看 firstImpl（单文件项目退化）', file: 'bin/cost-report.mjs',
+    old: 'const phase2End = candidates.length ? Math.max(...candidates) : null',
+    new: 'const phase2End = firstImpl?.at ?? null' },
+  { group: 'cost', name: '根级源码不计为实现（单文件交付盲区）', file: 'bin/cost-report.mjs',
+    old: "  (PROD_DIR.test(p) || ROOT_ENTRY.test(p.split('/').pop() ?? ''))",
+    new: '  PROD_DIR.test(p)' },
   { group: 'cost', name: '放大倍数去掉除零保护', file: 'bin/cost-report.mjs',
     old: 'tokens.output > 0 ? tokens.cacheRead / tokens.output : null', new: 'tokens.cacheRead / tokens.output' },
   { group: 'cost', name: 'CLI 解压截断为单帧（真实坑复现）', file: 'bin/cost-report.mjs',
