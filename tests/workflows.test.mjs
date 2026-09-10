@@ -83,7 +83,9 @@ test('bugfix carries the probe mechanism in its bugfix-specific form', async () 
   // 回归测试"修完就绿"不等于它测到了被修的东西。实盘里"修了实例没清类"
   // 正是在 bugfix 语境下发生的（core/tank.ts 修好，core/powerup.ts 活到交付）。
   const source = await readFile(join(repoRoot, 'claude-code/bugfix.md'), 'utf8')
-  assert.match(source, /反向确认/, 'bugfix must require reverting the fix and re-running the repro')
+  // 必须钉住"不可跳过"这一语义：只查关键词 '反向确认' 时，
+  // 把"（…不可跳过）"改成"（可选步骤）"照样绿（变异探针实测）。
+  assert.match(source, /反向确认（[^）]*不可跳过[^）]*）/, 'reverse-confirmation must be marked non-skippable')
   assert.match(source, /必须\*\*重新失败\*\*|重新失败/, 'the reverted fix must make the repro fail again')
   assert.match(source, /同类扫描/, 'bugfix must require a same-class scan after the fix')
   assert.match(source, /同款 N 处/, 'same-class scan must report counts, not just "checked"')
@@ -301,6 +303,12 @@ test('阶段 4 顺序不可倒置：探针 → 全量测试 → 对抗审查 →
     assert.notEqual(i, -1, `stage 4 lost: ${needle}`)
     return i
   }
+  // 顺序断言必须**同时**钉住编号：只比 indexOf 的话，把 "3." 改成 "9." 仍能通过
+  // （字符串还在，位置没变）。变异探针实测抓到了这个空转。
+  const numbered = [...stage4.matchAll(/^(\d+)\. \*\*(.+?)\*\*/gm)].map((m) => ({ n: Number(m[1]), title: m[2] }))
+  for (let i = 0; i < numbered.length; i++) {
+    assert.equal(numbered[i].n, i + 1, `stage 4 步骤编号必须连续：第 ${i + 1} 项是 ${numbered[i].n}`)
+  }
   const probe = at('伪证探针全量跑一遍')
   const testAll = at('全量测试真实通过')
   const review = at('对抗性 pre-landing review')
@@ -495,6 +503,19 @@ test('drift-check: 通用事实从文件系统正确统计', async () => {
   const f = generalFacts(root)
   assert.equal(f.testFiles, 2, 'node_modules must be skipped')
   assert.equal(f.testCases, 3, 'it() and test() both count as cases')
+
+  // `specs/` 是**歧义目录**：多数场合是"规格文档"而不是测试。
+  // 实测本仓库的 `docs/superpowers/specs/*-design.md` 就被算成测试文件（报 2，真实 1）。
+  // 这个 fixture 必须包含该形态，否则把 specs 放回白名单也照样绿（变异探针实测）。
+  await mkdir(join(root, 'docs', 'specs'), { recursive: true })
+  await mkdir(join(root, 'spec'), { recursive: true })
+  await writeFile(join(root, 'docs', 'specs', '2026-01-01-thing-design.md'), '# spec doc, not a test\n')
+  await writeFile(join(root, 'spec', 'notes.md'), '# more spec prose\n')
+  const f2 = generalFacts(root)
+  assert.equal(f2.testFiles, 2, 'ambiguous spec/specs dirs must NOT count as tests')
+  // 但 `*.spec.ts` 这类**文件名**本身就是测试，任何目录下都要算
+  await writeFile(join(root, 'src', 'thing.spec.ts'), 'test("x", () => {})\n')
+  assert.equal(generalFacts(root).testFiles, 3, '*.spec.ts files count wherever they live')
 })
 
 test('drift-check: 声称必须与仓库真实值比较（而不是与字面量比较）', async () => {
@@ -900,8 +921,10 @@ test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的�
   assert.match(stage2, /args\.round.*不要手写|不要手写/, 'must warn against hand-writing round')
   // 两种 runtime 形式都要写清楚（dsh 不接受按名字查找）
   assert.match(stage2, /Claude Code/, 'must document the Claude Code invocation form')
-  assert.match(stage2, /dsh/, 'must document the dsh invocation form')
+  assert.match(stage2, /② dsh/, 'must document the dsh invocation form (numbered, not just the word)')
   assert.match(stage2, /script:/, 'dsh form must pass the script body')
+  assert.match(stage2, /meta:/, 'dsh form must pass meta as a parameter')
+  assert.match(stage2, /去掉 export const meta|删掉脚本首行的 export const meta/, 'must state the export-const-meta constraint')
   assert.match(stage2, /escalate: false/, 'must define the reject-but-continue branch')
   assert.match(stage2, /escalate: true/, 'must define the escalate branch')
   assert.match(stage2, /无 runtime 时的回退路径/, 'must keep a fallback for runtimes without Workflow')
@@ -1039,6 +1062,26 @@ test('preset 补齐 command-goal 与 present（v3.0 重写的两处非设计遗�
   assert.match(cordis, /dsh-tool-present/, 'present must point at the dsh tool package')
 })
 
+test('research T1/T2 携带事实性前提例外与解析脚本可伪证（开发侧的同构）', async () => {
+  // 补守卫：v3.1 给 research 加了这两条，但**没有任何测试**看着它们
+  // （变异探针实测：删掉后测试仍全绿）。
+  const source = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  assert.match(source, /T1 的事实性前提例外/, 'T1 must carve out the factual-premise exception')
+  assert.match(source, /关于外部世界的断言/, 'must define what a factual premise is')
+  assert.match(source, /待核实的断言/, 'must state premises are unverified claims, not approvals')
+  assert.match(source, /推翻整个方向|烧掉一整轮/, 'must state the research-specific cost of a false premise')
+  assert.match(source, /解析脚本自身也要可伪证|解析脚本.*可伪证/, 'T2 must require the parser itself to be falsifiable')
+})
+
+test('/ask 要求否定性结论附可复现命令（该流程唯一的探针出口）', async () => {
+  // 补守卫：ask 只读、没有"打坏它看它红不红"的手段，因此这条替代物是它唯一的
+  // 假绿出口；此前**没有测试**看着它（变异探针实测：删掉后仍全绿）。
+  const source = await readFile(join(repoRoot, 'claude-code/ask.md'), 'utf8')
+  assert.match(source, /否定性结论必须附一条可复现命令/, 'ask must require a reproducible command for negative conclusions')
+  assert.match(source, /唯一的"探针"|唯一的探针/, 'must explain why it is the substitute for a probe')
+  assert.match(source, /降级为 Unknowns/, 'findings without such a command must be demoted')
+})
+
 test('阶段 4 探针有成本上限，且"宣称类"脚本不得抽样', async () => {
   // 独立审核 E5：硬规则 2 要求每条判据都做"变异+运行+回滚"，而阶段 4 没有信封
   // （计划 §8 提出的 1/3 抽样缓解从未实现）——阶段 2 有刹车、阶段 4 没有。
@@ -1055,7 +1098,13 @@ test('审查台账落在跨流程存活的位置（否则"连续 5 次"永不触
   // 而 2.1 的"连续 5 次零确认发现→移除"判据要求它跨 5 次运行累积。
   const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
   const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
-  assert.match(stage2, /review-ledger\.jsonl/, 'ledger must live outside the deleted per-run log')
+  // 必须钉住"台账 = jsonl"这条**绑定关系**：只说"提到过 jsonl"是不够的，
+  // 把台账换回 menxia.log、而别处仍提 jsonl，前者照样绿（变异探针实测）。
+  assert.match(
+    stage2,
+    /台账[^。\n]{0,40}\.xdev\/review-ledger\.jsonl/,
+    'the ledger must BE the append-only jsonl (not merely mentioned nearby)',
+  )
   assert.match(stage2, /append-only|只增不改/, 'ledger must be append-only')
   assert.match(stage2, /跨流程存活|不影响台账/, 'must state why it lives there')
 })
