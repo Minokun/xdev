@@ -617,3 +617,35 @@ test('xdev 自身零漂移：文档里的数字/命令与仓库实际一致', as
     `xdev 自身存在漂移，请修文档或改断言：\n${JSON.stringify(r.problems, null, 1)}`,
   )
 })
+
+test('阶段 2 携带成本信封（刹车），且四维上限齐全', async () => {
+  // 实盘：同一套机制在 pro 上放大 67×、在 flash 上放大 346×（standard 107×）——
+  // 差别不在机制，在有没有停下来的约束。阶段 2 产出 0 行代码却吃掉 37.4% 上下文。
+  const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
+  assert.match(stage2, /阶段 2 成本信封/, 'stage 2 must carry a cost envelope')
+  for (const dim of ['门下门轮次', 'subagent 总数', '工具调用', '上下文']) {
+    assert.ok(stage2.includes(dim), `envelope must bound: ${dim}`)
+  }
+  assert.match(stage2, /降级为/, 'exceeding the envelope must have a defined fallback')
+  assert.match(stage2, /审查台账/, 'must require a reviewer hit-rate ledger')
+  assert.match(stage2, /零确认发现/, 'ledger must define the removal criterion')
+})
+
+test('阶段 4 同时携带机械漂移比对与成本账本，且都在 commit 之前', async () => {
+  const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage4 = source.slice(source.indexOf('## 阶段 4'), source.indexOf('## 附录'))
+  const at = (n) => {
+    const i = stage4.indexOf(n)
+    assert.notEqual(i, -1, `stage 4 lost: ${n}`)
+    return i
+  }
+  const drift = at('bin/drift-check.mjs')
+  const cost = at('bin/cost-report.mjs')
+  const commit = at('CHANGELOG 一行 + commit + push')
+  assert.ok(drift < commit, 'drift check must run before commit')
+  assert.ok(cost < commit, 'cost ledger must be recorded before commit')
+  // 成本账本自己必须带上"只调用一次"的成本上限，否则就是给减肥的人加台秤
+  assert.match(stage4, /只调用一次/, 'the cost ledger must bound its own cost')
+  assert.match(stage4, /成本未知/, 'missing cost data must be recorded as unknown, not fabricated')
+})
