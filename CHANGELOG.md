@@ -87,9 +87,13 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
 - `tests/workflows.test.mjs` grew from 11 to 49 tests guarding each new mechanism, including stage-4 ordering,
-  persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. **Every guard was itself
-  mutation-probed** (12 mutations, all caught); two initially-vacuous guards were found and repaired by that
-  probe — the same defect class this release exists to eliminate.
+  persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
+  mutation-probed by `node tests/probes/mutations.mjs` — **currently 44 caught / 0 vacuous**, reproducible by
+  anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only
+  in `/tmp`; that claim was itself unreproducible and has been withdrawn. Moving the probes into the repo
+  immediately exposed **seven decorative guards** — assertions that matched a keyword while the rule's meaning
+  was inverted, or compared with a prefix, or had no guard at all. They were repaired; two of the fixes
+  required fixing the *fixture* rather than the assertion.)
 - **`/bugfix` carries the probe mechanism in its own form** (it previously had zero mentions of probes, only a
   reference to the hard rules — and bugfix is where it matters most). Two additions to its stage 2: **reverse
   confirmation** (revert the fix, the repro command must fail again — a green regression test after a fix does
