@@ -146,7 +146,77 @@ node bin/cost-report.mjs --session <arm-b-id>
 - **成本口径**：`cost-report.mjs` 统计整个 session（含追问轮）。若中途有额外追问，
   两 arm 必须追问次数相当，否则记入局限。
 
-## 4. 实测记录（跑完填）
+## 4. 实测记录
+
+### 4.1 xdev 臂（已完成）
+
+*会话*：`2eeddbd3-4a59-4625-94c8-069c0a59b57e`（继承 xdev preset 的 subagent，工作区
+`../xdev-ab/arm-xdev/`，空目录起步）。复算命令：`node bin/cost-report.mjs --session 2eeddbd3`。
+
+| 指标 | 值 | 对照 |
+|---|---|---|
+| 总 token | **16.63 M** | 旧 xdev/flash 132.93 M；standard 18.22 M（旧）/ 32.33 M（本期实测） |
+| **缓存放大倍数** | **106.0×** | 旧 xdev/flash **346×**；旧 xdev/pro 67×；standard 107× |
+| 墙钟 | 15.3 min | 旧 xdev/flash 76.6 min |
+| 轮次 | 1 | 旧 xdev 6 轮 |
+| subagent 派发 | **4** | 旧 xdev 24；本任务阶段 2 = 2（占 50%） |
+| 首个实现代码 | 5.2 min | 旧 xdev/flash 24.8 min |
+| 阶段 2 工具调用 / 上下文占比 | 34 / 42.5% | 旧 xdev/flash 142 / 30.6% |
+
+**初步读数（待 standard 臂补齐后按 §1.5 判定）**：
+
+1. **成本侧 `P2` 通过（106.0× ≤ 150×），且相对旧 xdev 是数量级改善**：
+   放大倍数 346× → 106×，已回到 standard 的量级（107×）。这正是阶段 2 信封与
+   轮次纪律要治的病，读数支持"刹车生效"。
+2. **subagent 从 24 → 4**（阶段 2 从 12 → 2），信封未被突破。
+3. `P3`（首个实现 ≤6min）在标准档 ✅ 通过（5.2 min）。
+4. `P1`（总 token ≤3× standard）**暂不判定**——依赖 standard 臂读数；
+   若 standard 落在 15–35 M，则比值约 0.5–1.1×，远优于 3× 目标。
+5. **`Q2` 陷阱② 已由独立证据确认可判定且机制有效**：该臂的 `acceptance.py --selftest`
+   在中间态**自己报出 A19 FAIL**（"判据 A11 没有任何变异探针（不可伪证）"）
+   与 **A20 FAIL**（`report.md` 不存在）——然后修复，最终 **20 条判据全 PASS、缺项 0**。
+   即：假绿被它自己的自证伪检查抓住，而这条要求是 prompt 强制项，**两臂同条件**。
+6. 阶段 2 上下文占比 42.5% **高于**信封的 ≤25%——说明该上限对本任务过严，
+   或该臂在计划阶段偏重。按 skill 的兜底条款，这属于"阈值可能定错"的信号，
+   **应改阈值而非改任务**（已记入本实验的结论待办）。
+
+### 4.2 standard 臂（**待跑**）
+
+本仓库无法自产 standard 基线（当前会话为 xdev preset）。执行方式：
+
+```bash
+# 1) 在 dsh 里新建一个会话，preset 选 standard（不是 xdev 模式）
+# 2) cwd 设为 /Users/wxk/Desktop/workspace/xdev-ab/arm-standard（空目录）
+mkdir -p /Users/wxk/Desktop/workspace/xdev-ab/arm-standard
+# 3) 把 ../xdev-ab/prompt.txt 的**全部内容**原样粘进去（两臂必须逐字相同）
+# 4) 跑完后取该会话 id，执行：
+cd /Users/wxk/Desktop/workspace/CascadeProjects/xdev
+node bin/cost-report.mjs --session <standard-session-id>
+node bin/cost-report.mjs --compare <standard-id> 2eeddbd3     # 同口径对比表
+```
+
+拿到读数后按 §1.5 的决策规则判定，并把结果补进下表。
+
+### 4.3 对照汇总（standard 臂跑完后填）
+
+| 项 | arm A（standard） | arm B（xdev v3.1） | 比值 |
+|---|---|---|---|
+| session id | 待填 | 2eeddbd3 | |
+| 总 token | 待填 | 16.63 M | |
+| 缓存放大倍数 | 待填 | 106.0× | |
+| 墙钟 | 待填 | 15.3 min | |
+| 轮次 | 待填 | 1 | |
+| subagent 数 | 待填 | 4 | |
+| 首个实现代码 | 待填 | 5.2 min | |
+| Q1 陷阱①（取回权威源） | 待填 | ✅ 已取回（`web_fetch` 2 次，存 `spec/crontab.5`） | |
+| Q2 陷阱②（假绿） | 待填 | ✅ 自检报出 2 处并修复 | |
+| Q3 陷阱③（死模块） | 待填 | 待第二方判定 | |
+| Q4 无恒绿判据 | 待填 | ✅ `--selftest` 强制每条判据有探针 | |
+| **决策（按 §1.5）** | | | |
+
+---
+
+## 5. 原始记录（历史，跑完填的旧表位）
 
 | 项 | arm A（standard） | arm B（xdev v3.1） | 比值 |
 |---|---|---|---|
