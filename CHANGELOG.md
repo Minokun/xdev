@@ -72,7 +72,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 45 tests guarding each new mechanism, including stage-4 ordering,
+- `tests/workflows.test.mjs` grew from 11 to 47 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. **Every guard was itself
   mutation-probed** (12 mutations, all caught); two initially-vacuous guards were found and repaired by that
   probe — the same defect class this release exists to eliminate.

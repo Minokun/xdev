@@ -1016,3 +1016,24 @@ test('preset 补齐 command-goal 与 present（v3.0 重写的两处非设计遗�
   assert.match(cordis, /^- id:\s*present$/m, 'present tool must be registered')
   assert.match(cordis, /dsh-tool-present/, 'present must point at the dsh tool package')
 })
+
+test('阶段 4 探针有成本上限，且"宣称类"脚本不得抽样', async () => {
+  // 独立审核 E5：硬规则 2 要求每条判据都做"变异+运行+回滚"，而阶段 4 没有信封
+  // （计划 §8 提出的 1/3 抽样缓解从未实现）——阶段 2 有刹车、阶段 4 没有。
+  const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage4 = source.slice(source.indexOf('## 阶段 4'), source.indexOf('## 附录'))
+  assert.match(stage4, /成本上限/, 'stage 4 must bound its own probe cost')
+  assert.match(stage4, /1\/3/, 'must define the sampling ratio')
+  assert.match(stage4, /100% 全跑/, 'claim-emitting scripts must never be sampled')
+  assert.match(stage4, /种子/, 'sampling must be seeded/reproducible, not hand-picked')
+})
+
+test('审查台账落在跨流程存活的位置（否则"连续 5 次"永不触发）', async () => {
+  // 独立审核 E7 抓到的自相矛盾：menxia.log 按设计在流程结束时被删，
+  // 而 2.1 的"连续 5 次零确认发现→移除"判据要求它跨 5 次运行累积。
+  const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
+  assert.match(stage2, /review-ledger\.jsonl/, 'ledger must live outside the deleted per-run log')
+  assert.match(stage2, /append-only|只增不改/, 'ledger must be append-only')
+  assert.match(stage2, /跨流程存活|不影响台账/, 'must state why it lives there')
+})
