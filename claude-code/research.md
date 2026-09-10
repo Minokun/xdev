@@ -164,7 +164,8 @@ proposal.md 必含（缺一不过门）：
 
 HIGH 必须修复后重审受影响项；MEDIUM 权衡处理记一句理由。
 面板通过后进 **R1 门下门**：fresh subagent 二值裁决（approve/reject，prompt 见附录 R1，
-含注入防护与 decision_brief）。reject → 修订 + 逐条修改说明重审，**≤3 轮，第 2 轮起先校验
+含注入防护与 decision_brief）。reject → 修订 + 逐条修改说明重审，**≤2 轮**（与 `full-dev.md` 及
+`full-dev-gate.js` 的 `MAX_ROUNDS` 一致），第 2 轮起先校验
 修改说明与实际变更的一致性**（同 full-dev A4 纪律）。
 approve 后经 ask_user_question 呈决策简报给用户**单次确认**。**用户确认 = 预注册生效**，
 随即回填必含项 12 并把内容哈希写入 state.md。
@@ -372,7 +373,7 @@ run 数 × 单 run 时长与预算是否匹配；有无隐含依赖（联网下�
    研究侧对应物已内建为铁律 T2/T3 的机器裁判与解析脚本测试；
 3. fresh 审核的 reject 必须返工或升级用户，不得绕过软化；审核员超时/无回报重派 1 次后标 missing、
    该维度计未知（**不得**因为等不到就当通过）；维度不全的轮次不得 approve；轮次上限 ≤3，
-   第 3 轮仍 reject 即升级用户；同类缺陷连续 2 轮命中 → 改设计而非再改文案；
+   第 2 轮仍 reject 即升级用户；同类缺陷连续 2 轮命中 → 改设计而非再改文案；
 4. 不向 base 分支提交，先建 feature 分支；
 5. 不可逆动作须用户确认。
 

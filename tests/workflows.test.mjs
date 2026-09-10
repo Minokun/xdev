@@ -844,3 +844,31 @@ test('cost-report: 对比模式同口径计算比值，且不拿一方首轮比�
   assert.ok(md2.includes('数据不全'), 'must warn when an arm has incomplete data')
 })
 
+
+test('轮次上限在所有文件里必须一致（代码是唯一真源）', async () => {
+  // 复审中发现的真缺陷：门禁脚本强制 MAX_ROUNDS=2，而 full-dev.md / research.md /
+  // README / README.zh 六个地方写着 ≤3。这正是本项目反复复发的那一类（文档漂移），
+  // 且它比计数错误更危险——读者会以为还有一轮余量。所以把它钉成机械约束。
+  const wf = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  const m = wf.match(/const MAX_ROUNDS = (\d+)/)
+  assert.ok(m, 'the workflow must define MAX_ROUNDS')
+  const cap = m[1]
+
+  const files = ['claude-code/full-dev.md', 'claude-code/research.md', 'README.md', 'README.zh.md']
+  for (const f of files) {
+    const src = await readFile(join(repoRoot, f), 'utf8')
+    // 找出所有"≤N 轮"形式的声明（含"重审 ≤N 轮""返工 ≤N 轮"）
+    for (const hit of src.matchAll(/≤\s*(\d+)\s*轮/g)) {
+      assert.equal(
+        hit[1],
+        cap,
+        `${f}: 声明 ≤${hit[1]} 轮，而脚本 MAX_ROUNDS=${cap} —— 轮次上限必须以代码为唯一真源`,
+      )
+    }
+    // 也不得把**升级动作**挂在超出上限的那一轮上（"第 3 轮仍 reject 即升级"这种矛盾表述）。
+    // 注意区分：讨论"第 3 轮起收益递减"是在讲审查员的边际收益，不是轮次上限，必须放行。
+    const nextRound = String(Number(cap) + 1)
+    const escalateOnNext = new RegExp(`第\\s*${nextRound}\\s*轮[^。\\n]{0,12}(仍\\s*reject|即升级|升级用户)`)
+    assert.doesNotMatch(src, escalateOnNext, `${f}: 把升级挂在第 ${nextRound} 轮 —— 超出 MAX_ROUNDS=${cap}`)
+  }
+})
