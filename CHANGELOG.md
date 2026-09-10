@@ -75,7 +75,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
   the rule's meaning was inverted, compared with a prefix (`includes('≤6')` passing `≤60`), checked
   order by `indexOf` without pinning the step number, or were simply missing (research T1/T2 and the
   `/ask` clause had no guard at all). All 7 were repaired and the suite now reports
-  **44 caught / 0 vacuous**. Two of those fixes required fixing the *fixture*, not the assertion:
+  **46 caught / 0 vacuous**. Two of those fixes required fixing the *fixture*, not the assertion:
   a `specs/` fixture built from `.md` files could never exercise the directory logic, and a `--latest`
   assertion run against real data was empty because the newest real session happened to be top-level.
 
@@ -88,7 +88,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
 - `tests/workflows.test.mjs` grew from 11 to 50 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
-  mutation-probed by `node tests/probes/mutations.mjs` — **currently 44 caught / 0 vacuous**, reproducible by
+  mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
   anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only
   in `/tmp`; that claim was itself unreproducible and has been withdrawn. Moving the probes into the repo
   immediately exposed **seven decorative guards** — assertions that matched a keyword while the rule's meaning
