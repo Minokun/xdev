@@ -282,6 +282,13 @@ export function computeMetrics(events, tokens, id) {
   const t1 = times.length ? Math.max(...times) : null
   const at = (ms) => (t0 == null || ms == null ? null : (Number(ms) - t0) / 60000)
 
+  // 事件字节累计：用于算"阶段 2 占全部上下文的比例"（信封四维之一，
+  // 独立审核指出原先**没有任何工具能测它**——即那条 bound 等于 prose）。
+  let totalBytes = 0
+  let bytesBeforeImpl = 0
+  let implSeen = false
+  let phase2ToolCalls = 0
+
   const toolCalls = new Map() // callId -> name
   const toolCounts = {}
   const steps = new Set()
@@ -297,7 +304,11 @@ export function computeMetrics(events, tokens, id) {
 
   for (const e of events) {
     const d = e.data ?? {}
+    const size = JSON.stringify(d ?? {}).length
+    totalBytes += size
+    if (!implSeen) bytesBeforeImpl += size
     if (e.type === 'tool/call') {
+      if (!implSeen) phase2ToolCalls++
       const name = d.name ?? 'unknown'
       toolCounts[name] = (toolCounts[name] ?? 0) + 1
       if (d.callId) toolCalls.set(d.callId, name)
@@ -322,7 +333,10 @@ export function computeMetrics(events, tokens, id) {
         if (fp && !firstWrite) firstWrite = { at: at(e.time), path: fp }
         if (fp && isSourcePath(fp) && !firstSource) firstSource = { at: at(e.time), path: fp }
         if (fp && isScaffold(fp) && !firstScaffold) firstScaffold = { at: at(e.time), path: fp }
-        if (fp && isImplSource(fp) && !firstImpl) firstImpl = { at: at(e.time), path: fp }
+        if (fp && isImplSource(fp) && !firstImpl) {
+          firstImpl = { at: at(e.time), path: fp }
+          implSeen = true // 之后的事件不再计入"实现前"（阶段 2）区间
+        }
         if (fp && isTestSource(fp) && !firstTest) firstTest = { at: at(e.time), path: fp }
       }
     } else if (e.type === 'turn/start') {
@@ -361,11 +375,13 @@ export function computeMetrics(events, tokens, id) {
     firstScaffold,
     firstImpl,
     firstTest,
-    /** 阶段 2（计划与门）的 subagent 数——实测这一段的占比是最该盯的指标。 */
+    /** 阶段 2（计划与门）——实测这一段是最该盯的：产出 0 行代码却吃掉大量预算。 */
     planPhase: {
       endAtMin: phase2End,
       subagents: inPhase2.length,
       shareOfAll: subagents > 0 ? inPhase2.length / subagents : null,
+      toolCalls: phase2ToolCalls,
+      contextShare: totalBytes > 0 ? bytesBeforeImpl / totalBytes : null,
     },
     tokens: tokensNorm,
     missing: {
@@ -409,7 +425,9 @@ export function renderMarkdown(m) {
   lines.push(`| **首轮交付时刻** | **${fmtMin(m.firstResultAtMin)}** | turn 1 结束；最干净的可比时间点 |`)
   lines.push(`| 工具调用 / 步数 | ${fmtInt(m.toolCalls)} / ${fmtInt(m.steps)} | |`)
   lines.push(`| **subagent 派发** | **${fmtInt(m.subagents)}** | |`)
-  lines.push(`| **阶段 2 的 subagent** | **${fmtInt(m.planPhase.subagents)}**（占 ${m.planPhase.shareOfAll == null ? '未知' : fmt(m.planPhase.shareOfAll * 100, 0) + '%'}） | 截至首行源码之前；实测这一段常年过高 |`)
+  lines.push(`| **阶段 2 的 subagent** | **${fmtInt(m.planPhase.subagents)}**（占 ${m.planPhase.shareOfAll == null ? '未知' : fmt(m.planPhase.shareOfAll * 100, 0) + '%'}） | 截至首行实现代码之前；实测这一段常年过高 |`)
+  lines.push(`| 阶段 2 工具调用 | ${fmtInt(m.planPhase.toolCalls)} | 信封四维之一 |`)
+  lines.push(`| **阶段 2 上下文占比** | **${m.planPhase.contextShare == null ? '未知' : fmt(m.planPhase.contextShare * 100, 1) + '%'}** | 首行实现代码之前的事件字节 ÷ 全部 |`)
   const short = (x) => (x ? '`' + x.path.split('/').slice(-2).join('/') + '`' : '未检测到')
   lines.push(`| **首个实现代码时刻** | **${fmtMin(m.firstImpl?.at)}** | ${short(m.firstImpl)}（写在源码目录里，即真正开始实现） |`)
   lines.push(`| 首个脚手架文件时刻 | ${fmtMin(m.firstScaffold?.at)} | ${short(m.firstScaffold)}（根级入口，通常是工程脚手架） |`)
@@ -452,7 +470,9 @@ export function renderComparison(reports, labels = []) {
     ['工具调用', (m) => m.toolCalls, 0, ''],
     ['subagent 数', (m) => m.subagents, 0, ''],
     ['阶段 2 subagent', (m) => m.planPhase.subagents, 0, ''],
-    ['阶段 2 占比', (m) => (m.planPhase.shareOfAll == null ? null : m.planPhase.shareOfAll * 100), 0, '%'],
+    ['阶段 2 subagent 占比', (m) => (m.planPhase.shareOfAll == null ? null : m.planPhase.shareOfAll * 100), 0, '%'],
+    ['阶段 2 工具调用', (m) => m.planPhase.toolCalls, 0, ''],
+    ['阶段 2 上下文占比', (m) => (m.planPhase.contextShare == null ? null : m.planPhase.contextShare * 100), 1, '%'],
   ]
   L.push('| 指标 | ' + reports.map((_, i) => name(i)).join(' | ') + (reports.length === 2 ? ' | 比值 |' : ' |'))
   L.push('|---|' + reports.map(() => '---|').join('') + (reports.length === 2 ? '---|' : ''))

@@ -631,9 +631,28 @@ test('阶段 2 携带成本信封（刹车），且四维上限齐全', async ()
   const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
   const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
   assert.match(stage2, /阶段 2 成本信封/, 'stage 2 must carry a cost envelope')
+  // 不只看标签——**数值必须与代码一致**。独立审核指出原断言只查四个行标签，
+  // 把 ≤6 改成 ≤60、≤150 改成 ≤1500 它照样绿（装饰性守卫）。
+  const gate = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  const subCap = gate.match(/const MAX_PANEL_SUBAGENTS = (\d+)/)[1]
+  const rowOf = (label) => stage2.split('\n').find((l) => l.includes(label) && l.startsWith('|'))
+  const subRow = rowOf('subagent 总数')
+  // 必须精确比对：`includes('≤6')` 会把 `≤60` 也算通过（前缀匹配）
+  assert.match(
+    subRow,
+    new RegExp(`\\*\\*≤${subCap}\\*\\*`),
+    `envelope subagent bound must be exactly ≤${subCap} (MAX_PANEL_SUBAGENTS): ${subRow}`,
+  )
+  const callsRow = rowOf('工具调用')
+  assert.match(callsRow, /≤\d+/, `envelope must give a numeric tool-call bound: ${callsRow}`)
+  const ctxRow = rowOf('上下文')
+  assert.match(ctxRow, /≤\d+%/, `envelope must give a numeric context bound: ${ctxRow}`)
   for (const dim of ['门下门轮次', 'subagent 总数', '工具调用', '上下文']) {
     assert.ok(stage2.includes(dim), `envelope must bound: ${dim}`)
   }
+  // 每条 bound 都必须能被 cost-report 实测——测不出来的上限等于 prose
+  assert.match(stage2, /cost-report\.mjs/, 'envelope bounds must point at a measurement command')
+  assert.match(stage2, /planPhase/, 'must name the measurable fields')
   assert.match(stage2, /降级为/, 'exceeding the envelope must have a defined fallback')
   assert.match(stage2, /审查台账/, 'must require a reviewer hit-rate ledger')
   assert.match(stage2, /零确认发现/, 'ledger must define the removal criterion')
