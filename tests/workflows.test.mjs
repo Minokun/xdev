@@ -78,6 +78,23 @@ test('bugfix / iterate are thin specialisations that defer to full-dev stages 3-
   }
 })
 
+test('bugfix carries the probe mechanism in its bugfix-specific form', async () => {
+  // 仅靠 bugfix.md 顶部那句"硬规则 1–5 全部生效"是转引，不会被执行：
+  // 回归测试"修完就绿"不等于它测到了被修的东西。实盘里"修了实例没清类"
+  // 正是在 bugfix 语境下发生的（core/tank.ts 修好，core/powerup.ts 活到交付）。
+  const source = await readFile(join(repoRoot, 'claude-code/bugfix.md'), 'utf8')
+  assert.match(source, /反向确认/, 'bugfix must require reverting the fix and re-running the repro')
+  assert.match(source, /必须\*\*重新失败\*\*|重新失败/, 'the reverted fix must make the repro fail again')
+  assert.match(source, /同类扫描/, 'bugfix must require a same-class scan after the fix')
+  assert.match(source, /同款 N 处/, 'same-class scan must report counts, not just "checked"')
+  // 不得把反向确认降级为可选
+  assert.doesNotMatch(
+    source,
+    /反向确认[^\n]{0,20}(可选|可跳过|视情况)/,
+    'reverse-confirmation must not be softened into optional',
+  )
+})
+
 test('windsurf support is fully removed (v3.0.0 breaking change)', async () => {
   // windsurf/ 目录、gen-windsurf.mjs、install.sh 的 windsurf 目标均已删除；
   // 本测试守护"不再回流"。

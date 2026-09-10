@@ -25,19 +25,33 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 18 tests guarding each new mechanism, including stage-4 ordering and persona/skill parity. **Every guard was itself mutation-probed** (12 mutations, all caught); two initially-vacuous guards were found and repaired by that probe — the same defect class this release exists to eliminate.
+- `tests/workflows.test.mjs` grew from 11 to 20 tests guarding each new mechanism, including stage-4 ordering,
+  persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. **Every guard was itself
+  mutation-probed** (12 mutations, all caught); two initially-vacuous guards were found and repaired by that
+  probe — the same defect class this release exists to eliminate.
+- **`/bugfix` carries the probe mechanism in its own form** (it previously had zero mentions of probes, only a
+  reference to the hard rules — and bugfix is where it matters most). Two additions to its stage 2: **reverse
+  confirmation** (revert the fix, the repro command must fail again — a green regression test after a fix does
+  not prove it tested what you fixed) and a **same-class scan** (report "N instances, M fixed"), which is the
+  mechanical version of the field lesson where `core/tank.ts` was fixed while `core/powerup.ts` survived.
+  `/iterate` already had the equivalent red-confirmation ("run it and confirm it really fails"), so it was left alone.
 
 ### Why (evidence)
 
 Logged observation, 2026-09-10, three sessions with the *same* prompt and the *same* model (`deepseek-flash`), differing only in preset:
 
+Same prompt, same model (`deepseek-flash`), same empty directory — only the preset differed. Ratios are quoted **same-scope** (whole session vs whole session):
+
 | | `standard` | `xdev` |
 |---|---|---|
-| tokens | 15.0 M | 132.9 M (**8.9×**) |
-| time to first delivered result | 13.7 min | 62.2 min (**4.5×**) |
-| first source file written | 1.7 min | 31.2 min |
+| tokens (whole session) | 18.22 M | 132.93 M (**7.3×**) |
+| wall clock (whole session) | 24.5 min | 76.6 min (**3.1×**) |
+| **time to first delivered result** (turn 1) | **13.8 min** | **39.7 min** (**2.9×**) |
+| first game source line written | 1.8 min | 26.7 min (**14.8×**) |
 | subagents dispatched | 0 | 24 |
-| 阶段 2 (plan + 6 gate rounds) | — | 194 tool calls / 37.4 % of all context, **0 lines of code** |
+| 阶段 2 (plan + 6 gate rounds) | — | 194 tool calls / **12 subagents** / 37.4 % of context, **0 lines of code** |
+
+> Earlier drafts of this entry quoted 8.9× / 4.5× by pairing `standard`'s **first turn** against xdev's **whole session**. Both figures were recomputed from the raw transcripts on a consistent basis and corrected; the conclusion is unchanged, the premium was overstated.
 
 Both xdev runs' gates passed while the products were broken: a dead module (`powerup.ts`) carried two acceptance criteria's entire evidence chain while the shipped game used a different code path; an acceptance script hardcoded one row `OK` and piped `pnpm test` through `tail`, swallowing the exit code; an assertion called with `w=0,h=0` was true by construction; a shovel power-up claimed 8 cells and delivered 5. **"The command really ran" never implied "the assertion had content."** Of the 12 plan-phase reviewers in one run, 4 were consumed by bookkeeping churn that the rework itself had created — and the fix is not "review harder" but "stop reviewing the text and start trying to break the artifact."
 
