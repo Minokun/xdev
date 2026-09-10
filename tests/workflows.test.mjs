@@ -804,3 +804,43 @@ test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的�
   assert.match(wf, /MAX_PANEL_SUBAGENTS/)
   assert.match(wf, /MAX_REVIEWER_RETRY/)
 })
+
+test('cost-report: 对比模式同口径计算比值，且不拿一方首轮比另一方全量', async () => {
+  // 口径混用是本项目真实犯过的错（7.3× 被写成 8.9×）。对比表必须只用完整会话指标。
+  const { renderComparison, computeMetrics } = await import('../bin/cost-report.mjs')
+  const mk = (id, total, out, cacheRead, span, firstResult, implAt) =>
+    computeMetrics(
+      [
+        { type: 'turn/start', time: 1000, data: { turn: 1 } },
+        { type: 'tool/call', time: 1000 + implAt * 60000, data: { turn: 1, step: 1, callId: 'c', name: 'write', arguments: JSON.stringify({ file_path: '/w/src/a.js' }) } },
+        { type: 'turn/end', time: 1000 + firstResult * 60000, data: { turn: 1 } },
+        { type: 'session', time: 1000 + span * 60000, data: {} },
+      ],
+      { uncachedInput: total - out - cacheRead, cacheRead, cacheWrite: 0, output: out, total, amplification: cacheRead / out },
+      id,
+    )
+  const a = mk('aaaaaaaa', 18_000_000, 169_000, 18_040_000, 24.5, 13.8, 1.8)
+  const b = mk('bbbbbbbb', 132_000_000, 382_000, 132_280_000, 76.6, 39.7, 26.7)
+  const md = renderComparison([a, b], ['base', 'xdev'])
+
+  // 两臂对比必须有比值列，且四个关键比值都按"同口径"算出来
+  assert.ok(md.includes('| base | xdev | 比值 |'), 'two-arm comparison must show a ratio column')
+  const tokenRow = md.split('\n').find((l) => l.startsWith('| 总 token '))
+  assert.ok(tokenRow && tokenRow.includes('**7.33×**'), `token ratio wrong: ${tokenRow}`)
+  const firstRow = md.split('\n').find((l) => l.startsWith('| 首轮交付'))
+  assert.ok(firstRow && firstRow.includes('**2.88×**'), `first-delivery ratio wrong: ${firstRow}`)
+  const implRow = md.split('\n').find((l) => l.startsWith('| 首行实现代码'))
+  assert.ok(implRow && implRow.includes('**14.83×**'), `first-impl ratio wrong: ${implRow}`)
+  assert.ok(md.includes('同口径'), 'must state the scope discipline')
+
+  // 未知值不得渲染成 0（那会把"没数据"伪装成"成本为零"）
+  const partial = computeMetrics([{ type: 'tool/call', time: 1, data: { turn: 1, step: 1, callId: 'c', name: 'bash' } }], null, 'cccccccc')
+  // 把"无数据"那一臂放在**第一列**，这样渲染出来的正是它自己的单元格
+  // （第一版把 partial 放后面，断言检查的却是第一列 = 有数据的那一臂，属假绿）
+  const md2 = renderComparison([partial, b], ['no-data', 'xdev'])
+  const noDataRow = md2.split('\n').find((l) => l.startsWith('| 总 token '))
+  assert.ok(noDataRow.includes('未知'), `missing token data must render 未知: ${noDataRow}`)
+  assert.ok(!noDataRow.includes('| 0.00 M |'), 'missing token data must NOT render as 0')
+  assert.ok(md2.includes('数据不全'), 'must warn when an arm has incomplete data')
+})
+

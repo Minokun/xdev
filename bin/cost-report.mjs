@@ -51,7 +51,7 @@ const ROOT_EXCLUDE = /(^|\/)(vite|webpack|rollup|vitest|jest|playwright|eslint|t
 // ── 输入解析 ────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const out = { session: null, json: false, latest: false, list: false }
+  const out = { session: null, json: false, latest: false, list: false, compare: [] }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--json') out.json = true
@@ -59,6 +59,10 @@ function parseArgs(argv) {
     else if (a === '--list') out.list = true
     else if (a === '--session') out.session = argv[++i]
     else if (a.startsWith('--session=')) out.session = a.slice('--session='.length)
+    else if (a === '--compare') {
+      // 吃后面所有非 -- 开头的 token 作为要对比的 session
+      while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) out.compare.push(argv[++i])
+    }
   }
   return out
 }
@@ -402,6 +406,48 @@ export function renderMarkdown(m) {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
+/**
+ * 两个（或多个）会话的对比表 + 比值。用于 xdev-vs-baseline 的 A/B——
+ * 口径纪律：比值必须同口径（全量 × 全量），混用口径会夸大差距
+ * （本项目 v3.1 初稿就把 7.3× 误写成 8.9×，见 CHANGELOG）。
+ */
+export function renderComparison(reports, labels = []) {
+  const L = []
+  const name = (i) => labels[i] || reports[i].id.slice(0, 8)
+  L.push('# 成本对比 — ' + reports.map((_, i) => name(i)).join(' vs '))
+  L.push('')
+  const rows = [
+    ['总 token', (m) => (m.tokens ? m.tokens.total / M : null), 2, ' M'],
+    ['缓存重读', (m) => (m.tokens ? m.tokens.cacheRead / M : null), 2, ' M'],
+    ['输出', (m) => (m.tokens ? m.tokens.output / M : null), 3, ' M'],
+    ['缓存放大倍数', (m) => (m.tokens ? m.tokens.amplification : null), 1, '×'],
+    ['墙钟 (min)', (m) => m.spanMin, 1, ''],
+    ['首轮交付 (min)', (m) => m.firstResultAtMin, 1, ''],
+    ['首行实现代码 (min)', (m) => m.firstImpl?.at ?? null, 1, ''],
+    ['工具调用', (m) => m.toolCalls, 0, ''],
+    ['subagent 数', (m) => m.subagents, 0, ''],
+    ['阶段 2 subagent', (m) => m.planPhase.subagents, 0, ''],
+    ['阶段 2 占比', (m) => (m.planPhase.shareOfAll == null ? null : m.planPhase.shareOfAll * 100), 0, '%'],
+  ]
+  L.push('| 指标 | ' + reports.map((_, i) => name(i)).join(' | ') + (reports.length === 2 ? ' | 比值 |' : ' |'))
+  L.push('|---|' + reports.map(() => '---|').join('') + (reports.length === 2 ? '---|' : ''))
+  for (const [label, get, digits, unit] of rows) {
+    const vals = reports.map(get)
+    const cells = vals.map((v) => (v == null ? '未知' : v.toFixed(digits) + unit))
+    let ratio = ''
+    if (reports.length === 2) {
+      const [a, b] = vals
+      ratio = a == null || b == null || a === 0 ? '—' : `${(b / a).toFixed(2)}×`
+    }
+    L.push(`| ${label} | ${cells.join(' | ')} |${reports.length === 2 ? ` **${ratio}** |` : ''}`)
+  }
+  L.push('')
+  L.push('> 比值列 = 后者 ÷ 前者。**同口径**（全量 × 全量）——不可拿一方首轮比另一方全量。')
+  const missing = reports.filter((m) => m.missing.tokens || m.missing.events).map((m) => m.id.slice(0, 8))
+  if (missing.length) L.push(`> ⚠️ 以下会话数据不全，比值仅供参考：${missing.join('、')}`)
+  return L.join('\n')
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2))
   if (opts.list) {
@@ -410,6 +456,23 @@ function main() {
     }
     return 0
   }
+  if (opts.compare.length >= 2) {
+    const reports = []
+    const labels = []
+    for (const spec of opts.compare) {
+      const sess = resolveSession({ session: spec })
+      if (!sess) {
+        console.error(`未找到会话：${spec}`)
+        return 2
+      }
+      reports.push(report(sess))
+      labels.push(spec)
+    }
+    if (opts.json) console.log(JSON.stringify(reports, null, 2))
+    else console.log(renderComparison(reports, labels))
+    return 0
+  }
+
   const session = resolveSession(opts)
   if (!session) {
     console.error('未找到会话。用 --list 查看可用会话，或 --session <id|path> 指定。')

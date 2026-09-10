@@ -43,6 +43,28 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
   cost cap: call it once, never re-read transcripts to fill the table, and record "cost unknown" when
   data is missing rather than investigating.
 
+- **Stage-2 gate orchestration moved into code** (`.claude/workflows/full-dev-gate.js`) — the Tier 1 that
+  `RESEARCH.md §12.1` specified and never shipped ("返工轮次是代码不是纪律"). The script now enforces what
+  prose could not: hard round cap (`MAX_ROUNDS=2`, escalate instead of looping — the field run reached round 6),
+  reviewer failure re-dispatched once and then marked `missing` with **that round barred from approving**
+  (the field run treated a hung reviewer as "review complete"), a phase-2 subagent budget (`≤6`; the field run
+  used 12, half of all subagents), and a hit-rate ledger whose `confirmed` column is deliberately left blank
+  for the main thread to fill — **the script never self-confirms findings**. A manual fallback path is kept for
+  runtimes without `Workflow`. Writing it surfaced a real hole the tests caught: a missing *panel* dimension
+  did not block approval, only a failed gate did.
+- **Research side made isomorphic to the dev side**: T1 now carries the **factual-premise exception**
+  (in a preregistration, "we can't get this data / can only approximate by hand" is a claim awaiting
+  verification, not an approved decision — and the research cost is worse: a whole experiment budget burned
+  on a false premise). T2 now also requires the **parsing script itself to be falsifiable** — feed it a
+  deliberately corrupted log and it must not stay green, since a vacuous parser poisons the entire provenance chain.
+- **`/ask` gained the probe outlet it lacked**: being read-only, it has no "break it and watch it go red"
+  option — so every high-impact finding (especially negative ones: "unsupported / never written / dead code")
+  must now carry **one read-only, reproducible command** the reader can re-run. Findings without such a command
+  are demoted to Unknowns. `/ask` was the one flow where a vacuous conclusion could walk away clean.
+- **`bin/cost-report.mjs --compare <a> <b>`** and `docs/experiments/xdev-vs-baseline/PREREGISTRATION.md`:
+  the A/B is now one command plus a pre-registered decision rule. Ratios are computed same-scope only —
+  the discipline that was violated when this release's own 7.3× was first written as 8.9×.
+
 ### Changed
 
 - **阶段 4 order is now non-invertible: probes → full test run → adversarial review → commit.** The previous order allowed commit-then-review, which in practice landed deliverables carrying an unadjudicated review.
