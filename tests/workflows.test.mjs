@@ -1119,3 +1119,15 @@ test('审查台账落在跨流程存活的位置（否则"连续 5 次"永不触
   assert.match(stage2, /append-only|只增不改/, 'ledger must be append-only')
   assert.match(stage2, /跨流程存活|不影响台账/, 'must state why it lives there')
 })
+
+test('硬规则 2 要求修复后的探针覆盖缺陷的全部语法形态（A/B 实验实证）', async () => {
+  // 实证来源：A/B 实验的交付物在"修了 CRITICAL + 补了判据与变异 + 套件 20/20 全绿 +
+  // 独立复核 approve"之后，缺陷仍然存活——因为判据只覆盖 7~7 这一种形态，裸 ~ 没测。
+  // 这条纪律是阶段 2「发现后扫类」在测试覆盖上的对应物。
+  const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const rules = source.slice(source.indexOf('## 硬规则'), source.indexOf('## 阶段 1'))
+  assert.match(rules, /全部语法形态/, 'rule 2 must require probes for ALL syntactic forms')
+  assert.match(rules, /每个字段位置/, 'must require covering every field position')
+  assert.match(rules, /边界取值/, 'must require boundary values')
+  assert.match(rules, /7~7|7≡0/, 'must carry the concrete field example')
+})
