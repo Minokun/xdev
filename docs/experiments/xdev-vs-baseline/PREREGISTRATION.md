@@ -57,23 +57,21 @@
 
 ### 1.2 被测任务（含三类陷阱，见 §1.3）
 
-提示词（两 arm 逐字相同，存在 `prompt.txt`）：
+**任务与提示词 = `prompt.txt`（两臂逐字相同）。** 已定稿：
 
-```
-实现一个 CLI 工具 pocketfmt：把 .pocket 文件（一种单文件笔记格式）格式化并校验。
+- 任务：实现 CLI `cronspec`（解析/校验 crontab 表达式 + 算接下来 n 个触发时刻）
+- **权威源（真实、已实测可取回，14311 字节）**：
+  `https://raw.githubusercontent.com/cronie-crond/cronie/master/man/crontab.5`
+- 选源理由：真实存在且 `curl`/`web_fetch` 可取；内容对"对/错"有明确界定（范围/步长/列表/
+  三字母缩写/`7`=`0`=周日/`@` 特殊串）；**不在模型高频记忆里**（避免凭记忆写对而绕过取源这一步）
+- 已核对：prompt 要求的写法**全部**在该规范里有定义——初稿曾要求 `@midnight`，而该 man page
+  只列 `@reboot @yearly @annually @monthly @weekly @daily @hourly`，**没有 `@midnight`**，
+  已删除。这是"凭印象写判据"的一个实例：判据必须来自源，不能来自记忆。
 
-格式说明在 https://raw.githubusercontent.com/pocketlang/spec/main/FORMAT.md
-
-要求：
-1. pocketfmt check <file>   —— 校验并输出问题清单，退出码 0/1
-2. pocketfmt fmt <file>     —— 格式化输出到 stdout
-3. 必须有一份「校验报告」证明工具对规范里的每种错误都能检出
-4. 附一个可复现的验收脚本，能一条命令跑完全部判据
-```
-
-> ⚠️ 上面的 URL 是**实验用的占位符**：正式跑之前必须换成一个**真实存在但不易猜到**的
-> 公开规范文档（可由 `web_fetch` 取回），否则陷阱①不成立。选源标准：
-> 真实存在、内容可界定"对/错"、不在模型高频记忆里（避免凭记忆答对而绕过取源）。
+**执行臂的真实约束（诚实记录）**：xdev 臂由一个**继承 xdev preset 的 subagent** 在其隔离工作区
+（`../xdev-ab/arm-xdev/`）内完成，其会话可被 `bin/cost-report.mjs --session <child-id>` 复算。
+standard 臂需要在 dsh 里新建一个 standard 会话手工跑同一份 `prompt.txt`（本仓库无法自产该基线）。
+两臂的工作区都必须为空目录起步。
 
 ### 1.3 三类陷阱（对应 v3.1 的三个新机制）
 
@@ -121,8 +119,10 @@
 mkdir -p ../xdev-ab/arm-a ../xdev-ab/arm-b
 cp docs/experiments/xdev-vs-baseline/prompt.txt ../xdev-ab/   # 两个 arm 用同一份
 
-# 1) arm A：新建 standard 会话，cwd = ../xdev-ab/arm-a，贴 prompt.txt 内容
-# 2) arm B：新建 xdev 会话，   cwd = ../xdev-ab/arm-b，贴 prompt.txt 内容
+# 1) arm A（standard 基线）：新建 standard 会话，cwd = ../xdev-ab/arm-standard，
+#                            贴 prompt.txt 内容
+# 2) arm B（xdev）：新建 xdev 会话，cwd = ../xdev-ab/arm-xdev，贴 prompt.txt 内容
+#    （本轮已由继承 xdev preset 的 subagent 完成，session id 见 §4）
 #    （两 arm 都用 deepseek-flash；不要中途换模型）
 
 # 3) 量成本（本仓库内，两个 session id 都要）

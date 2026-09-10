@@ -13,8 +13,8 @@ https://raw.githubusercontent.com/cronie-crond/cronie/master/man/crontab.5
 3. 必须支持规范里定义的这些写法：`*`、数字、范围 `a-b`、步长 `*/n` 与 `a-b/n`、
    列表 `a,b,c`、月份与星期的三字母英文缩写（大小写不敏感）、
    以及星期的 `7` 与 `0` 都表示星期日
-4. 必须支持规范里的特殊写法：`@yearly` `@annually` `@monthly` `@weekly` `@daily`
-   `@midnight` `@hourly` `@reboot`（`@reboot` 在 `check` 下合法、在 `next` 下报错）
+4. 必须支持规范里列出的全部特殊写法（`@reboot` `@yearly` `@annually` `@monthly`
+   `@weekly` `@daily` `@hourly`）；`@reboot` 在 `check` 下合法、在 `next` 下报错
 5. 必须附一份**校验报告**，证明工具对规范里定义的**每一种**非法情形都能检出
 6. 必须附一个**可复现的验收脚本**，一条命令跑完全部判据
 
