@@ -151,6 +151,34 @@ function git(args) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim()
 }
 
+/**
+ * 中断清理。**这是被真实事故驱动的**：跑批过程中若被 kill（工具超时、Ctrl-C），
+ * 已经改写但尚未还原的源文件会留在工作区，我因此手工清理过两次。
+ * 记下"当前正在变异的文件"，收到信号时立即 `git checkout --` 还原再退出。
+ */
+let activeFile = null
+function restoreActive() {
+  if (!activeFile) return
+  try {
+    execFileSync('git', ['checkout', '--', activeFile], { cwd: ROOT })
+    console.error(`\n⚠️ 收到中断信号，已还原 ${activeFile}（避免留下半变异状态）`)
+  } catch {
+    console.error(`\n⚠️ 中断且还原 ${activeFile} 失败 —— 请手工 git checkout -- ${activeFile}`)
+  }
+  activeFile = null
+}
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    restoreActive()
+    process.exit(130)
+  })
+}
+process.on('uncaughtException', (e) => {
+  restoreActive()
+  console.error(e)
+  process.exit(1)
+})
+
 function runTests() {
   const r = spawnSync('node', TEST_CMD, { cwd: ROOT, encoding: 'utf8' })
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`
@@ -221,12 +249,14 @@ function main() {
       continue
     }
     writeFileSync(path, src.replace(p.old, p.new))
+    activeFile = p.file // 供中断清理使用
     if (p.file.startsWith('claude-code/') || p.file === 'agent.cordis.yml' || p.file === 'preset.yml') {
       regenerate()
     }
     const r = runTests()
     // git checkout 精确还原（比手工备份可靠：不会留下半变异状态）
     execFileSync('git', ['checkout', '--', p.file], { cwd: ROOT })
+    activeFile = null
     if (p.file.startsWith('claude-code/') || p.file === 'agent.cordis.yml' || p.file === 'preset.yml') {
       regenerate()
     }
