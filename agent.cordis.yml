@@ -134,6 +134,11 @@
 
 # ── goals（续航约束的运行时等价物，见 RESEARCH.md §12.1）────────────────────
 
+# 人类侧 /goal 命令。v3.0 重写时漏了这一行（standard preset 有），
+# 后果是 /goal 不可用——而 goal 正是 xdev 续航约束的运行时等价物。
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
 
@@ -249,6 +254,11 @@
   config:
     fetch: true
     searchTimeoutMs: 60000
+
+# 交付物声明（present）。同样是 v3.0 重写漏掉的一行——没有它，agent 无法把
+# 最终产物显式登记给用户，只能靠文字描述路径。
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
 
 - id: tool-ask-user
   name: '@deepseek-ai/dsh-tool-ask-user'

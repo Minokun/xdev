@@ -1006,3 +1006,13 @@ test('cost-report: --latest 只选顶层会话，且子会话的 token 也读得
   // ③ listSessions 必须标注 isChild，便于排查
   assert.ok(all.every((s) => typeof s.isChild === 'boolean'), 'every session must carry isChild')
 })
+
+test('preset 补齐 command-goal 与 present（v3.0 重写的两处非设计遗漏）', async () => {
+  // 这两行 standard preset 有、xdev 没有，且都没有注释说明理由——属遗漏而非设计。
+  // 后果：人类侧 /goal 不可用；交付物无法通过 present 显式登记。
+  const cordis = await readFile(join(repoRoot, 'agent.cordis.yml'), 'utf8')
+  assert.match(cordis, /id:\s*command-goal/, 'human-side /goal must be registered')
+  assert.match(cordis, /dsh-command-goal/, 'command-goal must point at the dsh command package')
+  assert.match(cordis, /^- id:\s*present$/m, 'present tool must be registered')
+  assert.match(cordis, /dsh-tool-present/, 'present must point at the dsh tool package')
+})
