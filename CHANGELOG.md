@@ -4,6 +4,46 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.1.0] - 2026-09-10
+
+### Added
+
+- **`/xdev-research`** — a preregistration-gated algorithm research flow with experiment provenance, machine judges, and honest negative results: five-lens review panel, frozen pre-registration, hash-chained `runs/<id>/metrics.json`, and research-specific T1–T3 rules. (Landed earlier in the v3.1 line; recorded here for release completeness.)
+- **Falsification probes (`伪证探针`) — hard rule 2 is now "判据必须可伪证", not "验证必须真实执行".** Every acceptance criterion must first be *shown to fail*: break the implementation, run that criterion's own command, confirm it goes red, roll back. A criterion that stays green is treated as **no criterion at all**. Applies to all acceptance criteria *and to any self-built script used to claim "0 gaps / all green"*. The probe table (criterion / mutation / command / expected) is authored **before** the implementation and recorded as delivery evidence.
+- **External grounding gate (阶段 1)** — for replicate / integrate / migrate / spec-implementation work, every functional point must answer "where does the authoritative truth for this live, and is it outside the repo?" If yes, fetch it *before* designing and record source + retrieval command. Design documents must now separate **factual premises** (claims about the outside world: "X can't be done / only manual approximation is possible") from **design decisions** (free choices). Only decisions are axioms.
+- **`[前提存疑]` output in the drift check (附录 B)** — the one sanctioned exception to "only compare implementation against design": the drift reviewer may question whether a design premise holds, because a design-referential gate set structurally cannot.
+- **Gate-review discipline in 阶段 2** — freeze the artifact under review (sha256 recorded in the dispatch prompt and `.menxia.log`); one revision per round, never edit while a reviewer is running; **round cap ≤3 enforced with user escalation**; documentation bookkeeping (stale counts, broken citations, dangling references) demoted to same-round corrections that may **not** be a standalone reject reason; **same-class scan** after every finding (`rg` the pattern repo-wide, report "N instances, M fixed").
+- **Adversarial review now attacks the gates themselves (附录 D)** — four mandatory checks: vacuous assertions, assertions against dead modules the product never imports, self-certifying gates (expectations recomputed by the function under test, artifacts auto-regenerated before asserting, piped commands swallowing exit codes), and instance-vs-class cleanup of prior fixes.
+- **Falsifiability audit in A3 and a factual-premise challenge in A4** — "if the implementation were broken, would this criterion go red?" is now a required per-criterion answer, and unverified factual premises are treated as `missing`/HIGH rather than protected by the design-deference clause.
+
+### Changed
+
+- **阶段 4 order is now non-invertible: probes → full test run → adversarial review → commit.** The previous order allowed commit-then-review, which in practice landed deliverables carrying an unadjudicated review.
+- **Parallel workers must be isolated in their own `git worktree`** (or dispatched serially). Shared-tree parallel work was observed corrupting `pnpm test` / `typecheck` results and breaking `node_modules` symlinks.
+- **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
+- **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
+- **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
+- `tests/workflows.test.mjs` grew from 11 to 18 tests guarding each new mechanism, including stage-4 ordering and persona/skill parity. **Every guard was itself mutation-probed** (12 mutations, all caught); two initially-vacuous guards were found and repaired by that probe — the same defect class this release exists to eliminate.
+
+### Why (evidence)
+
+Logged observation, 2026-09-10, three sessions with the *same* prompt and the *same* model (`deepseek-flash`), differing only in preset:
+
+| | `standard` | `xdev` |
+|---|---|---|
+| tokens | 15.0 M | 132.9 M (**8.9×**) |
+| time to first delivered result | 13.7 min | 62.2 min (**4.5×**) |
+| first source file written | 1.7 min | 31.2 min |
+| subagents dispatched | 0 | 24 |
+| 阶段 2 (plan + 6 gate rounds) | — | 194 tool calls / 37.4 % of all context, **0 lines of code** |
+
+Both xdev runs' gates passed while the products were broken: a dead module (`powerup.ts`) carried two acceptance criteria's entire evidence chain while the shipped game used a different code path; an acceptance script hardcoded one row `OK` and piped `pnpm test` through `tail`, swallowing the exit code; an assertion called with `w=0,h=0` was true by construction; a shovel power-up claimed 8 cells and delivered 5. **"The command really ran" never implied "the assertion had content."** Of the 12 plan-phase reviewers in one run, 4 were consumed by bookkeeping churn that the rework itself had created — and the fix is not "review harder" but "stop reviewing the text and start trying to break the artifact."
+
+### Upgrade notes
+
+- Probes add a small fixed cost per criterion (one mutation + one run). Scope them to the acceptance criteria and any green-claiming script; you do not need one per unit test.
+- If you have a `docs/state/xdev--<branch>.md` from an older run, refresh it before resuming — 阶段 4 now requires it to reflect the final state.
+
 ## [v3.0.0] - 2026-09-02
 
 ### Breaking / Removed
