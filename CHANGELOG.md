@@ -4,6 +4,127 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.1.0] - 2026-09-10
+
+### Added
+
+- **`/xdev-research`** — a preregistration-gated algorithm research flow with experiment provenance, machine judges, and honest negative results: five-lens review panel, frozen pre-registration, hash-chained `runs/<id>/metrics.json`, and research-specific T1–T3 rules. (Landed earlier in the v3.1 line; recorded here for release completeness.)
+- **Falsification probes (`伪证探针`) — hard rule 2 is now "判据必须可伪证", not "验证必须真实执行".** Every acceptance criterion must first be *shown to fail*: break the implementation, run that criterion's own command, confirm it goes red, roll back. A criterion that stays green is treated as **no criterion at all**. Applies to all acceptance criteria *and to any self-built script used to claim "0 gaps / all green"*. The probe table (criterion / mutation / command / expected) is authored **before** the implementation and recorded as delivery evidence.
+- **External grounding gate (阶段 1)** — for replicate / integrate / migrate / spec-implementation work, every functional point must answer "where does the authoritative truth for this live, and is it outside the repo?" If yes, fetch it *before* designing and record source + retrieval command. Design documents must now separate **factual premises** (claims about the outside world: "X can't be done / only manual approximation is possible") from **design decisions** (free choices). Only decisions are axioms.
+- **`[前提存疑]` output in the drift check (附录 B)** — the one sanctioned exception to "only compare implementation against design": the drift reviewer may question whether a design premise holds, because a design-referential gate set structurally cannot.
+- **Gate-review discipline in 阶段 2** — freeze the artifact under review (sha256 recorded in the dispatch prompt and `.menxia.log`); one revision per round, never edit while a reviewer is running; **round cap ≤2 enforced with user escalation**; documentation bookkeeping (stale counts, broken citations, dangling references) demoted to same-round corrections that may **not** be a standalone reject reason; **same-class scan** after every finding (`rg` the pattern repo-wide, report "N instances, M fixed").
+- **Adversarial review now attacks the gates themselves (附录 D)** — four mandatory checks: vacuous assertions, assertions against dead modules the product never imports, self-certifying gates (expectations recomputed by the function under test, artifacts auto-regenerated before asserting, piped commands swallowing exit codes), and instance-vs-class cleanup of prior fixes.
+- **Falsifiability audit in A3 and a factual-premise challenge in A4** — "if the implementation were broken, would this criterion go red?" is now a required per-criterion answer, and unverified factual premises are treated as `missing`/HIGH rather than protected by the design-deference clause.
+
+- **`tool-web` reinstated — read-only external grounding.** The v3.0 refactor dropped web tools on the theory that "offline dev" means fewer distractions, and a guard test enforced their absence. The field comparison showed the price: the task was *"replicate the original game faithfully"*, the authoritative level data was publicly available, and the xdev runs never looked for it — so the design was built on a false premise ("copyright forbids it, approximate by hand") that all six gate rounds were then structurally forbidden to question. `web_fetch` + `web_search` are back as **read-only** access for authoritative external truth (original behaviour, upstream API contracts, standards, the real data behind a reimplementation), tied to the 阶段 1 grounding check. The guard test is inverted accordingly: the row must stay, must keep `fetch: true`, and must gain no write/post capability. Scope discipline is explicit — fetch the truth a criterion depends on, cite it, move on; this is not open-ended browsing.
+
+- **Two measurement scripts ship with xdev** (`bin/`, plain `node`, zero dependencies):
+  - **`cost-report.mjs`** — the cost ledger for a session: total tokens (uncached / cache-read / output),
+    wall clock, turns, time-to-first-delivery, tool calls, subagents, phase-2 subagent share, and
+    **cache amplification = `cacheRead ÷ output`**. That last metric is the diagnostic one: it reflects
+    orchestration efficiency only, independent of task size. Measured on the same model: `standard` 107×,
+    xdev/flash **346×**, xdev/pro 67× — the machinery is fine for a model that stops itself and 3.2× worse
+    for one that doesn't, which is why the remedy is an envelope rather than fewer mechanisms.
+  - **`drift-check.mjs`** — mechanical "documented claim vs repo reality" comparison against a
+    `.xdev/drift.json` claims table, plus repo-wide facts (test file/ case counts, branch, worktree state)
+    and command-existence checks. This is the one defect class that recurred *after* being caught:
+    two gate rounds rejected the plan over it and the final state still carried 17 mismatches, mostly
+    overstatements. xdev dogfoods it — a test asserts this repo is drift-free.
+- **阶段 2 gains a cost envelope (the brake it never had)**: ≤2 gate rounds, ≤6 phase-2 subagents,
+  ≤150 phase-2 tool calls, ≤20% of context. Any breach downgrades to a spoken plan plus a pre-gate
+  Q&A, with the reason recorded in the decision brief. Baseline it replaces: 6 rounds / 12 subagents
+  (50% of all) / 194 calls / 37.4% of context, for zero lines of code.
+- **Reviewer hit-rate ledger**: every dispatch appends "reported N / confirmed M / verdict" to
+  `<plan>.menxia.log`; a dimension with five consecutive runs of zero confirmed findings is removed
+  from the default roster. Downsize on evidence — but never delete independent review, which caught
+  both models' most lethal defects while 143/52 green tests missed them.
+- **阶段 4 now runs `bin/drift-check.mjs` before the manual claim review and records
+  `bin/cost-report.mjs` output in the delivery report**, both before commit. The ledger carries its own
+  cost cap: call it once, never re-read transcripts to fill the table, and record "cost unknown" when
+  data is missing rather than investigating.
+
+- **Stage-2 gate orchestration moved into code** (`.claude/workflows/full-dev-gate.js`) — the Tier 1 that
+  `RESEARCH.md §12.1` specified and never shipped ("返工轮次是代码不是纪律"). The script now enforces what
+  prose could not: hard round cap (`MAX_ROUNDS=2`, escalate instead of looping — the field run reached round 6),
+  reviewer failure re-dispatched once and then marked `missing` with **that round barred from approving**
+  (the field run treated a hung reviewer as "review complete"), a phase-2 subagent budget (`≤6`; the field run
+  used 12, half of all subagents), and a hit-rate ledger whose `confirmed` column is deliberately left blank
+  for the main thread to fill — **the script never self-confirms findings**. A manual fallback path is kept for
+  runtimes without `Workflow`. Writing it surfaced a real hole the tests caught: a missing *panel* dimension
+  did not block approval, only a failed gate did.
+- **Research side made isomorphic to the dev side**: T1 now carries the **factual-premise exception**
+  (in a preregistration, "we can't get this data / can only approximate by hand" is a claim awaiting
+  verification, not an approved decision — and the research cost is worse: a whole experiment budget burned
+  on a false premise). T2 now also requires the **parsing script itself to be falsifiable** — feed it a
+  deliberately corrupted log and it must not stay green, since a vacuous parser poisons the entire provenance chain.
+- **`/ask` gained the probe outlet it lacked**: being read-only, it has no "break it and watch it go red"
+  option — so every high-impact finding (especially negative ones: "unsupported / never written / dead code")
+  must now carry **one read-only, reproducible command** the reader can re-run. Findings without such a command
+  are demoted to Unknowns. `/ask` was the one flow where a vacuous conclusion could walk away clean.
+- **`bin/cost-report.mjs --compare <a> <b>`** and `docs/experiments/xdev-vs-baseline/PREREGISTRATION.md`:
+  the A/B is now one command plus a pre-registered decision rule. Ratios are computed same-scope only —
+  the discipline that was violated when this release's own 7.3× was first written as 8.9×.
+
+- **`tests/probes/mutations.mjs` — the mutation-probe runner, now in the repo.** Earlier the probes
+  lived only in `/tmp`, which made claims like *"12 mutations, all caught"* **unreproducible by anyone** —
+  an unfalsifiable claim, i.e. exactly the defect class this release exists to remove. It is now one
+  command: each probe rewrites a source file, runs the suite, **must go red**, then restores via
+  `git checkout` (with a worktree-integrity check). 44 probes across doc / bugfix / research / ask /
+  cost / drift / gate.
+  Its first full run found **7 decorative guards of my own** — assertions that matched a keyword while
+  the rule's meaning was inverted, compared with a prefix (`includes('≤6')` passing `≤60`), checked
+  order by `indexOf` without pinning the step number, or were simply missing (research T1/T2 and the
+  `/ask` clause had no guard at all). All 7 were repaired and the suite now reports
+  **46 caught / 0 vacuous**. Two of those fixes required fixing the *fixture*, not the assertion:
+  a `specs/` fixture built from `.md` files could never exercise the directory logic, and a `--latest`
+  assertion run against real data was empty because the newest real session happened to be top-level.
+
+### Changed
+
+- **阶段 4 order is now non-invertible: probes → full test run → adversarial review → commit.** The previous order allowed commit-then-review, which in practice landed deliverables carrying an unadjudicated review.
+- **Parallel workers must be isolated in their own `git worktree`** (or dispatched serially). Shared-tree parallel work was observed corrupting `pnpm test` / `typecheck` results and breaking `node_modules` symlinks.
+- **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
+- **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
+- **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
+- `tests/workflows.test.mjs` grew from 11 to 50 tests guarding each new mechanism, including stage-4 ordering,
+  persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
+  mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
+  anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only
+  in `/tmp`; that claim was itself unreproducible and has been withdrawn. Moving the probes into the repo
+  immediately exposed **seven decorative guards** — assertions that matched a keyword while the rule's meaning
+  was inverted, or compared with a prefix, or had no guard at all. They were repaired; two of the fixes
+  required fixing the *fixture* rather than the assertion.)
+- **`/bugfix` carries the probe mechanism in its own form** (it previously had zero mentions of probes, only a
+  reference to the hard rules — and bugfix is where it matters most). Two additions to its stage 2: **reverse
+  confirmation** (revert the fix, the repro command must fail again — a green regression test after a fix does
+  not prove it tested what you fixed) and a **same-class scan** (report "N instances, M fixed"), which is the
+  mechanical version of the field lesson where `core/tank.ts` was fixed while `core/powerup.ts` survived.
+  `/iterate` already had the equivalent red-confirmation ("run it and confirm it really fails"), so it was left alone.
+
+### Why (evidence)
+
+Logged observation, 2026-09-10, three sessions with the *same* prompt and the *same* model (`deepseek-flash`), differing only in preset:
+
+Same prompt, same model (`deepseek-flash`), same empty directory — only the preset differed. Ratios are quoted **same-scope** (whole session vs whole session):
+
+| | `standard` | `xdev` |
+|---|---|---|
+| tokens (whole session) | 18.22 M | 132.93 M (**7.3×**) |
+| wall clock (whole session) | 24.5 min | 76.6 min (**3.1×**) |
+| **time to first delivered result** (turn 1) | **13.8 min** | **39.7 min** (**2.9×**) |
+| first game source line written | 1.7 min | 24.8 min (**14.8×**) |
+| subagents dispatched | 0 | 24 |
+| 阶段 2 (plan + 6 gate rounds) | — | 194 tool calls / **12 subagents** / 37.4 % of context, **0 lines of code** |
+
+> Earlier drafts of this entry quoted 8.9× / 4.5× by pairing `standard`'s **first turn** against xdev's **whole session**. Both figures were recomputed from the raw transcripts on a consistent basis and corrected; the conclusion is unchanged, the premium was overstated.
+
+Both xdev runs' gates passed while the products were broken: a dead module (`powerup.ts`) carried two acceptance criteria's entire evidence chain while the shipped game used a different code path; an acceptance script hardcoded one row `OK` and piped `pnpm test` through `tail`, swallowing the exit code; an assertion called with `w=0,h=0` was true by construction; a shovel power-up claimed 8 cells and delivered 5. **"The command really ran" never implied "the assertion had content."** Of the 12 plan-phase reviewers in one run, 4 were consumed by bookkeeping churn that the rework itself had created — and the fix is not "review harder" but "stop reviewing the text and start trying to break the artifact."
+
+### Upgrade notes
+
+- Probes add a small fixed cost per criterion (one mutation + one run). Scope them to the acceptance criteria and any green-claiming script; you do not need one per unit test.
+- If you have a `docs/state/xdev--<branch>.md` from an older run, refresh it before resuming — 阶段 4 now requires it to reflect the final state.
+
 ## [v3.0.0] - 2026-09-02
 
 ### Breaking / Removed

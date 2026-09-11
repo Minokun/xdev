@@ -122,11 +122,13 @@ Modern models are already strong. Most "workflow rules" just restate what the mo
 
 1. **A fresh pair of eyes on your work.** Every gate is a brand-new subagent that has never seen the main conversation — it can't be biased by the "I did it right" narrative. Your plan gets judged by someone who doesn't know the story, not by the person who wrote it.
 2. **Check the books against the record, not memory.** In dev: before coding, the plan passes a binary gate (approve/reject, forced rework) and, once approved, you confirm a **5-line decision brief** with one click instead of reading the plan; after coding, the diff is audited against the original design (drift check). In research: hypotheses and thresholds are **preregistered and frozen** — analysis may only judge, never re-tune — and every number in the report must trace to a hash-chained `runs/<id>/metrics.json` on disk.
-3. **Tests and experiments must actually run.** "Should pass" isn't passing. Commands execute for real, outputs are read for real, background jobs are watched to completion; research metrics are parsed from real logs by tested scripts and adjudicated by a mechanical judge — never hand-written by the model.
+3. **Tests and experiments must actually run — and must first be shown to fail.** "Should pass" isn't passing, and neither is "I ran it and it was green". Every acceptance criterion is broken on purpose first (a mutation probe): damage the implementation, run that criterion's own command, confirm it really goes red, roll back. A criterion that can't go red is treated as **no criterion at all**. Research metrics are parsed from real logs by tested scripts and adjudicated by a mechanical judge — never hand-written by the model.
 
 Why this is worth it: strong models have blind spots that don't disappear — they just move. Our controlled experiment quantified it: the best review combination still misses 20% of planted defects, while an independent gate caught real bugs in already-shipped code. xdev doesn't teach the model to work (it already can) — it guarantees **a second pair of eyes is always present, and the cost of being wrong is always paid early**: bad plans get rejected before code is written, bad changes get caught by adversarial review before merge, and bad research gets caught by provenance audit before anyone believes the number.
 
-And the hidden value: peace of mind. The dev workflow is 270 lines + 5 hard rules, which in plain words are: *"Verification must actually run · verdicts must be honored · don't touch the main branch · ask before irreversible actions · everything else, use your judgment."* That last clause is the point — a model with judgment should use it; the workflow only guards what it would miss when fooling itself.
+And the hidden value: peace of mind. The dev workflow is ~490 lines + 5 hard rules, which in plain words are: *"Verification must really run — and you must be able to prove it can fail · verdicts must be honored and must converge · don't touch the main branch · ask before irreversible actions."*
+
+**An honest boundary (revised after a 2026-09-10 field comparison).** More review is not better. On one identical prompt with the *same* model, xdev spent **7.3× the tokens and 3.1× the wall-clock time** of the plain `standard` preset (same-scope, whole session vs whole session; time to *first* delivered result: 2.9×, first game source line: 14.8× (1.7 → 24.8 min)), and a large share of that premium bought no risk control at all: one xdev run burned **37.4% of its context and 12 review subagents in Stage 2 for zero lines of code**, with two full rejection rounds spent purely on documentation bookkeeping that the rework itself had created (stale counts, a citation to a file it had just deleted). v3.1 therefore does three things: it moves the gates from **inspecting text** to **breaking the artifact and watching it go red** (mechanical, cheap, decisive); it bounds review with a **frozen artifact, a hard ≤2-round cap, and bookkeeping demoted out of its own round**; and it requires anyone adding a reviewer to first answer *"which class of defect can it see that the current panel cannot?"* — if you can't answer, add an `rg` or a `command -v` instead, which is about three orders of magnitude cheaper than another LLM reviewer.
 
 ---
 
@@ -290,25 +292,32 @@ Stage 1: Design — features F1..Fn / Must-Not / acceptance criteria.
          Every user-perceivable interaction channel (key/click/input/route) needs an
          assertable "input → observable effect" criterion; blanket exemptions by layer are rejected.
 Stage 2: Plan & gates — task breakdown → 3 fresh reviewers (coverage ‖ dependency ‖ BDD quality)
-         → Menxia Gate (DEFAULT ON, opt-out --no-menxia): binary approve/reject, forced rework ≤3 rounds.
+         → Menxia Gate (DEFAULT ON, opt-out --no-menxia): binary approve/reject, forced rework ≤2 rounds (enforced in code: MAX_ROUNDS).
            No implementation before the approve verdict.
          → Decision brief: the gate digests the plan into ≤5 lines (what / top risks / user-only decisions)
            and you confirm with ONE click — you never have to read the plan raw.
           ── handoff point (optional, for cross-tool split) ──
-Stage 3: Implement & test — TDD red-green per task, parallel dispatch by task graph,
-         drift check (diff vs Intent Contract), conditional deep review (auth/payment/schema)
-Stage 4: Deliver — full tests (really executed) → adversarial pre-landing review → PR → optional deploy
+Stage 3: Implement & test — TDD red-green per task, parallel dispatch by task graph
+         (each worker isolated in its own git worktree), drift check, conditional deep review
+Stage 4: Deliver — falsification probes → full tests (really executed) → adversarial
+         pre-landing review → delivery-claim consistency check → PR → optional deploy
 ```
 
-**5 hard rules** (everything else is a deviable default): verification must really run · fresh verdicts must be honored · never commit to base branch · irreversible actions need user confirmation · defaults may be skipped with a one-line reason.
+**5 hard rules**: verification must really run · **every criterion must be falsifiable (prove it fails before claiming it passes)** · fresh verdicts must be honored *and must converge* (a missing reviewer counts as unknown, ≤2 rounds, same defect class twice → change the design) · never commit to base branch · irreversible actions need user confirmation.
 
 ### Built-in reliability features
 
-**Menxia Gate (default ON; `--no-menxia` to skip)** — A fresh reviewer gives a binary approve/reject on the whole plan with design-deference (approved / exempted / non-goal decisions in the design are never grounds for rejection) and injection-guard clauses; rejection forces a revision with per-item change notes, re-reviewed ≤3 rounds, and from round 2 the reviewer first verifies the change notes against the actual plan diff (4/5 fake revisions were caught in the N4 experiment). **No code is written before the verdict** — waiting time is restricted to read-only prep. This clause is exempt from hard-rule-5 deviation: even small tasks run the gate (it costs one subagent).
+**Falsification probes (hard rule 2 — the core v3.1 change)** — Before any implementation is written, every acceptance criterion gets a probe: the mutation (shortest way to break the implementation), the probe command (which must be *the same command* as that criterion's verification command), and the expectation (which must be "red"). At delivery each probe is run; **any probe that stays green halts delivery**. The same applies to any self-built script used to claim "0 gaps / all green" — which is exactly where this failed in practice: a hardcoded `status='OK'` row, `pnpm test | tail` swallowing the exit code, an assertion whose subject was auto-regenerated in `beforeAll`. A criterion is text; *"I broke it and it really went red"* is information.
 
-**Decision brief (one-click confirmation)** — On approve, the gate's `decision_brief` — what this plan does (1 line) / biggest risks (≤3) / decisions only the user can make (≤3, each with options + recommendation) — is presented via a single question. You read 5 lines and click once instead of reading the plan. Interaction channels whose acceptance relies on human eyeballing are surfaced in `decisions` explicitly. A 3-round rejection escalation package uses the same format.
+**External grounding (Stage 1)** — For replicate / integrate / compatible / migrate / implement-to-spec work, every functional point must answer: *where does the authoritative truth for this live, and is it outside the repo?* If it is, fetch it **before** designing and record the source plus the retrieval command in the design — xdev ships **read-only** `web_fetch`/`web_search` for exactly this (they were removed in v3.0 as "offline dev" and reinstated in v3.1 after that removal proved to be the single most expensive gap in the field comparison). Design documents must separate **factual premises** ("X can't be done / only manual approximation is possible" — claims about the outside world) from **design decisions** (choices you are free to make). Only decisions are axioms. Field lesson: writing "we can only approximate the original levels by hand for copyright reasons" as a premise left 12 reviewers across 6 gate rounds *structurally forbidden* from questioning the one error that decided the outcome.
 
-**Review orchestration (appendix E)** — Reviewers are not piled on; they're staffed. Default lineup = A1–A3 panel (finders: coverage / dependency / BDD quality) + A4 gate (adjudicator) + B/C/D verifiers. Conditional reviewers are added only on triggers: irreversible ops / production data / money / multi-tenant → **E1 red team**; multi-channel / multi-role / multi-device acceptance → **E2 scenario walkthrough**. The only legal reason to add a reviewer is a structurally different blind spot — the N1–N5 experiment showed stacking same-perspective reviewers adds tokens, not findings.
+**Menxia Gate (default ON; `--no-menxia` to skip)** — A fresh reviewer gives a binary approve/reject on the whole plan with design-deference (approved / exempted / non-goal decisions in the design are never grounds for rejection) and injection-guard clauses; rejection forces a revision with per-item change notes, re-reviewed ≤2 rounds, and from round 2 the reviewer first verifies the change notes against the actual plan diff (4/5 fake revisions were caught in the N4 experiment). **No code is written before the verdict** — waiting time is restricted to read-only prep. This clause is exempt from scale-adaptive skipping: even small tasks run the gate (it costs one subagent). **v3.1 additions**: ① design-deference now covers **decisions only** — every factual premise must be challenged with "was this premise verified, and what is the evidence?"; ② documentation bookkeeping (stale counts, broken citations, dangling references) is reported as *same-round corrections* and may **not** be a standalone reject reason; ③ a second rejection escalates to the user instead of opening a third round (hard cap is code, not prose).
+
+**Review-window discipline (v3.1)** — Before dispatch, hash the artifact (`shasum -a 256`) into the dispatch prompt and `.menxia.log`, and **freeze the artifact for the review window** (revise only after every reviewer of that round has returned); one revision per round; a reviewer that times out or never reports is re-dispatched once, then marked `missing` with its dimension counted as unknown — **an incomplete panel may not approve**; wait on completion notifications, never `sleep`-poll. Field lesson: five independent reviewers across three phases reported "the document was rewritten while I was reviewing it," making verdicts incomparable and forcing repeat rounds.
+
+**Decision brief (one-click confirmation)** — On approve, the gate's `decision_brief` — what this plan does (1 line) / biggest risks (≤3) / decisions only the user can make (≤3, each with options + recommendation) — is presented via a single question. You read 5 lines and click once instead of reading the plan. Interaction channels whose acceptance relies on human eyeballing, and any unverified factual premise, are surfaced in `decisions` explicitly. A 2-round rejection escalation package uses the same format.
+
+**Review orchestration (appendix E)** — Reviewers are not piled on; they're staffed. Default lineup = A1–A3 panel (finders: coverage / dependency / BDD quality) + A4 gate (adjudicator) + B/C/D verifiers. Conditional reviewers are added only on triggers: irreversible ops / production data / money / multi-tenant → **E1 red team**; multi-channel / multi-role / multi-device acceptance → **E2 scenario walkthrough**. The only legal reason to add a reviewer is a structurally different blind spot — the N1–N5 experiment showed stacking same-perspective reviewers adds tokens, not findings. **v3.1 adds a cost axis**: review returns diminish fast (round 1 has the highest hit rate; from round 3 most findings are residue of the same classes), so "add another reviewer" must also answer "which class can it see that the current rounds missed?" — if you can't, add a mechanical check instead (`rg` / `command -v` / a mutation probe cost roughly three orders of magnitude less than an LLM reviewer). **Findings must be followed by a same-class scan**: for every HIGH a reviewer reports, the main thread greps the pattern repo-wide and reports "N instances, M fixed" — in the field, a dead module in `core/tank.ts` was found and fixed while the same class in `core/powerup.ts` survived to delivery, carrying two acceptance criteria's entire evidence chain.
 
 **Session recovery / cross-tool handoff** — At the end of stage 2 the flow writes a minimal state file `docs/state/xdev--<branch>.md` (branch / stage / plan path / next action) and commits the plan. `/full-dev-impl` resumes from that file's next action without replaying the conversation; a missing plan or an anchor commit no longer in history → ask the user to re-plan, never guess. v2-format state files (`full-dev-design--<branch>--<slug>.md`) are not parsed — the flow tells you to finish them with v2 or re-plan.
 
@@ -318,7 +327,7 @@ Stage 4: Deliver — full tests (really executed) → adversarial pre-landing re
 
 **Worker receipts, mainline aggregation** — Independent tasks are dispatched to parallel subagents that return only a receipt (files touched / commands run / real output summary / problems). Workers never write state; the main thread merges receipts and owns the state file. This keeps the supervising context small and prevents unilateral scope creep.
 
-**No silent loss of failed reviewers** — If any of the 3 plan-reflection subagents fails or times out it is retried once; on second failure it's marked `missing` and its dimension's HIGH count is treated as *unknown, i.e. present* — no pass verdict on incomplete data. Background commands must be polled to completion ("will handle it later" stop-turns violate hard rule 1).
+**No silent loss of failed reviewers** — If any of the 3 plan-reflection subagents fails or times out it is retried once; on second failure it's marked `missing` and its dimension is treated as *unknown, i.e. present* — no pass verdict on incomplete data, and no round with an incomplete panel may approve (v3.1, hard rule 3). Background commands must be polled to completion ("will handle it later" stop-turns violate hard rule 1).
 
 **Adversarial pre-landing review** — Before the PR, a fresh subagent is told to assume the diff *will* cause a production incident and to find the three most likely paths (data loss > security > regression > performance), each with a trigger path and file:line evidence — and to report fewer than three rather than invent them (appendix D). Conditional deep review (appendix C) is added when the diff touches auth / payment / PII / schema / new dependencies.
 
@@ -601,6 +610,37 @@ Corollary: when tightening a gate, first ask "is this mechanical or judgement?".
 
 ---
 
+## Built-in tooling (plain `node`, no dependencies)
+
+Two measurement scripts ship with xdev. Both exist because a specific, measured failure
+mode kept recurring — they are not generic utilities.
+
+```bash
+node bin/cost-report.mjs --latest        # what did this session actually cost?
+node bin/cost-report.mjs --session <id> --json
+node bin/drift-check.mjs                 # do the docs still match the repo?
+node bin/drift-check.mjs --init          # scaffold a claims table (.xdev/drift.json)
+```
+
+**`cost-report.mjs` — the cost ledger.** Process overhead used to be invisible, which is
+the only reason a 7.3× token gap went unnoticed for so long. Reports total tokens
+(uncached / cache-read / output), wall clock, turns, time-to-first-delivery, tool calls,
+subagents, **phase-2 subagent share**, and the metric that matters most:
+**cache amplification = cacheRead ÷ output**, which reflects orchestration efficiency only
+and is unaffected by task size. Measured: `standard` 107×, xdev/flash **346×**, xdev/pro 67×
+— the same machinery is fine for a model that knows when to stop and 3.2× worse for one that
+doesn't, which is why the fix is an **envelope**, not fewer mechanisms.
+
+**`drift-check.mjs` — documented claim vs repo reality.** The only defect class that
+recurred *after* being caught: two gate rounds rejected the plan over it (4 review
+subagents), and the final state still carried 17 mismatches, most of them overstatements
+("8 cells" that was 5, "35 levels" that was 9 layouts, "A1..A28" where the tool covered
+A27). Reviews caught the *class* and the last rewrite reintroduced it, with no seventh
+round to catch it. `rg` does not get tired, so this is mechanical now. xdev runs it on
+itself: `.xdev/drift.json` holds its own claims and a test asserts the repo is drift-free.
+
+---
+
 ## File Structure
 
 ```
@@ -616,9 +656,12 @@ xdev/
 │   ├── xdev-full-dev/SKILL.md
 │   └── xdev-research/SKILL.md
 ├── docs/experiments/      ← Sansheng + dsh-integration research (rationale & evidence)
+├── .xdev/drift.json       ← Claims table: "what the docs say" vs "what the repo is" (dogfooded)
 ├── bin/
 │   ├── install.sh         ← Idempotent symlink installer (claude / codex)
-│   └── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
+│   ├── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
+│   ├── cost-report.mjs    ← Cost ledger for a session (tokens, cache amplification, phase-2 share)
+│   └── drift-check.mjs    ← Mechanical "documented claim vs repo reality" comparison
 └── claude-code/           ← Single hand-edited source; .claude/commands/xdev/ + Codex prompts symlink here
     ├── full-dev.md
     ├── full-dev-design.md

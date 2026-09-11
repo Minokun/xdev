@@ -1,0 +1,76 @@
+{
+  "$comment": "xdev 自己的漂移断言表。每条 claim = 文档里的一个声称 + 一个 actual 规格（真值怎么算出来）。**actual 必填**：只与字面量比较等于自证，工具会拒绝执行。",
+  "claims": [
+    {
+      "doc": "CHANGELOG.md",
+      "pattern": "workflows\\.test\\.mjs` grew from 11 to (\\d+) tests",
+      "actual": { "kind": "testCases" },
+      "detail": "CHANGELOG 声称的守卫测试条数（真值 = 实际 it/test 计数）"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "dev workflow is ~(\\d+) lines",
+      "flags": "i",
+      "actual": { "kind": "fileLines", "path": "claude-code/full-dev.md" },
+      "tolerance": 0.05,
+      "detail": "README 声称的开发流程行数（真值 = full-dev.md 实际行数，±5%）"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "(\\d+) hard rules",
+      "actual": {
+        "kind": "countMatches",
+        "path": "claude-code/full-dev.md",
+        "within": "## 硬规则",
+        "regex": "^\\d+\\. \\*\\*"
+      },
+      "detail": "README 声称的硬规则条数（真值 = full-dev.md 硬规则小节的条目数）"
+    },
+    {
+      "doc": "preset.yml",
+      "pattern": "≤(\\d+) 轮",
+      "actual": {
+        "kind": "grepCapture",
+        "path": ".claude/workflows/full-dev-gate.js",
+        "regex": "const MAX_ROUNDS = (\\d+)"
+      },
+      "detail": "preset 描述里的轮次上限（真值 = 门禁脚本的 MAX_ROUNDS）"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "hard ≤(\\d+)-round cap",
+      "actual": {
+        "kind": "grepCapture",
+        "path": ".claude/workflows/full-dev-gate.js",
+        "regex": "const MAX_ROUNDS = (\\d+)"
+      },
+      "detail": "README 英文段的轮次上限（真值 = MAX_ROUNDS）"
+    },
+    {
+      "doc": "README.zh.md",
+      "pattern": "≤(\\d+) 轮硬上限",
+      "actual": {
+        "kind": "grepCapture",
+        "path": ".claude/workflows/full-dev-gate.js",
+        "regex": "const MAX_ROUNDS = (\\d+)"
+      },
+      "detail": "中文 README 的轮次上限（真值 = MAX_ROUNDS）"
+    },
+    {
+      "doc": "agent.cordis.yml",
+      "pattern": "轮次上限\\s*≤(\\d+)",
+      "actual": {
+        "kind": "grepCapture",
+        "path": ".claude/workflows/full-dev-gate.js",
+        "regex": "const MAX_ROUNDS = (\\d+)"
+      },
+      "detail": "persona 的轮次上限（模型每轮都读到，最该一致）"
+    }
+  ],
+  "commands": [
+    "node bin/gen-dsh.mjs",
+    "node bin/cost-report.mjs",
+    "node bin/drift-check.mjs",
+    "node --test tests/workflows.test.mjs"
+  ]
+}
