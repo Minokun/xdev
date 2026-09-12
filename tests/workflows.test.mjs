@@ -1011,6 +1011,39 @@ test('research.md: R1 门禁有脚本路径（research profile），E3 探索分
   assert.match(src, /禁入 report\.md 结论区/, 'E3 output is quarantined from conclusions')
 })
 
+test('gate: 一手源注入面板与门下门 prompt；门下门含需求覆盖维度（L1/L2/L3）', async () => {
+  // 过程漏洞审查（docs/reviews/2026-09-12-process-loopholes.md）：
+  // 计算独立 ≠ 信息独立——只读被审者材料的审查员继承作者盲区。
+  const { calls } = await runGate({
+    args: { plan: 'p.md', design: 'd.md', size: 'small', sources: ['.research/upstream/REVERSE.md', 'spec/SOURCES.md'] },
+    agentStub: () => APPROVE,
+  })
+  const gateCall = calls.find((c) => c.opts.label === 'menxia:r1')
+  assert.match(gateCall.prompt, /一手源（未经被审者加工/, 'gate prompt must carry the first-hand sources block')
+  assert.match(gateCall.prompt, /\.research\/upstream\/REVERSE\.md/, 'source paths must reach the reviewer verbatim')
+  assert.match(gateCall.prompt, /需求覆盖/, 'gate must judge requirement coverage as its own dimension')
+  assert.match(gateCall.prompt, /解释收窄/, 'narrowing interpretations must be surfaced')
+
+  // 面板也须拿到一手源（standard 档有一个 quality 审查员）
+  const withPanel = await runGate({
+    args: { plan: 'p.md', design: 'd.md', sources: ['s.md'] },
+    agentStub: (prompt) => (prompt.includes('门下省') ? APPROVE : { dimension: 'quality', high: [], medium: [], note: '' }),
+  })
+  const panelCall = withPanel.calls.find((c) => c.opts.label === 'plan:quality')
+  assert.match(panelCall.prompt, /- s\.md/, 'panel reviewers must also receive the raw sources')
+})
+
+test('full-dev.md: 设计文档必须含需求/真值映射表与一手源清单（L1/L2 的文档锚）', async () => {
+  const src = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage1 = src.slice(src.indexOf('## 阶段 1'), src.indexOf('## 阶段 2'))
+  assert.match(stage1, /需求\/真值映射表/, 'stage 1 must require the mapping table')
+  assert.match(stage1, /【解释收窄】/, 'narrowing interpretations must be explicitly marked')
+  assert.match(stage1, /一手源清单/, 'first-hand source list must be required')
+  // 门禁调用示例必须传 sources（否则文档与脚本脱节）
+  const stage2 = src.slice(src.indexOf('## 阶段 2'), src.indexOf('## 阶段 3'))
+  assert.match(stage2, /sources: \[/, 'gate invocation examples must pass sources')
+})
+
 test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的回退路径', async () => {
   // §3.2 兑现 RESEARCH.md §12.1 的 Tier 1：轮次/超时/预算从 prose 变成代码。
   // 但预设未必都有 workflow runtime（claude-code / codex 端形态不同），

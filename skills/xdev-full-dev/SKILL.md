@@ -88,6 +88,15 @@ description: 端到端开发工作流
   取不到 → 记一句"权威源不可得 + 原因"，并把它作为决策简报里的一条风险呈报。
   典型反例（实盘）：把"复刻原版关卡"写成"版权原因只能手工近似"的设计前提，
   而该数据其实是可公开解码的——这个错误前提让全部下游闸门在结构上无法发现偏差。
+- **需求/真值映射表（机械核查面，不可省略）**——堵两个实盘确诊的洞（2026-09-12 复盘 L1/L2）：
+  ① **需求映射**：用户原始需求逐条 → 设计条款（F 编号）→ 判据编号。任何**解释性收窄**
+  （把"画面复刻"收成"图块一致"这类）必须单列一行标【解释收窄】，并原样进决策简报给用户确认——
+  下游所有闸门的参照物都是本设计，解释层错了会被全部闸门忠实放大。
+  ② **真值清单**：外部接地取回的每份一手源里，**每张表/每段契约**逐条登记三态——
+  已转写（判据编号）/ 显式豁免（理由）/ 未转写。
+  ③ **一手源清单**：一手源原文路径逐条列出（`.research/upstream/REVERSE.md` 这类），
+  随审查材料原文给出——清单自身可能有作者盲区（想不到的表连条目都不会有），
+  所以审查员必须能拿一手源原文抽检清单外的东西，而不只核对清单内的格子。
 
 **Intent Contract** = 上面三项（F1..Fn + Must Not + 验收标准）经用户确认后的定稿。
 它是阶段 3 drift check 与阶段 4 对抗审查的唯一对照基准；改它必须显式回到阶段 1。
@@ -157,13 +166,15 @@ Workflow({ name: "full-dev-gate",
            args: { plan: "docs/plans/<date>-<slug>.md",
                    design: "docs/plans/<date>-<slug>-design.md",
                    size: "standard"|"small"|"large",
+                   sources: ["<一手源原文路径，逐条>"],   // 设计文档「一手源清单」原样传入
                    ledger: [] } })
 
 // ② dsh：把脚本正文作为 script 传入、meta 作为参数（**删掉脚本首行的 export const meta**）
 Workflow({
   meta: { name: "full-dev-gate", description: "stage-2 gate",
           phases: [{ title: "Panel" }, { title: "Gate" }, { title: "Ledger" }] },
-  args: { plan: "…", design: "…", size: "standard", ledger: [] },
+  args: { plan: "…", design: "…", size: "standard",
+          sources: ["<一手源原文路径>"], ledger: [] },
   script: "<full-dev-gate.js 去掉 export const meta 后的正文>",
 })
 ```

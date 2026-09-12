@@ -131,6 +131,16 @@ const PROBES = [
   { group: 'harness', name: 'probe-run 基线不再要求 pass>0', file: 'bin/probe-run.mjs',
     old: 'requirePassPositive = true', new: 'requirePassPositive = false' },
 
+  // ── L1/L2/L3：需求覆盖与一手源（过程漏洞审查）─────────────────────────────
+  { group: 'gate', name: '一手源不再注入面板（L3 回归）', file: '.claude/workflows/full-dev-gate.js',
+    old: "dispatch(promptTable[k] + SOURCES_BLOCK,", new: "dispatch(promptTable[k]," },
+  { group: 'gate', name: '一手源不再注入门下门（L3 回归）', file: '.claude/workflows/full-dev-gate.js',
+    old: "dispatch(gatePrompt + SOURCES_BLOCK,", new: "dispatch(gatePrompt," },
+  { group: 'gate', name: '门下门丢掉需求覆盖维度（L2 回归）', file: '.claude/workflows/full-dev-gate.js',
+    old: '【需求覆盖（独立于"忠实度"的一维）】', new: '【补充说明】' },
+  { group: 'doc', name: '删掉映射表要求（L1 回归）', file: 'claude-code/full-dev.md',
+    old: '**需求/真值映射表（机械核查面，不可省略）**', new: '**说明**' },
+
   // ── bin/drift-check.mjs ─────────────────────────────────────────────────
   { group: 'drift', name: 'actual 求值失败当通过', file: 'bin/drift-check.mjs',
     old: '    if (got.error) {', new: '    if (false) {' },

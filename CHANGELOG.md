@@ -4,6 +4,38 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.3.0] - 2026-09-12
+
+Requirement-coverage release: the gates now look at *what the user asked for*, not only
+at *what the author wrote down*. Basis: `docs/reviews/2026-09-12-process-loopholes.md`
+(L1–L3) and `docs/reviews/2026-09-12-tank-postmortem.md` (three field rounds).
+
+### Added
+
+- **需求/真值映射表（阶段 1 强制）** — every user requirement must map to a design clause
+  and a criterion; every externally-grounded truth table is registered in three states
+  (transcribed + criterion id / explicitly exempted + reason / untranscribed). Interpretive
+  narrowings (e.g. "faithful visuals" → "tile-table equality") must be marked 【解释收窄】
+  and surfaced verbatim in the decision brief. The gates' shared reference was an unreviewed
+  interpretation; this makes the interpretation auditable.
+- **First-hand sources reach reviewers (`args.sources`)** — panel and gate prompts now carry
+  the raw source list untouched by the author, with a duty to spot-check the transcription
+  against the originals. Computational independence (fresh sessions) without informational
+  independence just inherited the author's blind spots.
+- **Gate gains a fifth verdict dimension: 需求覆盖** — mapping table presence, per-requirement
+  coverage, untranscribed-without-exemption entries, and spot-checks against raw sources.
+- **Research reuses the gate script (`args.profile = "research"`)** — R1a–c panel + R1 menxia
+  with the same mechanical enforcement (round cap / re-dispatch / missing-blocks-approve /
+  budget), with panel findings mechanically injected into the gate prompt.
+- **E3 explorer analyst** in the research flow: read-only over `runs/`, output quarantined to
+  the directions.md candidate zone, never the conclusion zone.
+
+### Testing
+
+- 55 → 57 guard tests; 52 → 56 mutation probes (four new probes pin L1/L2/L3 regressions:
+  stripping sources from panel/gate, dropping the coverage dimension, deleting the mapping
+  table requirement).
+
 ## [v3.2.0] - 2026-09-12
 
 Wire-up release: every mechanism v3.1 wrote down is now actually reachable at runtime.
@@ -125,7 +157,7 @@ Basis: `docs/reviews/2026-09-12-xdev-audit.md` (three-round falsification chain,
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 55 tests guarding each new mechanism, including stage-4 ordering,
+- `tests/workflows.test.mjs` grew from 11 to 57 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
   mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
   anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only
