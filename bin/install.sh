@@ -9,10 +9,13 @@
 #   codex      Codex CLI — installs BOTH custom prompts and skills:
 #                ~/.codex/prompts/xdev-*.md           (per-file symlinks; /prompts:xdev-*)
 #                ~/.agents/skills/xdev-*/SKILL.md     (generated wrappers; $xdev-* + implicit)
-#   all        Shorthand for: claude codex
+#   dsh        DeepSeek Harness — full sync into ~/.dsh/.agent-presets/xdev/:
+#              配置面（preset.yml / agent.cordis.yml / skills/）+ **运行面**
+#              （bin/*.mjs、.claude/workflows/*.js）。只同步配置面会让门禁脚本与
+#              测量工具在运行时不可达、门禁退回 prose（2026-09-11 实盘 P0）。
+#   all        Shorthand for: claude codex dsh
 #
-# Note: the Windsurf IDE target was REMOVED in v3.0.0 — Windsurf is no longer
-# supported. dsh (DeepSeek Harness) does not use this script; see README §DSH.
+# Note: the Windsurf IDE target was REMOVED in v3.0.0 — Windsurf is no longer supported.
 #
 # Options:
 #   --target <path> Override target directory entirely (advanced).
@@ -38,6 +41,7 @@ XDEV_ROOT="$( cd -- "$SCRIPT_DIR/.." && pwd )"
 CLAUDE_DEFAULT_TARGET="$HOME/.claude/commands/xdev"
 CODEX_PROMPTS_TARGET="$HOME/.codex/prompts"
 CODEX_SKILLS_TARGET="$HOME/.agents/skills"
+DSH_PRESET_TARGET="$HOME/.dsh/.agent-presets/xdev"
 
 DRY_RUN=0
 TARGET_OVERRIDE=""
@@ -80,10 +84,10 @@ while [ $# -gt 0 ]; do
     --target)
       [ $# -ge 2 ] || err "--target requires a path argument"
       TARGET_OVERRIDE="$2"; shift 2 ;;
-    claude|codex)
+    claude|codex|dsh)
       add_agent "$1"; shift ;;
     all)
-      add_agent claude; add_agent codex; shift ;;
+      add_agent claude; add_agent codex; add_agent dsh; shift ;;
     *) err "unknown argument: $1 (try --help)" ;;
   esac
 done
@@ -95,6 +99,7 @@ fi
 if [ -n "$TARGET_OVERRIDE" ]; then
   for a in "${AGENTS[@]}"; do
     [ "$a" = "codex" ] && err "--target is not supported with codex (it has two fixed targets)"
+    [ "$a" = "dsh" ] && err "--target is not supported with dsh (dsh discovers presets at a fixed path)"
   done
 fi
 
@@ -272,11 +277,59 @@ install_codex() {
   install_codex_skills
 }
 
+# dsh install: FULL sync into the preset directory. dsh reads the preset in place
+# (~/.dsh/.agent-presets/xdev IS the preset — there is no copy-on-load), so anything
+# the runtime needs must physically live there. Syncing only the config face
+# (preset.yml / agent.cordis.yml / skills/) leaves the gate script and the
+# measurement tools unreachable and the gate degenerates to prose — this exact
+# failure shipped on 2026-09-11 (docs/plans/2026-09-10-xdev-optimization.md §11.3-P0-1).
+#
+# Copies (not symlinks): the historical install form is copies and
+# tests/probes/mutations.mjs regenerate() also writes copies. Idempotent;
+# only ever touches paths listed below.
+install_dsh() {
+  local target="$DSH_PRESET_TARGET"
+  local src="$XDEV_ROOT"
+  [ -d "$src/skills" ] || err "missing source dir: $src/skills"
+
+  log "dsh preset → $target (full sync: config + runtime)"
+  run mkdir -p "$target/skills" "$target/bin" "$target/.claude/workflows"
+
+  # ① 配置面
+  run cp -f "$src/preset.yml" "$src/agent.cordis.yml" "$target/"
+  local skill_count=0
+  local d
+  for d in "$src/skills"/xdev-*/; do
+    [ -d "$d" ] || continue
+    local name
+    name="$(basename "$d")"
+    run mkdir -p "$target/skills/$name"
+    run cp -f "$d/SKILL.md" "$target/skills/$name/SKILL.md"
+    skill_count=$((skill_count + 1))
+  done
+
+  # ② 运行面：测量工具 + 门禁 workflow（path-agnostic：全部输入由 args/--dir 传入）
+  local f
+  for f in cost-report.mjs drift-check.mjs; do
+    [ -f "$src/bin/$f" ] || err "missing runtime tool: bin/$f"
+    run cp -f "$src/bin/$f" "$target/bin/$f"
+  done
+  local wf_count=0
+  for f in "$src/.claude/workflows/"*.js; do
+    [ -e "$f" ] || continue
+    run cp -f "$f" "$target/.claude/workflows/$(basename "$f")"
+    wf_count=$((wf_count + 1))
+  done
+
+  log "dsh: synced preset.yml + agent.cordis.yml + $skill_count skills + 2 bin tools + $wf_count workflows"
+}
+
 # --- dispatch ---
 for a in "${AGENTS[@]}"; do
   case "$a" in
     claude)   install_claude ;;
     codex)    install_codex ;;
+    dsh)      install_dsh ;;
   esac
 done
 
@@ -288,5 +341,7 @@ for a in "${AGENTS[@]}"; do
     codex)
       log "  verify codex prompts: ls -l \"$CODEX_PROMPTS_TARGET\" | grep xdev-"
       log "  verify codex skills:  ls -l \"$CODEX_SKILLS_TARGET\" | grep xdev-" ;;
+    dsh)
+      log "  verify dsh runtime:   test -f \"$DSH_PRESET_TARGET/.claude/workflows/full-dev-gate.js\" && test -f \"$DSH_PRESET_TARGET/bin/cost-report.mjs\" && echo OK" ;;
   esac
 done

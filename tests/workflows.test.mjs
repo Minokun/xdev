@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
@@ -256,7 +256,7 @@ test('阶段 2 定义伪证探针表，且探针在写实现之前', async () =>
   assert.match(stage2, /command -v/, 'stage 2 must check command existence')
 })
 
-test('阶段 2 的轮次纪律：冻结被审件 / ≤3 轮 / 簿记不独占封驳 / 发现后扫类', async () => {
+test('阶段 2 的轮次纪律：冻结被审件 / ≤2 轮 / 簿记不独占封驳 / 发现后扫类', async () => {
   const source = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
   const stage2 = source.slice(source.indexOf('## 阶段 2'), source.indexOf('## 阶段 3'))
   assert.match(stage2, /冻结被审件/, 'review artifact must be frozen + hashed')
@@ -352,8 +352,23 @@ test('若 ~/.dsh 下装着本 preset，它与仓库源不得偏离', async () =>
     assert.equal(
       live,
       repo,
-      `${rel} 已安装副本与仓库源不一致 — 重新同步（cp ${rel} ~/.dsh/.agent-presets/xdev/${rel}）`,
+      `${rel} 已安装副本与仓库源不一致 — 重新同步（bin/install.sh dsh）`,
     )
+  }
+  // 运行面也必须在场：只同步配置面会让门禁脚本/测量工具在 dsh 运行时不可达、
+  // 门禁退回 prose 手工派发（2026-09-11 实盘 P0，审计 A1）。仓库内 46 条探针都读仓库内脚本，
+  // "装没装上"只有这里能测到。未安装整个 preset 时上面已 return，本段只在已安装时生效。
+  for (const rel of [
+    '.claude/workflows/full-dev-gate.js',
+    'bin/cost-report.mjs',
+    'bin/drift-check.mjs',
+  ]) {
+    const [repoStat, liveStat] = await Promise.all([
+      stat(join(repoRoot, rel)).catch(() => null),
+      stat(join(installed, rel)).catch(() => null),
+    ])
+    assert.ok(repoStat, `仓库内应有 ${rel}`)
+    assert.ok(liveStat, `${rel} 未装进 preset — 跑 bin/install.sh dsh（只装配置面 = 门禁退回 prose）`)
   }
 })
 
@@ -1003,12 +1018,14 @@ test('轮次上限在所有文件里必须一致（代码是唯一真源）', as
   const files = ['claude-code/full-dev.md', 'claude-code/research.md', 'agent.cordis.yml', 'README.md', 'README.zh.md']
   for (const f of files) {
     const src = await readFile(join(repoRoot, f), 'utf8')
-    // 找出所有"≤N 轮"形式的声明（含"重审 ≤N 轮""返工 ≤N 轮"）
-    for (const hit of src.matchAll(/≤\s*(\d+)\s*轮/g)) {
+    // 找出所有"≤N 轮"形式的声明（含"重审 ≤N 轮""返工 ≤N 轮"），以及"轮次上限 ≤N"形态——
+    // 后者数字后不接"轮"字（research.md 附录 H 曾写"轮次上限 ≤3，"而漏网，2026-09-12 审计 B2）。
+    for (const hit of src.matchAll(/≤\s*(\d+)\s*轮|轮次上限\s*≤\s*(\d+)/g)) {
+      const declared = hit[1] ?? hit[2]
       assert.equal(
-        hit[1],
+        declared,
         cap,
-        `${f}: 声明 ≤${hit[1]} 轮，而脚本 MAX_ROUNDS=${cap} —— 轮次上限必须以代码为唯一真源`,
+        `${f}: 声明 ≤${declared} 轮，而脚本 MAX_ROUNDS=${cap} —— 轮次上限必须以代码为唯一真源`,
       )
     }
     // 也不得把**升级动作**挂在超出上限的那一轮上（"第 3 轮仍 reject 即升级"这种矛盾表述）。

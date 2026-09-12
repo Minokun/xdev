@@ -151,7 +151,7 @@ There are plenty of AI command collections out there. Here's the detailed compar
 | **Result provenance** | ❌ | ❌ | ❌ | ✅ Research numbers trace to hash-chained run artifacts |
 | **Cognitive load** | High — pre-map scenarios, manually chain tools | High — craft precise prompts for every variation | Medium — pick the right mode & agent mix per task | **Low — describe the goal, xdev decides how** |
 
-> **🔴 gates** (the only user-confirm points): irreversible ops — production deploy, data deletion, force-push, external release (hard rule 4) — the design of cross-module / irreversible features, the **one-click decision brief** after the plan gate, and in research: preregistration confirmation, any budget dimension hitting 2× its declared value, and each new experiment round (unless covered by a pre-agreed authorization envelope). Everything else notifies and continues.
+> **🔴 gates** (the only user-confirm points): irreversible ops — production deploy, data deletion, force-push, external release (hard rule 5) — the design of cross-module / irreversible features, the **one-click decision brief** after the plan gate, and in research: preregistration confirmation, any budget dimension hitting 2× its declared value, and each new experiment round (unless covered by a pre-agreed authorization envelope). Everything else notifies and continues.
 
 ### Core philosophy: information extraction, not ritual
 
@@ -321,7 +321,7 @@ Stage 4: Deliver — falsification probes → full tests (really executed) → a
 
 **Session recovery / cross-tool handoff** — At the end of stage 2 the flow writes a minimal state file `docs/state/xdev--<branch>.md` (branch / stage / plan path / next action) and commits the plan. `/full-dev-impl` resumes from that file's next action without replaying the conversation; a missing plan or an anchor commit no longer in history → ask the user to re-plan, never guess. v2-format state files (`full-dev-design--<branch>--<slug>.md`) are not parsed — the flow tells you to finish them with v2 or re-plan.
 
-**Base-branch guard** (hard rule 3) — Never commit to `main`/`master`. On the base branch, create an `xdev-<slug>` feature branch first — optionally in a `git worktree` (remember worktrees don't carry `.env*` or build artifacts). Worktrees are removed at stage 4 once the PR is merged.
+**Base-branch guard** (hard rule 4) — Never commit to `main`/`master`. On the base branch, create an `xdev-<slug>` feature branch first — optionally in a `git worktree` (remember worktrees don't carry `.env*` or build artifacts). Worktrees are removed at stage 4 once the PR is merged.
 
 **Intent Contract + drift check** — The design doc's F1..Fn / Must-Not / acceptance criteria, once confirmed, are the *Intent Contract*. After each batch (~5 commits) a fresh subagent reads only the contract, the design doc and the diff (appendix B) and reports `[偏离]` (interface / data-flow / module-boundary mismatch, with file:line) and `[超纲]` (user-visible capability with no contract entry). Any deviation → the user may only fix code; changing the design means explicitly going back to stage 1.
 

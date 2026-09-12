@@ -8,7 +8,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 
 ### Added
 
-- **`/xdev-research`** — a preregistration-gated algorithm research flow with experiment provenance, machine judges, and honest negative results: five-lens review panel, frozen pre-registration, hash-chained `runs/<id>/metrics.json`, and research-specific T1–T3 rules. (Landed earlier in the v3.1 line; recorded here for release completeness.)
+- **`/xdev-research`** — a preregistration-gated algorithm research flow with experiment provenance, machine judges, and honest negative results: a three-member review panel (R1a–c) plus the R1 gate and R2 audit, frozen pre-registration, hash-chained `runs/<id>/metrics.json`, and research-specific T1–T3 rules. (Landed earlier in the v3.1 line; recorded here for release completeness.)
 - **Falsification probes (`伪证探针`) — hard rule 2 is now "判据必须可伪证", not "验证必须真实执行".** Every acceptance criterion must first be *shown to fail*: break the implementation, run that criterion's own command, confirm it goes red, roll back. A criterion that stays green is treated as **no criterion at all**. Applies to all acceptance criteria *and to any self-built script used to claim "0 gaps / all green"*. The probe table (criterion / mutation / command / expected) is authored **before** the implementation and recorded as delivery evidence.
 - **External grounding gate (阶段 1)** — for replicate / integrate / migrate / spec-implementation work, every functional point must answer "where does the authoritative truth for this live, and is it outside the repo?" If yes, fetch it *before* designing and record source + retrieval command. Design documents must now separate **factual premises** (claims about the outside world: "X can't be done / only manual approximation is possible") from **design decisions** (free choices). Only decisions are axioms.
 - **`[前提存疑]` output in the drift check (附录 B)** — the one sanctioned exception to "only compare implementation against design": the drift reviewer may question whether a design premise holds, because a design-referential gate set structurally cannot.
@@ -31,11 +31,12 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
     two gate rounds rejected the plan over it and the final state still carried 17 mismatches, mostly
     overstatements. xdev dogfoods it — a test asserts this repo is drift-free.
 - **阶段 2 gains a cost envelope (the brake it never had)**: ≤2 gate rounds, ≤6 phase-2 subagents,
-  ≤150 phase-2 tool calls, ≤20% of context. Any breach downgrades to a spoken plan plus a pre-gate
+  ≤150 phase-2 tool calls, ≤25% of context. Any breach downgrades to a spoken plan plus a pre-gate
   Q&A, with the reason recorded in the decision brief. Baseline it replaces: 6 rounds / 12 subagents
   (50% of all) / 194 calls / 37.4% of context, for zero lines of code.
 - **Reviewer hit-rate ledger**: every dispatch appends "reported N / confirmed M / verdict" to
-  `<plan>.menxia.log`; a dimension with five consecutive runs of zero confirmed findings is removed
+  `.xdev/review-ledger.jsonl` (append-only, survives the flow; `<plan>.menxia.log` is per-round
+  trajectory only); a dimension with five consecutive runs of zero confirmed findings is removed
   from the default roster. Downsize on evidence — but never delete independent review, which caught
   both models' most lethal defects while 143/52 green tests missed them.
 - **阶段 4 now runs `bin/drift-check.mjs` before the manual claim review and records

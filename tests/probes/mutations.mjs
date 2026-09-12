@@ -23,7 +23,12 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const TEST_CMD = ['--test', 'tests/workflows.test.mjs']
+// reporter 必须钉死 TAP：解析器只认 `# pass N` / `# fail N` / `not ok` 行。
+// Node ≥25 默认 reporter 是 spec（`ℹ pass 50`），pipe 下也是——那时解析结果恒为
+// pass=0 fail=0，若基线只查 fail!==0，"全绿"与"根本没读到"无法区分，46 条探针会全部
+// 报 VACUOUS 而流程照走（2026-09-12 实盘：同机两个 node 二进制给出相反读数）。
+// 下方基线检查因此同时要求 pass>0——"没读到"必须报错，不得报绿。
+const TEST_CMD = ['--test', '--test-reporter=tap', 'tests/workflows.test.mjs']
 
 /** 探针定义：file + 精确的 old → new 改写。 */
 const PROBES = [
@@ -227,6 +232,11 @@ function main() {
   const filter = filterIdx >= 0 ? argv[filterIdx + 1] : null
 
   const baseline = runTests()
+  if (baseline.pass === 0) {
+    // "没读到"与"全绿"在 fail=0 时无法区分——必须先排除前者（守卫也要被伪证）。
+    console.error('基线读数 pass=0：测试输出根本没被解析到（reporter 不是 TAP？TEST_CMD 被改？）。拒绝继续。')
+    process.exit(2)
+  }
   if (baseline.fail !== 0) {
     console.error(`基线不是全绿（pass=${baseline.pass} fail=${baseline.fail}）——先修测试再跑探针。`)
     process.exit(2)

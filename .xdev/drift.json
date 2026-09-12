@@ -65,6 +65,60 @@
         "regex": "const MAX_ROUNDS = (\\d+)"
       },
       "detail": "persona 的轮次上限（模型每轮都读到，最该一致）"
+    },
+    {
+      "doc": "claude-code/research.md",
+      "pattern": "轮次上限\\s*≤(\\d+)",
+      "actual": {
+        "kind": "grepCapture",
+        "path": ".claude/workflows/full-dev-gate.js",
+        "regex": "const MAX_ROUNDS = (\\d+)"
+      },
+      "detail": "research 附录 H 的轮次上限（真值 = MAX_ROUNDS；2026-09-12 审计 B2：此处曾写 ≤3 漏网）"
+    },
+    {
+      "doc": "CHANGELOG.md",
+      "pattern": "≤(\\d+)% of context",
+      "actual": {
+        "kind": "grepCapture",
+        "path": "claude-code/full-dev.md",
+        "regex": "本阶段占全程上下文 \\| \\*\\*≤(\\d+)%\\*\\*"
+      },
+      "detail": "阶段 2 上下文上限（真值 = full-dev.md 信封表；曾 20/25 两值并存，审计 B4）"
+    },
+    {
+      "doc": "CHANGELOG.md",
+      "pattern": "verdict\" to\\s*`([^`]+)`",
+      "actual": {
+        "kind": "grepCapture",
+        "path": "claude-code/full-dev.md",
+        "regex": "台账落在\\*\\*跨流程存活\\*\\*的位置：`([^`]+)`"
+      },
+      "detail": "命中率台账位置（真值 = full-dev.md 指定的跨流程台账；曾误写成会被删除的 menxia.log）"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "external release \\(hard rule (\\d+)\\)",
+      "actual": { "kind": "grepCapture", "path": "agent.cordis.yml", "regex": "(\\d+)\\. 不可逆动作" },
+      "detail": "硬规则编号映射：不可逆操作（真值 = persona 硬规则清单的编号）"
+    },
+    {
+      "doc": "README.md",
+      "pattern": "Base-branch guard\\*\\* \\(hard rule (\\d+)\\)",
+      "actual": { "kind": "grepCapture", "path": "agent.cordis.yml", "regex": "(\\d+)\\. 不向 base 分支提交" },
+      "detail": "硬规则编号映射：base 分支守卫（真值 = persona 清单编号）"
+    },
+    {
+      "doc": "README.zh.md",
+      "pattern": "对外发布（硬规则 (\\d+)）",
+      "actual": { "kind": "grepCapture", "path": "agent.cordis.yml", "regex": "(\\d+)\\. 不可逆动作" },
+      "detail": "硬规则编号映射：不可逆操作（中文 README）"
+    },
+    {
+      "doc": "claude-code/research.md",
+      "pattern": "分支纪律（硬规则 (\\d+) 对应物）",
+      "actual": { "kind": "grepCapture", "path": "agent.cordis.yml", "regex": "(\\d+)\\. 不向 base 分支提交" },
+      "detail": "硬规则编号映射：分支纪律（真值 = persona 清单编号）"
     }
   ],
   "commands": [
