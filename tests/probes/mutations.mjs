@@ -137,7 +137,7 @@ const PROBES = [
   { group: 'gate', name: '一手源不再注入门下门（L3 回归）', file: '.claude/workflows/full-dev-gate.js',
     old: "dispatch(gatePrompt + SOURCES_BLOCK,", new: "dispatch(gatePrompt," },
   { group: 'gate', name: '门下门丢掉需求覆盖维度（L2 回归）', file: '.claude/workflows/full-dev-gate.js',
-    old: '【需求覆盖（独立于"忠实度"的一维）】', new: '【补充说明】' },
+    old: '你要核查：① 表是否存在', new: '你无需核查映射表' },
   { group: 'doc', name: '删掉映射表要求（L1 回归）', file: 'claude-code/full-dev.md',
     old: '**需求/真值映射表（机械核查面，不可省略）**', new: '**说明**' },
 

@@ -1022,6 +1022,7 @@ test('gate: 一手源注入面板与门下门 prompt；门下门含需求覆盖�
   assert.match(gateCall.prompt, /一手源（未经被审者加工/, 'gate prompt must carry the first-hand sources block')
   assert.match(gateCall.prompt, /\.research\/upstream\/REVERSE\.md/, 'source paths must reach the reviewer verbatim')
   assert.match(gateCall.prompt, /需求覆盖/, 'gate must judge requirement coverage as its own dimension')
+  assert.ok(gateCall.prompt.includes('你要核查：① 表是否存在'), 'the coverage duties must be concrete, not a decorative header')
   assert.match(gateCall.prompt, /解释收窄/, 'narrowing interpretations must be surfaced')
 
   // 面板也须拿到一手源（standard 档有一个 quality 审查员）
