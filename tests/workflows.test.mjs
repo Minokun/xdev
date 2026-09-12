@@ -442,6 +442,38 @@ test('cost-report: 指标从事件流正确计算（步数/subagent/首行实现
   assert.equal(m.planPhase.shareOfAll, 1)
 })
 
+test('cost-report: 阶段 2 边界首选事件锚（决策简报呈交），需求澄清不算锚', async () => {
+  // B5（2026-09-12 审计）：文件锚会被探针/取证/并行 worker 污染，同一会话曾算出
+  // 10.8%/13.9% 两个读数。事件锚 = 问题文本带"决策简报"的首个 ask_user_question。
+  const { computeMetrics } = await import('../bin/cost-report.mjs')
+  const withBrief = [
+    // 阶段 1 的需求澄清——**不得**成为锚（否则边界错移到需求阶段）
+    { type: 'tool/call', time: 2500, data: { turn: 1, step: 2, callId: 'q0', name: 'ask_user_question', arguments: JSON.stringify({ questions: [{ question: '要做双人模式吗？' }] }) } },
+    ...fixtureEvents().slice(1, 6), // 到 A4 gate 派发为止
+    // 门下门 approve 后的决策简报呈交——这才是锚
+    { type: 'tool/call', time: 5500, data: { turn: 1, step: 5, callId: 'q1', name: 'ask_user_question', arguments: JSON.stringify({ questions: [{ question: '决策简报：……是否按此计划实施？' }] }) } },
+    ...fixtureEvents().slice(6),
+  ]
+  const m = computeMetrics(withBrief, FIXTURE_TOKENS, 'fixture')
+  // 锚在 5500ms：A1/A2（4000）在内，A4（5000）在内？不——5000 < 5500，A4 也在内；
+  // 首个实现（index.html @6000）之后的全部不计。关键是边界不再被 8000 的测试文件拖大。
+  assert.equal(m.planPhase.anchor, '决策简报呈交（事件锚）')
+  assert.equal(m.planPhase.subagents, 3, 'boundary = brief time, not first-test time')
+  // 没有决策简报事件时回退文件锚（fixture 本身无 ask 事件）
+  const m2 = computeMetrics(fixtureEvents(), FIXTURE_TOKENS, 'fixture')
+  assert.equal(m2.planPhase.anchor, '首行实现/首个测试（文件锚回退）')
+})
+
+test('探针 harness 自身的防恒绿构造必须在场（B1 的文本级守卫）', async () => {
+  // B1 的修复点很容易被"顺手清理"掉（reporter 参数看起来多余、pass>0 检查看起来重复）。
+  // 这里把它们钉成文本断言；配套变异探针（harness 组）负责证明这两条断言真会红。
+  const mut = await readFile(join(repoRoot, 'tests/probes/mutations.mjs'), 'utf8')
+  assert.ok(mut.includes("'--test-reporter=tap'"), 'mutations.mjs 必须钉死 TAP reporter（Node ≥25 默认 spec → pass=0 假绿）')
+  const engine = await readFile(join(repoRoot, 'bin/probe-run.mjs'), 'utf8')
+  assert.ok(engine.includes('requirePassPositive = true'), 'probe-run 基线必须默认要求 pass>0（没读到 ≠ 全绿）')
+  assert.ok(engine.includes('timedOut'), '引擎必须支持逐条 timeout（挂死型变异不得冻结整批）')
+})
+
 test('cost-report: 缓存放大倍数是 cacheRead ÷ 输出，且不受任务规模影响', async () => {
   const { computeMetrics } = await import('../bin/cost-report.mjs')
   const m = computeMetrics(fixtureEvents(), FIXTURE_TOKENS, 'fixture')

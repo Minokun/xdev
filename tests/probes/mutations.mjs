@@ -17,7 +17,7 @@
 //   · 跑完必须校验工作树与开始时一致；不一致即整体失败（防止留下半变异状态）
 //   · NOT-APPLIED（锚点找不到）与 VACUOUS（改了但测试仍绿）都算失败
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -87,10 +87,10 @@ const PROBES = [
 
   // ── bin/cost-report.mjs ─────────────────────────────────────────────────
   { group: 'cost', name: '阶段 2 边界锚回 firstSource（原 bug）', file: 'bin/cost-report.mjs',
-    old: 'const candidates = [firstImpl?.at, firstTest?.at].filter((x) => x != null)',
-    new: 'const candidates = [firstSource?.at].filter((x) => x != null)' },
+    old: 'const fileAnchor = [firstImpl?.at, firstTest?.at].filter((x) => x != null)',
+    new: 'const fileAnchor = [firstSource?.at].filter((x) => x != null)' },
   { group: 'cost', name: '阶段 2 边界只看 firstImpl（单文件项目退化）', file: 'bin/cost-report.mjs',
-    old: 'const phase2End = candidates.length ? Math.max(...candidates) : null',
+    old: 'const phase2End = firstBrief?.at ?? (fileAnchor.length ? Math.max(...fileAnchor) : null)',
     new: 'const phase2End = firstImpl?.at ?? null' },
   { group: 'cost', name: '根级源码不计为实现（单文件交付盲区）', file: 'bin/cost-report.mjs',
     old: "  (PROD_DIR.test(p) || ROOT_ENTRY.test(p.split('/').pop() ?? ''))",
@@ -111,8 +111,21 @@ const PROBES = [
   { group: 'cost', name: '对比表口径混用（首轮 vs 全量）', file: 'bin/cost-report.mjs',
     old: "['首轮交付 (min)', (m) => m.firstResultAtMin, 1, ''],",
     new: "['首轮交付 (min)', (m) => m.spanMin, 1, '']," },
+  { group: 'cost', name: '--latest 项目过滤被绕过（A3 回归）', file: 'bin/cost-report.mjs',
+    old: 'const scoped = all.filter((s) => s.project === undefined || s.project === key)',
+    new: 'const scoped = all' },
+  { group: 'cost', name: '阶段 2 事件锚被跳过（B5 回归）', file: 'bin/cost-report.mjs',
+    old: 'const phase2End = firstBrief?.at ?? (fileAnchor.length ? Math.max(...fileAnchor) : null)',
+    new: 'const phase2End = fileAnchor.length ? Math.max(...fileAnchor) : null' },
   { group: 'cost', name: '--latest 允许选中子会话', file: 'bin/cost-report.mjs',
     old: 'return sessions.filter((s) => !s.isChild)[0] ?? null', new: 'return sessions[0] ?? null' },
+
+  // ── tests/probes/mutations.mjs 自身（防恒绿的工具也要被伪证）────────────────
+  { group: 'harness', name: '拔掉 TAP reporter 钉（B1 回归）', file: 'tests/probes/mutations.mjs',
+    old: "'--test', '--test-reporter=tap', 'tests/workflows.test.mjs'",
+    new: "'--test', 'tests/workflows.test.mjs'" },
+  { group: 'harness', name: 'probe-run 基线不再要求 pass>0', file: 'bin/probe-run.mjs',
+    old: 'requirePassPositive = true', new: 'requirePassPositive = false' },
 
   // ── bin/drift-check.mjs ─────────────────────────────────────────────────
   { group: 'drift', name: 'actual 求值失败当通过', file: 'bin/drift-check.mjs',
@@ -153,53 +166,9 @@ const PROBES = [
     new: "return { verdict: 'approve', escalate: false, reasons: [], ledger: LEDGER_IN, round: ROUND }" },
 ]
 
-// ── 工具 ────────────────────────────────────────────────────────────────────
+// ── 跑批（引擎在 bin/probe-run.mjs，本文件只剩探针表 + 本仓库专用钩子）────────────
 
-function git(args) {
-  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim()
-}
-
-/**
- * 中断清理。**这是被真实事故驱动的**：跑批过程中若被 kill（工具超时、Ctrl-C），
- * 已经改写但尚未还原的源文件会留在工作区，我因此手工清理过两次。
- * 记下"当前正在变异的文件"，收到信号时立即 `git checkout --` 还原再退出。
- */
-let activeFile = null
-function restoreActive() {
-  if (!activeFile) return
-  try {
-    execFileSync('git', ['checkout', '--', activeFile], { cwd: ROOT })
-    console.error(`\n⚠️ 收到中断信号，已还原 ${activeFile}（避免留下半变异状态）`)
-  } catch {
-    console.error(`\n⚠️ 中断且还原 ${activeFile} 失败 —— 请手工 git checkout -- ${activeFile}`)
-  }
-  activeFile = null
-}
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    restoreActive()
-    process.exit(130)
-  })
-}
-process.on('uncaughtException', (e) => {
-  restoreActive()
-  console.error(e)
-  process.exit(1)
-})
-
-function runTests() {
-  const r = spawnSync('node', TEST_CMD, { cwd: ROOT, encoding: 'utf8' })
-  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`
-  let pass = 0
-  let fail = 0
-  const fails = []
-  for (const line of out.split('\n')) {
-    if (line.startsWith('# pass ')) pass = Number(line.split(' ')[2])
-    if (line.startsWith('# fail ')) fail = Number(line.split(' ')[2])
-    if (line.startsWith('not ok ')) fails.push(line.slice(9))
-  }
-  return { pass, fail, fails }
-}
+import { runProbeSet, parseTap } from '../../bin/probe-run.mjs'
 
 /** 改源文件后必须重生成 skill，否则"生成物过期"那条测试会抢先变红、掩盖目标守卫。 */
 function regenerate() {
@@ -224,6 +193,13 @@ function regenerate() {
 }
 
 const NOISE = /skills are freshly generated|preset 的|已安装副本与仓库源不得偏离/
+const needsRegen = (f) => f.startsWith('claude-code/') || f === 'agent.cordis.yml' || f === 'preset.yml'
+
+/** node --test 的 TAP 解析：红 = fail>0 或非零退出。 */
+function parse({ status, output }) {
+  const t = parseTap(output)
+  return { red: t.fail > 0 || status !== 0, pass: t.pass, fail: t.fail, fails: t.fails }
+}
 
 function main() {
   const argv = process.argv.slice(2)
@@ -231,81 +207,33 @@ function main() {
   const filterIdx = argv.indexOf('--filter')
   const filter = filterIdx >= 0 ? argv[filterIdx + 1] : null
 
-  const baseline = runTests()
-  if (baseline.pass === 0) {
-    // "没读到"与"全绿"在 fail=0 时无法区分——必须先排除前者（守卫也要被伪证）。
-    console.error('基线读数 pass=0：测试输出根本没被解析到（reporter 不是 TAP？TEST_CMD 被改？）。拒绝继续。')
-    process.exit(2)
-  }
-  if (baseline.fail !== 0) {
-    console.error(`基线不是全绿（pass=${baseline.pass} fail=${baseline.fail}）——先修测试再跑探针。`)
-    process.exit(2)
-  }
-  const dirtyAtStart = git(['status', '--porcelain'])
-  if (dirtyAtStart) {
-    console.error('工作树不干净，探针会把未提交的改动一起回滚。请先提交或 stash。')
-    process.exit(2)
-  }
-
-  const selected = filter ? PROBES.filter((p) => p.group === filter) : PROBES
-  const results = []
-  let caught = 0
-  let vacuous = 0
-  let notApplied = 0
-
-  for (const p of selected) {
-    const path = join(ROOT, p.file)
-    const src = readFileSync(path, 'utf8')
-    if (!src.includes(p.old)) {
-      results.push({ ...p, verdict: 'NOT-APPLIED', note: '锚点未找到' })
-      notApplied++
-      continue
-    }
-    writeFileSync(path, src.replace(p.old, p.new))
-    activeFile = p.file // 供中断清理使用
-    if (p.file.startsWith('claude-code/') || p.file === 'agent.cordis.yml' || p.file === 'preset.yml') {
-      regenerate()
-    }
-    const r = runTests()
-    // git checkout 精确还原（比手工备份可靠：不会留下半变异状态）
-    execFileSync('git', ['checkout', '--', p.file], { cwd: ROOT })
-    activeFile = null
-    if (p.file.startsWith('claude-code/') || p.file === 'agent.cordis.yml' || p.file === 'preset.yml') {
-      regenerate()
-    }
-
-    if (r.fail === 0) {
-      results.push({ ...p, verdict: 'VACUOUS', note: `测试仍全绿（pass=${r.pass}）`, fails: [] })
-      vacuous++
-    } else {
-      const meaningful = r.fails.filter((f) => !NOISE.test(f))
-      // 只被"生成物过期/已安装偏离"抓到 = 目标守卫其实没生效，算空转
-      if (meaningful.length === 0) {
-        results.push({ ...p, verdict: 'VACUOUS', note: '只被生成物/同步类守卫抓到，目标守卫未生效', fails: r.fails })
-        vacuous++
-      } else {
-        results.push({ ...p, verdict: 'CAUGHT', fails: meaningful })
-        caught++
-      }
-    }
-  }
-
-  const dirtyAtEnd = git(['status', '--porcelain'])
-  const restoreOk = dirtyAtEnd === dirtyAtStart
+  const { exit, summary } = runProbeSet({
+    root: ROOT,
+    probes: PROBES,
+    cmd: ['node', ...TEST_CMD],
+    parse,
+    filter,
+    noise: NOISE,
+    timeoutSec: 120, // 全量测试 2 秒级，120s 余量足够；挂死型变异算 CAUGHT(timeout)
+    hooks: {
+      afterApply: (p) => { if (needsRegen(p.file)) regenerate() },
+      afterRevert: (p) => { if (needsRegen(p.file)) regenerate() },
+    },
+  })
+  if (!summary) process.exit(exit)
 
   if (json) {
-    console.log(JSON.stringify({ baseline, caught, vacuous, notApplied, restoreOk, results }, null, 2))
+    console.log(JSON.stringify(summary, null, 2))
   } else {
-    for (const r of results) {
-      const mark = r.verdict === 'CAUGHT' ? '✓ CAUGHT   ' : r.verdict === 'VACUOUS' ? '✗ VACUOUS  ' : '⚠ NOT-APPLIED'
-      const detail = r.verdict === 'CAUGHT' ? `→ ${r.fails[0].slice(0, 58)}` : `— ${r.note}`
+    for (const r of summary.results) {
+      const mark = r.verdict === 'CAUGHT' ? (r.timeout ? '✓ CAUGHT(timeout)' : '✓ CAUGHT   ') : r.verdict === 'VACUOUS' ? '✗ VACUOUS  ' : `⚠ ${r.verdict}`
+      const detail = r.verdict === 'CAUGHT' ? `→ ${(r.fails[0] ?? '').slice(0, 58)}` : `— ${r.note}`
       console.log(`${mark} [${r.group}] ${r.name} ${detail}`)
     }
-    console.log(`\ncaught=${caught}  vacuous=${vacuous}  not-applied=${notApplied}  （共 ${selected.length} 条）`)
-    console.log(`工作树已还原: ${restoreOk ? '是 ✅' : '否 ❌ —— 有残留，请 git status 检查'}`)
+    console.log(`\ncaught=${summary.caught}（含 timeout ${summary.timeouts}） vacuous=${summary.vacuous}  not-applied=${summary.notApplied}  （共 ${summary.total} 条）`)
+    console.log(`工作树已还原: ${summary.restoreOk ? '是 ✅' : '否 ❌ —— 有残留，请 git status 检查'}   结果指纹: ${summary.fingerprint}`)
   }
-
-  process.exit(vacuous === 0 && notApplied === 0 && restoreOk ? 0 : 1)
+  process.exit(exit)
 }
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) main()

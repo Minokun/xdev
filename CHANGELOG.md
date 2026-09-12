@@ -4,6 +4,44 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.2.0] - 2026-09-12
+
+Wire-up release: every mechanism v3.1 wrote down is now actually reachable at runtime.
+Basis: `docs/reviews/2026-09-12-xdev-audit.md` (three-round falsification chain, all commands re-computed).
+
+### Added
+
+- **`bin/install.sh dsh`** — full-syncs the preset (config face + runtime face: `bin/*.mjs`,
+  `.claude/workflows/*.js`) into `~/.dsh/.agent-presets/xdev/`. Config-only installs left the
+  stage-2 gate script unreachable and the gate fell back to prose (field-proven P0).
+  A repo test now asserts the runtime trio exists in the installed preset.
+- **`bin/probe-run.mjs`** — generic mutation-probe batch runner extracted from
+  `tests/probes/mutations.mjs`: per-probe **timeout** (a hang counts as caught, it no longer
+  freezes the batch), `--filter`, `--jobs N` worktree isolation, sha256-checked rollback, and a
+  result **fingerprint** so "N/N went red" is a recomput-able object instead of a claim.
+- **`cost-report.mjs --cwd` / `--all-projects`** — `--latest` now scopes to the current project
+  by default (fail-closed when none), ending "the ledger belongs to a different session".
+
+### Fixed
+
+- **Probe harness accepted a `pass=0` baseline as green (B1)** — the TAP-only parser plus a
+  `fail!==0`-only baseline check meant Node ≥25's default spec reporter made all 46 probes
+  report VACUOUS while the flow carried on. The reporter is now pinned to TAP and the baseline
+  requires `pass > 0`; a guard test plus two regression probes pin the fix itself.
+- **Round-cap guard missed the "轮次上限 ≤N，" form** — research.md's appendix said ≤3 while the
+  body said ≤2; the regex now covers both syntax forms and the text is unified on
+  `MAX_ROUNDS=2` as the single source of truth.
+- **Stage-2 phase boundary mixed anchors** — subagent counts used one cutoff while bytes/tool
+  calls used another, so one session produced both 10.8% and 13.9%. All four envelope
+  dimensions now share one boundary: the "decision brief presented" event, falling back to
+  the file anchor; the report discloses which anchor was used.
+- **Doc drift unification** — context cap is ≤25% everywhere (full-dev.md table is the truth
+  source); the reviewer hit-rate ledger is `.xdev/review-ledger.jsonl`; the research panel is
+  R1a–c + R1 + R2 (not "five-lens"); stale hard-rule numbers in README/research fixed.
+  `drift.json` grew 7 → 14 claims (round caps, context cap, ledger path, rule-number mapping).
+- **Dispatch write-surface ownership, the sleep ban, and evidence-in-same-commit** are now
+  mechanical rules in the workflow text (three repeat offences from field sessions).
+
 ## [v3.1.0] - 2026-09-10
 
 ### Added
@@ -87,7 +125,7 @@ This file is for GitHub Releases and upgrade notes. For deeper workflow design r
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 50 tests guarding each new mechanism, including stage-4 ordering,
+- `tests/workflows.test.mjs` grew from 11 to 52 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
   mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
   anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only
