@@ -155,6 +155,26 @@ proposal.md 必含（缺一不过门）：
     即视为审计断链
 
 **门禁（标准档与攻坚档不可跳过，结构对齐 full-dev 阶段 2：面板 + 门下门）**：
+
+**首选执行路径：`full-dev-gate.js` 的 research profile**（让轮次/重派/missing 阻断成为代码而非纪律，
+2026-09-12 起研究侧与开发侧共用同一脚本——此前 `35fab41` 只同构了文案，门禁在运行侧无脚本）：
+
+```js
+// dsh：script 传脚本正文（去掉首行 export const meta），meta/args 作参数
+Workflow({
+  meta: { name: "full-dev-gate", description: "research preregistration gate",
+          phases: [{ title: "Panel" }, { title: "Gate" }, { title: "Ledger" }] },
+  args: { profile: "research",
+          proposal: "proposal.md", literature: "literature.md", matrix: "matrix.yaml",
+          ledger: [] },   // 第 2 轮起原样传回上一轮返回的 ledger——轮次由台账推导，不要手写 round
+  script: "<full-dev-gate.js 去掉 export const meta 后的正文>",
+})
+```
+
+脚本行为：并行派 R1a/R1b/R1c（失败重派 1 次，仍失败标 missing 且本轮不得 approve），
+面板结果**机械注入** R1 门下门 prompt（不经起草者之手）；≤2 轮到顶即升级用户。
+
+**无 runtime 时的回退路径（手工，等价语义）**：
 并行派发 **3 个 fresh 审查员**（prompt 见附录 R1a/R1b/R1c；审核员失败重派 1 次，仍失败标 missing，
 其维度按"存在 HIGH"处理——同 full-dev 纪律）：
 
@@ -239,6 +259,12 @@ approve 后经 ask_user_question 呈决策简报给用户**单次确认**。**�
   gap"时，允许 gap 分析 → 追加 run（append-only 进 matrix.yaml，不动已有格子与阈值）→ 补跑，
   **判定只用调优集**（留出集留给终判）。**补跑组与原矩阵分组报告，禁止合并聚合**——合并会让
   "3 seed 阈值"实际作用在 6 seed 估计量上，等于没改数字的事后调标。每轮补跑在 proposal.md 追加留痕
+- **E3 探索分析员（判定完成后加派，fresh subagent）**：judge 只回答"H1 成立吗"，而"看板外新方向"
+  是升级触发器却没有生产者——这个角色补上盲区。正交性：它回答的是"**数据里还有什么没被问到的**"，
+  与 judge（机械判定）、R2（溯源审计）的问题集不相交。
+  **产出隔离（机械规则）**：只读 `runs/`（日志/metrics/config），产出**只许写进 directions.md 的
+  候选区**（每条候选必须带 run 证据指针），**禁入 report.md 结论区**——候选不是结论，想转正必须
+  走正常预注册（阶段 2）。候选区条目若被直接写成结论，按 T1 违规处理。
 
 ## 轮级循环与终止条件（start / end 语义）
 

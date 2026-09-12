@@ -82,6 +82,10 @@ const PROBES = [
   // ── research / ask ──────────────────────────────────────────────────────
   { group: 'research', name: '删除 T1 事实性前提例外', file: 'claude-code/research.md',
     old: '**T1 的事实性前提例外', new: '**T1 的补充说明' },
+  { group: 'research', name: 'research 门禁退回无脚本（E4 回归）', file: 'claude-code/research.md',
+    old: 'args: { profile: "research"', new: 'args: { profile: "legacy"' },
+  { group: 'research', name: 'E3 产出隔离被解除（E3 回归）', file: 'claude-code/research.md',
+    old: '**禁入 report.md 结论区**', new: '**可直接写入 report.md 结论区**' },
   { group: 'ask', name: '删除否定性结论可复现命令要求', file: 'claude-code/ask.md',
     old: '**否定性结论必须附一条可复现命令（本流程唯一的"探针"）**', new: '**说明**' },
 

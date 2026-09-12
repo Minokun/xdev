@@ -961,6 +961,56 @@ test('gate: 缺少 plan 参数时拒绝执行而不是空跑放行', async () =>
   assert.equal(calls.length, 0, 'must not dispatch anyone without a plan path')
 })
 
+test('gate: research profile 派 R1a–c 三面板 + R1 门下门，面板结果机械注入门下门', async () => {
+  // 审计 E4：35fab41 只同构了文案，研究侧门禁此前无脚本路径。
+  const { out, calls } = await runGate({
+    args: { profile: 'research', proposal: 'proposal.md', literature: 'literature.md', matrix: 'matrix.yaml' },
+    agentStub: (prompt) =>
+      prompt.includes('门下省')
+        ? APPROVE
+        : { dimension: 'x', high: [], medium: [], note: '' },
+  })
+  assert.equal(out.profile, 'research')
+  assert.equal(out.verdict, 'approve')
+  const labels = calls.map((c) => c.opts.label)
+  assert.deepEqual(labels, ['plan:methodology', 'plan:feasibility', 'plan:verifiability', 'menxia:r1'])
+  // 面板发现必须出现在门下门 prompt 里（不经起草者之手）
+  const gateCall = calls.find((c) => c.opts.label === 'menxia:r1')
+  assert.match(gateCall.prompt, /面板结果（机械汇总/)
+
+
+})
+
+test('gate: research profile 缺 proposal 拒绝执行；面板 HIGH 出现在门下门输入里', async () => {
+  const missing = await runGate({ args: { profile: 'research' } })
+  assert.equal(missing.out.verdict, 'reject')
+  assert.equal(missing.out.escalate, true)
+  assert.equal(missing.calls.length, 0)
+
+  const { calls } = await runGate({
+    args: { profile: 'research', proposal: 'p.md' },
+    agentStub: (prompt) =>
+      prompt.includes('方法论')
+        ? { dimension: 'methodology', high: ['H1 无机械判定阈值'], medium: [], note: '' }
+        : prompt.includes('门下省')
+          ? REJECT
+          : { dimension: 'x', high: [], medium: [], note: '' },
+  })
+  const gateCall = calls.find((c) => c.opts.label === 'menxia:r1')
+  assert.match(gateCall.prompt, /H1 无机械判定阈值/, 'panel HIGH must reach the gate verbatim')
+})
+
+test('research.md: R1 门禁有脚本路径（research profile），E3 探索分析员产出隔离', async () => {
+  // 审计 E4/E3：门禁脚本 2026-09-12 起参数化（args.profile），研究侧不再是无脚本 prose；
+  // E3 是唯一新增角色——正交性（回答"judge/审计员不问的问题"）+ 产出隔离（候选区≠结论区）。
+  const src = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  assert.match(src, /profile: "research"/, 'R1 must point at the scripted gate with profile=research')
+  assert.match(src, /机械注入/, 'panel findings must be mechanically injected into the gate prompt')
+  assert.match(src, /E3 探索分析员/, 'E3 explorer role must exist')
+  assert.match(src, /候选区/, 'E3 output goes to the candidate zone')
+  assert.match(src, /禁入 report\.md 结论区/, 'E3 output is quarantined from conclusions')
+})
+
 test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的回退路径', async () => {
   // §3.2 兑现 RESEARCH.md §12.1 的 Tier 1：轮次/超时/预算从 prose 变成代码。
   // 但预设未必都有 workflow runtime（claude-code / codex 端形态不同），
