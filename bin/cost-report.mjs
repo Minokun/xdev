@@ -12,7 +12,9 @@
 //
 // 用法：
 //   node bin/cost-report.mjs --session <session-id|path> [--json]
-//   node bin/cost-report.mjs --latest [--json]        # 最近修改的会话
+//   node bin/cost-report.mjs --latest [--json]        # 当前项目目录内最近修改的会话
+//   node bin/cost-report.mjs --latest --all-projects  # 旧行为：全局 mtime 最新（慎用，会选错对象）
+//   node bin/cost-report.mjs --latest --cwd <path>    # 指定项目目录（默认 process.cwd()）
 //   node bin/cost-report.mjs --list                   # 列出可用会话
 //
 // 数据源（两者都只读，脚本不写任何东西）：
@@ -57,12 +59,15 @@ const ROOT_EXCLUDE = /(^|\/)(vite|webpack|rollup|vitest|jest|playwright|eslint|t
 // ── 输入解析 ────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const out = { session: null, json: false, latest: false, list: false, compare: [] }
+  const out = { session: null, json: false, latest: false, list: false, compare: [], cwd: null, allProjects: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--json') out.json = true
     else if (a === '--latest') out.latest = true
     else if (a === '--list') out.list = true
+    else if (a === '--all-projects') out.allProjects = true
+    else if (a === '--cwd') out.cwd = argv[++i]
+    else if (a.startsWith('--cwd=')) out.cwd = a.slice('--cwd='.length)
     else if (a === '--session') out.session = argv[++i]
     else if (a.startsWith('--session=')) out.session = a.slice('--session='.length)
     else if (a === '--compare') {
@@ -71,6 +76,32 @@ function parseArgs(argv) {
     }
   }
   return out
+}
+
+/**
+ * dsh 的项目目录 key（与 dsh-session-persistence-jsonl 的 projectKey 同算法）：
+ * 分隔符塌缩成单个 `-`，不安全码元转 `~XXXX`，整体包 `--…--`。
+ * --latest 按它过滤——全局 mtime 最新会选中**另一个项目**的会话，
+ * 然后模型拿着别人的账本填交付报告（2026-09-11 实盘 P1，审计 A3）。
+ */
+export function projectKey(cwd) {
+  let readable = ''
+  let separatorRun = false
+  for (let i = 0; i < cwd.length; i++) {
+    const code = cwd.charCodeAt(i)
+    const ch = String.fromCharCode(code)
+    if (ch === '/' || ch === '\\' || ch === ':') {
+      if (!separatorRun) readable += '-'
+      separatorRun = true
+    } else if (ch !== '~' && /^[A-Za-z0-9._-]$/.test(ch)) {
+      readable += ch
+      separatorRun = false
+    } else {
+      readable += '~' + code.toString(16).toUpperCase().padStart(4, '0')
+      separatorRun = false
+    }
+  }
+  return `--${(readable.replace(/^-+/, '') || 'root').slice(0, 251)}--`
 }
 
 /** 枚举所有会话目录：{ id, dir, transcript, mtime }。 */
@@ -102,7 +133,7 @@ export function listSessions(root = SESSIONS_ROOT) {
       }
       // 子 agent 会话：目录名不是 `session-<uuid>` 形态
       const isChild = !entry.name.startsWith('session-')
-      found.push({ id, dir: join(root, slug.name, entry.name), transcript, mtime, isChild })
+      found.push({ id, dir: join(root, slug.name, entry.name), transcript, mtime, isChild, project: slug.name })
     }
   }
   return found.sort((a, b) => b.mtime - a.mtime)
@@ -135,7 +166,14 @@ export function resolveSession(opts, sessions = null) {
   // 只认**顶层会话**：子 agent 会话的目录名是裸 uuid（没有 `session-` 前缀）。
   // 若不过滤，--latest 会选中最后一个派发出去的 subagent，
   // 账本记成它的成本并报"未知 token"——而这是流程强制要求跑的那条命令。
-  return pickLatest(sessions ?? listSessions())
+  const all = sessions ?? listSessions()
+  if (opts.allProjects) return pickLatest(all)
+  // 默认按**当前项目目录**过滤（fail-closed）：本项目没有会话就返回 null，
+  // 不得退而求其次选全局最新——那是另一个项目的账本（审计 A3）。
+  // project 为 undefined 的记录（合成 fixture / 旧版调用方）不参与过滤。
+  const key = projectKey(opts.cwd ?? process.cwd())
+  const scoped = all.filter((s) => s.project === undefined || s.project === key)
+  return pickLatest(scoped)
 }
 
 // ── 事件读取 ────────────────────────────────────────────────────────────────
@@ -299,9 +337,8 @@ export function computeMetrics(events, tokens, id) {
   // 事件字节累计：用于算"阶段 2 占全部上下文的比例"（信封四维之一，
   // 独立审核指出原先**没有任何工具能测它**——即那条 bound 等于 prose）。
   let totalBytes = 0
-  let bytesBeforeImpl = 0
-  let implSeen = false
-  let phase2ToolCalls = 0
+  const eventBytes = [] // 逐事件 {t, size}——阶段 2 边界只能扫完才知道，累计须可重放
+  const toolCallTimes = []
 
   const toolCalls = new Map() // callId -> name
   const toolCounts = {}
@@ -313,6 +350,7 @@ export function computeMetrics(events, tokens, id) {
   let firstImpl = null
   let firstTest = null
   let firstWrite = null
+  let firstBrief = null
   let firstResult = null // 首个 turn 结束 = 首轮交付
   const subagentDispatch = []
 
@@ -320,9 +358,9 @@ export function computeMetrics(events, tokens, id) {
     const d = e.data ?? {}
     const size = JSON.stringify(d ?? {}).length
     totalBytes += size
-    if (!implSeen) bytesBeforeImpl += size
+    eventBytes.push({ t: at(e.time), size })
     if (e.type === 'tool/call') {
-      if (!implSeen) phase2ToolCalls++
+      toolCallTimes.push(at(e.time))
       const name = d.name ?? 'unknown'
       toolCounts[name] = (toolCounts[name] ?? 0) + 1
       if (d.callId) toolCalls.set(d.callId, name)
@@ -337,6 +375,14 @@ export function computeMetrics(events, tokens, id) {
         }
         subagentDispatch.push({ at: at(e.time), turn: d.turn, step: d.step, desc })
       }
+      if (name === 'ask_user_question') {
+        // 决策简报呈交 = 阶段 2 的语义终点（用户一键确认后才开始实现）。
+        // 只认问题文本里带"决策简报"的——阶段 1 的需求澄清也用 ask_user_question，
+        // 拿首次调用当锚会把边界错移到需求阶段（形态误判比没有锚更糟）。
+        if (!firstBrief && (d.arguments ?? '').includes('决策简报')) {
+          firstBrief = { at: at(e.time) }
+        }
+      }
       if (name === 'write' || name === 'edit') {
         let fp
         try {
@@ -349,7 +395,6 @@ export function computeMetrics(events, tokens, id) {
         if (fp && isScaffold(fp) && !firstScaffold) firstScaffold = { at: at(e.time), path: fp }
         if (fp && isImplSource(fp) && !firstImpl) {
           firstImpl = { at: at(e.time), path: fp }
-          implSeen = true // 之后的事件不再计入"实现前"（阶段 2）区间
         }
         if (fp && isTestSource(fp) && !firstTest) firstTest = { at: at(e.time), path: fp }
       }
@@ -362,7 +407,11 @@ export function computeMetrics(events, tokens, id) {
     }
   }
 
-  // 阶段 2（计划与门）的边界取**信号最强者**：
+  // 阶段 2（计划与门）的边界：**首选事件锚——决策简报呈交**（首个问题文本带"决策简报"的
+  // ask_user_question）。它是"计划冻结、用户确认"这个语义事件在 transcript 里的唯一可靠投影；
+  // 文件锚（首行实现/首个测试）会被探针、取证、并行 worker 的写动作污染——同一会话用
+  // "实时算"和"截断算"曾得出 10.8% / 13.9% 两个值（审计 B5）。
+  // 事件锚缺失时回退文件锚，取**信号最强者**：
   //   · 首选**首个测试文件**——TDD 流程里"开始写测试"最接近"开始实现"这个语义事件；
   //   · 备选首个实现代码；两者取**较晚者**（max）。
   // 为什么不单用 firstImpl：A/B 实验暴露的坑——单文件交付里根级源码文件
@@ -371,9 +420,15 @@ export function computeMetrics(events, tokens, id) {
   // 一次是锚在 firstSource=设计文档，一次是锚在过晚/过早的 firstImpl）。
   // 也不能只锚 firstImpl：xdev 会话先写 src/render/palette.ts（26.7min）才写测试（24.8min）——
   // 取 max 才能覆盖两种顺序。
-  const candidates = [firstImpl?.at, firstTest?.at].filter((x) => x != null)
-  const phase2End = candidates.length ? Math.max(...candidates) : null
+  const fileAnchor = [firstImpl?.at, firstTest?.at].filter((x) => x != null)
+  const phase2End = firstBrief?.at ?? (fileAnchor.length ? Math.max(...fileAnchor) : null)
+  const phase2Anchor = firstBrief ? '决策简报呈交（事件锚）' : fileAnchor.length ? '首行实现/首个测试（文件锚回退）' : null
   const inPhase2 = subagentDispatch.filter((s) => phase2End != null && s.at != null && s.at < phase2End)
+  // 字节与工具调用按同一边界重放累计（边界扫完才知道，只能事后过滤）
+  const bytesBeforeEnd =
+    phase2End == null ? totalBytes : eventBytes.filter((b) => b.t != null && b.t < phase2End).reduce((a, b) => a + b.size, 0)
+  const phase2ToolCalls =
+    phase2End == null ? toolCallTimes.length : toolCallTimes.filter((t) => t != null && t < phase2End).length
 
   // 放大倍数在这里归一，而不是在 readTokens 里——否则把 tokens 直接传给
   // computeMetrics（测试、外部调用）时会漏掉除零保护，得到 Infinity/NaN。
@@ -400,10 +455,11 @@ export function computeMetrics(events, tokens, id) {
     /** 阶段 2（计划与门）——实测这一段是最该盯的：产出 0 行代码却吃掉大量预算。 */
     planPhase: {
       endAtMin: phase2End,
+      anchor: phase2Anchor,
       subagents: inPhase2.length,
       shareOfAll: subagents > 0 ? inPhase2.length / subagents : null,
       toolCalls: phase2ToolCalls,
-      contextShare: totalBytes > 0 ? bytesBeforeImpl / totalBytes : null,
+      contextShare: totalBytes > 0 ? bytesBeforeEnd / totalBytes : null,
     },
     tokens: tokensNorm,
     missing: {
@@ -447,9 +503,9 @@ export function renderMarkdown(m) {
   lines.push(`| **首轮交付时刻** | **${fmtMin(m.firstResultAtMin)}** | turn 1 结束；最干净的可比时间点 |`)
   lines.push(`| 工具调用 / 步数 | ${fmtInt(m.toolCalls)} / ${fmtInt(m.steps)} | |`)
   lines.push(`| **subagent 派发** | **${fmtInt(m.subagents)}** | |`)
-  lines.push(`| **阶段 2 的 subagent** | **${fmtInt(m.planPhase.subagents)}**（占 ${m.planPhase.shareOfAll == null ? '未知' : fmt(m.planPhase.shareOfAll * 100, 0) + '%'}） | 截至首行实现代码之前；实测这一段常年过高 |`)
+  lines.push(`| **阶段 2 的 subagent** | **${fmtInt(m.planPhase.subagents)}**（占 ${m.planPhase.shareOfAll == null ? '未知' : fmt(m.planPhase.shareOfAll * 100, 0) + '%'}） | 边界锚：${m.planPhase.anchor ?? '无（全量计入）'}；实测这一段常年过高 |`)
   lines.push(`| 阶段 2 工具调用 | ${fmtInt(m.planPhase.toolCalls)} | 信封四维之一 |`)
-  lines.push(`| **阶段 2 上下文占比** | **${m.planPhase.contextShare == null ? '未知' : fmt(m.planPhase.contextShare * 100, 1) + '%'}** | 首行实现代码之前的事件字节 ÷ 全部 |`)
+  lines.push(`| **阶段 2 上下文占比** | **${m.planPhase.contextShare == null ? '未知' : fmt(m.planPhase.contextShare * 100, 1) + '%'}** | 边界锚之前的事件字节 ÷ 全部 |`)
   const short = (x) => (x ? '`' + x.path.split('/').slice(-2).join('/') + '`' : '未检测到')
   lines.push(`| **首个实现代码时刻** | **${fmtMin(m.firstImpl?.at)}** | ${short(m.firstImpl)}（写在源码目录里，即真正开始实现） |`)
   lines.push(`| 首个脚手架文件时刻 | ${fmtMin(m.firstScaffold?.at)} | ${short(m.firstScaffold)}（根级入口，通常是工程脚手架） |`)

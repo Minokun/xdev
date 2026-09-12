@@ -950,6 +950,11 @@ test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的�
   )
   assert.match(stage2, /script:/, 'dsh form must pass the script body')
   assert.match(stage2, /meta:/, 'dsh form must pass meta as a parameter')
+  assert.match(stage2, /args:/, 'dsh form must pass args as a parameter')
+  // dsh 形态里 name 只允许出现在 meta 内部（meta.name 是 DSH 必填）；
+  // 顶层 `Workflow({ name: … })` 按名查找是 Claude Code 形态，混用即整单报错（审计 A1c 残余）。
+  const dshForm = stage2.slice(stage2.indexOf('② dsh'))
+  assert.doesNotMatch(dshForm, /Workflow\(\{\s*name:/, 'dsh form must not look up by top-level name')
   assert.match(stage2, /去掉 export const meta|删掉脚本首行的 export const meta/, 'must state the export-const-meta constraint')
   assert.match(stage2, /escalate: false/, 'must define the reject-but-continue branch')
   assert.match(stage2, /escalate: true/, 'must define the escalate branch')
@@ -1061,6 +1066,30 @@ test('cost-report: --latest 只选顶层会话，且子会话的 token 也读得
   assert.equal(resolveSession({ compare: [], latest: true }, synthetic).id, 'top-older')
   // 全是子会话 → 返回 null（不得退而求其次选中一个 subagent）
   assert.equal(pickLatest(synthetic.filter((s) => s.isChild)), null)
+
+  // ③ --latest 默认按当前项目目录过滤（审计 A3：全局 mtime 会选中另一个项目的会话，
+  // 然后模型拿着别人的账本填交付报告）。合成数据：别项目更新 → 仍须选本项目。
+  const { projectKey } = await import('../bin/cost-report.mjs')
+  const thisKey = projectKey(process.cwd())
+  const crossProject = [
+    { id: 'other-proj-newer', isChild: false, project: '--tmp-other--', transcript: '/a', mtime: 10 },
+    { id: 'this-proj-older', isChild: false, project: thisKey, transcript: '/b', mtime: 9 },
+  ]
+  assert.equal(
+    resolveSession({ compare: [], latest: true }, crossProject)?.id,
+    'this-proj-older',
+    '--latest must scope to the current project even when another project is newer',
+  )
+  assert.equal(
+    resolveSession({ compare: [], latest: true, allProjects: true }, crossProject).id,
+    'other-proj-newer',
+    '--all-projects must preserve the old global-mtime behaviour',
+  )
+  assert.equal(
+    resolveSession({ compare: [], latest: true, cwd: '/nonexistent-project-xyz' }, crossProject),
+    null,
+    'a project with no sessions must yield null (fail-closed), not another project’s ledger',
+  )
   // 真实数据上再确认一次（弱断言，仅防止 isChild 标记整体失效）
   const latest = pickLatest(all)
   assert.ok(latest && !latest.isChild, '--latest must never select a subagent session')

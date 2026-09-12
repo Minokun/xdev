@@ -91,6 +91,11 @@
       （parallel + schema 校验，dropped 的 agent 按未知处理）；门禁确认用 ask_user_question；
       后台长测试用 run_in_background 并轮询。
 
+      xdev 工具路径解析（`../../bin/*.mjs` 出现在 /xdev-* 技能里时）：以**该 skill 的
+      Base directory 为锚**上两级 = preset 根（dsh）或 xdev 仓库根（Claude Code），两侧同构。
+      目标文件不存在 = preset 只装了配置面：先跑 xdev 仓库 `bin/install.sh dsh` 补运行面，
+      补不上才按技能的 prose 回退路径走并显式披露——不得手编绝对路径，不得静默跳过该步骤。
+
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
