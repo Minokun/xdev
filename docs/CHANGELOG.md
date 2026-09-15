@@ -9,6 +9,31 @@
 
 ---
 
+## [v3.3.1] - 2026-09-15 (full-dev 规模档位 + research 门禁五维 + 审计 G1–G7 收口)
+
+**改动位置：** `claude-code/full-dev.md`（新增阶段 0）、`claude-code/research.md`（必含项 1 / 附录 R1）、
+`.claude/workflows/full-dev-gate.js`（research profile）、`bin/install.sh`、`agent.cordis.yml`、`tests/`
+
+**What landed：**
+1. **full-dev 阶段 0 规模档位（mini/标准/攻坚）**：与 research 同构；mini = 口述设计 + 一页计划 + 门禁 `size:"small"`，
+   探针不伸缩。依据 A/B 实测：同一 CLI 小任务 standard 2.24 M vs xdev 40.77 M（18.2×）——固定编排开销在小任务上占绝对主导，
+   而路由此前把一切"新功能"送进完整流程。
+2. **research 门下门五维**：R1 加【事实性前提例外】（T1 早已要求、门禁一直没问）与【目标覆盖】（L2 的研究侧：用户目标 → H1 是解释层，
+   收窄必须标注并进决策简报）；proposal 必含项 1 加"目标→假设映射"。
+3. **gate.js research 条款与 research.md 附录 parity 测试**：第二份拷贝从此有守卫（忽略空白逐条包含，双向变异均红）。
+4. **接线残余**：probe-run 进阶段 4 与安装面（glob 同步 `bin/*.mjs`）；VERSION 由 drift claim 钉到 CHANGELOG 顶部；
+   `WORKFLOW_FILES` 覆盖 research；两份流程文件行数预算只降不升。
+
+**What was tried first（放弃的方向）：**
+- **gate.js 运行时读取 research.md 附录作为 prompt 真源** —— 放弃。workflow 脚本自述不能读文件；退而求其次用 parity 测试钉住两份拷贝。
+- **只给 mini 档去掉门下门** —— 放弃。门下门"不受规模自适应豁免"是 v3.0 就定的（成本一次 subagent），mini 省的是面板与文档，不是裁决。
+- **上调行数预算容纳新增条款** —— 放弃。预算的意义就是逼着"加规则先删规则"；本轮阶段 0 从 17 行压到 12 行、README 行数声称按真值改。
+
+**Rationale：** 三轮审计（`docs/reviews/2026-09-12-xdev-audit.md`）反复命中同一类缺陷——机制写了、没接上线，或守卫写了、
+漏了一种形态。本轮全部改动都遵守"每条带执行体 + 变异探针"：70 条探针在两个 node 二进制下指纹一致。
+
+---
+
 ## [Unreleased] - 2026-09-11 (v3.1 实盘报告：机制过了，安装面没过)
 
 **改动位置：** `docs/plans/2026-09-10-xdev-optimization.md` §11（新增实盘报告）、§1.3 / §2.5（订正）

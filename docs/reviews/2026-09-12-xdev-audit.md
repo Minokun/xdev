@@ -308,6 +308,20 @@ sed -n 255,261p claude-code/full-dev.md                            # 8.4② 订�
 | G6 | LOW | `tests/workflows.test.mjs:41` `WORKFLOW_FILES` 仍不含 `research.md`（禁用外部 skill 调用守卫未覆盖研究流） | 同左 | 加入列表 |
 | G7 | LOW | F2/L8 无刹车：两份流程文件本轮再涨 49 行；process-loopholes 已写"每条必须自带执行体与探针，否则不写进文档"，但无机械约束 | 9.1 体量行 | drift.json 加 `fileLines` 上限 claim（full-dev.md ≤550 先钉住现状，随脚本化逐步下调） |
 
+### 9.3b 修复记录（2026-09-15，分支 `xdev-audit-g1-g7`）
+
+| # | 状态 | 落点 | 探针 |
+|---|---|---|---|
+| G1 | ✅ | `VERSION`=3.3.1；`CHANGELOG.md` 补 v3.3.1；drift claim `VERSION ↔ ^## \[v…\]` | VERSION 改 9.9.9 → 零漂移测试红 |
+| G2 | ✅ | full-dev 阶段 4 第 1 步 `probe-run.mjs --probes … --timeout 60 --jobs 4`；`install.sh dsh` glob 同步 `bin/*.mjs`（跳过 gen-dsh）；安装守卫 + drift commands 加 probe-run；已重装 | 改掉引用 / 退回硬编码清单 → 红 |
+| G3 | ✅ | 新测试：research.md 附录 R1a/R1b/R1c/R1 的判断条款（①…⑩ / 【…】/ 检查 / 五维裁决 / 纪律）忽略空白逐条包含于 gate.js；gate.js 两处缩写对齐附录 | 附录改条款 / gate.js 改条款 → 双向红 |
+| G4 | ✅ | R1 加【事实性前提例外】【目标覆盖】，四维→五维，输出 `premises_checked`；proposal 必含项 1 加目标→假设映射 +【解释收窄】；gate.js 同步 | 删例外 / 退回四维 → 红 |
+| G5 | ✅ | full-dev 新增阶段 0 规模档位表（mini→`size:"small"`，18.2× 依据）；persona 路由加定档提示；README 行数 530→560（真值） | 删表 / 删路由提示 → 红 |
+| G6 | ✅ | `WORKFLOW_FILES` 加 research | — |
+| G7 | ✅ | 行数预算守卫 560 / 415（wc 口径，只降不升） | 超 1 行即红（实施中已触发一次，靠压缩阶段 0 而非上调预算解决） |
+
+复测：tests **64/64**；探针 **70/70** 两个 node 二进制指纹一致 `c3deab2193f9464f`；drift 0（15 claim + 5 command）；gen-dsh 无 stale；安装面含 3 个 bin 工具。
+
 ### 9.4 更新后的待办优先级
 
 1. **G1 / G2 / G6**：一行级，随下一个提交顺手做。
