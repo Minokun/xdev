@@ -1045,6 +1045,50 @@ test('full-dev.md: 设计文档必须含需求/真值映射表与一手源清单
   assert.match(stage2, /sources: \[/, 'gate invocation examples must pass sources')
 })
 
+test('L4/L5/L6/L7：增量轮检查单、验收基线、读数可比较（文档锚）', async () => {
+  // docs/reviews/2026-09-12-process-loopholes.md L4–L7。
+  const bugfix = await readFile(join(repoRoot, 'claude-code/bugfix.md'), 'utf8')
+  assert.match(bugfix, /修复交付检查单（机械，逐项过）/, 'bugfix S2/S3 must have the delivery checklist')
+  assert.match(bugfix, /影响面清单/, 'the checklist must demand a blast-radius inventory')
+  assert.match(bugfix, /变异探针重跑/, 'probes must be rerun for touched files on fix rounds')
+  assert.match(bugfix, /用户验收基线（L5）/, 'user-verified behaviours must be guarded on fix rounds')
+
+  const src = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  assert.match(src, /用户验收回填（L5）/, 'stage 4 must backfill user-verified criteria')
+  assert.match(src, /user-verified/, 'user-verified criteria carry a source tag')
+  assert.match(src, /判据集差量/, 'delivery readings must carry the criteria-set delta (L7)')
+  assert.match(src, /判据抓获记录/, 'delivery readings must record which criteria caught what (L6)')
+  assert.match(src, /一手源清单（有外部接地时）/, 'adversarial review (appendix D) must receive raw sources')
+})
+
+test('cost-report: 冻结违规审计——首个实现早于决策简报即标记（P2）', async () => {
+  const { computeMetrics } = await import('../bin/cost-report.mjs')
+  const brief = (t) => ({
+    type: 'tool/call',
+    time: t,
+    data: { turn: 1, step: 9, callId: 'q1', name: 'ask_user_question', arguments: JSON.stringify({ questions: [{ question: '决策简报：按此实施？' }] }) },
+  })
+  const impl = (t) => ({
+    type: 'tool/call',
+    time: t,
+    data: { turn: 1, step: 5, callId: 'c1', name: 'write', arguments: JSON.stringify({ file_path: '/w/proj/src/game.js' }) },
+  })
+  const base = [
+    { type: 'session', time: 1000, data: { id: 'fx' } },
+    { type: 'turn/start', time: 1000, data: { turn: 1 } },
+  ]
+  // 简报在实现之后 → 违规
+  const v = computeMetrics([...base, impl(3000), brief(6000), { type: 'turn/end', time: 9000, data: { turn: 1, reason: { kind: 'completed' } } }], null, 'fx')
+  assert.ok(v.freezeViolation, 'impl before brief must be flagged')
+  assert.equal(v.freezeViolation.implAtMin < v.freezeViolation.briefAtMin, true)
+  // 简报在实现之前 → 干净
+  const ok = computeMetrics([...base, brief(2000), impl(5000), { type: 'turn/end', time: 9000, data: { turn: 1, reason: { kind: 'completed' } } }], null, 'fx')
+  assert.equal(ok.freezeViolation, null, 'impl after brief must not be flagged')
+  // 无简报事件（回退路径）→ 不判违规（没有锚，不得臆断）
+  const none = computeMetrics([...base, impl(3000), { type: 'turn/end', time: 9000, data: { turn: 1, reason: { kind: 'completed' } } }], null, 'fx')
+  assert.equal(none.freezeViolation, null)
+})
+
 test('full-dev 把门禁编排指向 workflow 脚本，且保留无 runtime 的回退路径', async () => {
   // §3.2 兑现 RESEARCH.md §12.1 的 Tier 1：轮次/超时/预算从 prose 变成代码。
   // 但预设未必都有 workflow runtime（claude-code / codex 端形态不同），

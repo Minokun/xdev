@@ -249,3 +249,79 @@ PATH=/opt/homebrew/bin:$PATH node --test tests/workflows.test.mjs 2>&1 | grep -E
 ~/.nvm/versions/node/v22.23.2/bin/node --test tests/workflows.test.mjs 2>&1 | grep -E "pass|fail"  # # 前缀 = TAP
 sed -n 255,261p claude-code/full-dev.md                            # 8.4② 订正依据
 ```
+
+---
+
+## 9. 修复对账（2026-09-12 晚，对 `70607ad..d9ff984` 十个提交的独立复核）
+
+> 复核方式：不采信提交信息，逐项跑命令 / 读 diff。§0 读数全部重测。
+
+### 9.1 复测读数
+
+| 项 | 值 |
+|---|---|
+| tests | **57/57**（nvm v22 TAP 与 homebrew v25 spec 两个 node 下均通过） |
+| probes | **56/56 CAUGHT**，两个 node 下结果指纹一致 `83a9f86907a8ecae`（B1 已闭合） |
+| gen-dsh / drift-check | up to date / 14 claim + 4 command，0 漂移 |
+| 安装面 `~/.dsh/.agent-presets/xdev` | 已含 `bin/{cost-report,drift-check}.mjs` + `.claude/workflows/{full-dev-gate,ask-investigate}.js`，与仓库逐字节一致；**缺 `bin/probe-run.mjs`**（见 9.3-G2） |
+| 版本 | `VERSION` = **3.1.0**；`CHANGELOG.md` 顶部 = **v3.3.0**（见 9.3-G1） |
+| 文本体量 | full-dev.md 513 → **536** 行；research.md 380 → **406** 行 |
+
+### 9.2 §2 清单逐条状态
+
+| # | 状态 | 落点 |
+|---|---|---|
+| A1 安装面 | ✅ | `install.sh dsh` 全量同步（`4517916`）；已装 |
+| A1b `<xdev>` | ✅ | 改 `../../bin/*.mjs` 相对 skill 目录 + persona 解析规则（`8de902e`） |
+| A1c dsh 签名守卫 | ✅ | tests 加 dsh 形态守卫 |
+| A2 信封非 dsh 不可测 | ⚠️ 未声明 | 文档仍未写"信封仅 dsh 可测" |
+| A3 `--latest` | ✅ | 按 cwd slug 过滤 + `--cwd` + `--all-projects`；流程首选 `--session` |
+| B1 harness 恒绿 | ✅ | `requirePassPositive`；TAP 钉死；双 node 复测一致 |
+| B2 轮次守卫形态 | ✅ | regex 扩形态；research.md L375 改 ≤2；drift.json 加 claim |
+| B3 编号残留 | ✅ | 四处修；drift.json 加 4 条映射 claim |
+| B4 数字/台账/five-lens | ✅ | CHANGELOG 统一 ≤25% / review-ledger / "R1a–c + R1 + R2" |
+| B5 边界锚 | ✅ | 事件锚"决策简报呈交"，四维共锚 |
+| B6 state 文件 | ✅ | 已删除 |
+| C1 写面归属 | ✅ | 机械规则进阶段 3 派发段 |
+| C2 sleep | ✅ | 一律禁用，两条等待路径 |
+| D1 探针跑批器 | ⚠️ 半接线 | `bin/probe-run.mjs` 已写并驱动 `mutations.mjs`；**但 full-dev.md 阶段 4 未引用它、install.sh 不同步它**（9.3-G2） |
+| D2 证据同 commit | ✅ | 阶段 4 第 6 步机械规则 |
+| E1 研究侧工具集 | ❌ | 未动 |
+| E2 verdict 双路复算 | ❌ | 未动 |
+| E3 探索分析员 | ✅ | research.md 阶段 4 + 守卫 + 探针 |
+| E4 门禁脚本复用 | ✅ | `args.profile="research"`，面板结果机械注入门下门；2 条单测 |
+| E5 小项 | ❌ | 未动 |
+| F1 A/B standard 臂 | ✅ 已跑 | P1 **18.2×** 🔴 / P2 **172.9×** 🔴 / P3 🟢；Q1–Q4 两臂全过 → §1.5 第 2 行"只做缩编" |
+| F2 体量 | ❌ 继续上涨 | +23 / +26 行；行数上限未进 drift.json |
+| L1–L3（新，process-loopholes） | ✅ | v3.3.0：映射表 / 一手源 `args.sources` / 第五维"需求覆盖" |
+| L4–L7 | ❌ | 文档自认未修 |
+
+### 9.3 本轮新发现（继续修）
+
+| # | 严重度 | 发现 | 证据 | 修法 |
+|---|---|---|---|---|
+| G1 | MEDIUM | `VERSION` 仍为 3.1.0，CHANGELOG 已发 v3.2.0 / v3.3.0；drift.json 无 VERSION claim——B4 那一类漂移换了个位置复现 | `cat VERSION`；`CHANGELOG.md:7` | 改 VERSION；drift.json 加 claim `VERSION ↔ CHANGELOG 首个 [vX.Y.Z]` |
+| G2 | MEDIUM | D1 "机制写了没接上线"：`probe-run.mjs` 头注释写"用法（交付项目侧）"，但 full-dev.md 阶段 4 第 1 步无一字提到它（`rg timeout\|probe-run claude-code/` 零命中），`install.sh dsh` 的工具列表硬编码 `cost-report drift-check`、日志写死"2 bin tools"——项目侧探针仍会无 timeout 串行跑 | `bin/install.sh:313-316`；`bin/probe-run.mjs:12-13` | 阶段 4 第 1 步指向 `../../bin/probe-run.mjs --probes … --timeout 60`；install.sh 改为同步 `bin/*.mjs` 全部；安装守卫加 `test -f …/bin/probe-run.mjs` |
+| G3 | MEDIUM | research profile 的 R1a–c/R1 prompt 在 `full-dev-gate.js` 里是**第二份拷贝**（注释自称"真源 = research.md 附录"），无任何 parity 测试——与 SKILL.md 由 gen-dsh 生成并守卫的做法不一致，必然漂移 | `.claude/workflows/full-dev-gate.js:181-222` vs `claude-code/research.md` 附录 R1a–R1 | 二选一：gate.js 从 research.md 附录代码块读取（需 runtime 读文件能力，脚本自述不能）→ 退而求其次：tests 加 parity 断言（逐段 normalize 后比对） |
+| G4 | MEDIUM | research 门下门 prompt 缺 **事实性前提例外**（T1 现已要求）与 **需求覆盖/解释收窄**一维（L2 对研究侧同样成立：用户目标 → H1 是解释层，收窄无人审）；schema 有 `premises_checked` 而 research prompt 未要求输出 | `full-dev-gate.js:208-222`（research gate prompt）对照 `:163-171`（full-dev） | research gate prompt 补两段；proposal.md 必含项加"目标→H1 映射 + 【解释收窄】标注" |
+| G5 | MEDIUM | A/B 结论的真实含义未进流程：standard 只花 2.24 M，xdev 40.77 M——**小任务上 xdev 固定开销占绝对主导**（18×），而 persona 路由把"新功能"一律送 full-dev，full-dev 没有 research 那样的 mini/标准/攻坚档 | PREREGISTRATION §4.3；`agent.cordis.yml` 路由段；`full-dev.md:109` 仅一句"小功能可口述" | full-dev 加显式 effort 档位（mini：口述设计 + 仅门下门 + 探针，免面板/免计划文档），路由按规模选档；A/B 下一轮 prompt 不预告陷阱以恢复 Q 的判别力 |
+| G6 | LOW | `tests/workflows.test.mjs:41` `WORKFLOW_FILES` 仍不含 `research.md`（禁用外部 skill 调用守卫未覆盖研究流） | 同左 | 加入列表 |
+| G7 | LOW | F2/L8 无刹车：两份流程文件本轮再涨 49 行；process-loopholes 已写"每条必须自带执行体与探针，否则不写进文档"，但无机械约束 | 9.1 体量行 | drift.json 加 `fileLines` 上限 claim（full-dev.md ≤550 先钉住现状，随脚本化逐步下调） |
+
+### 9.4 更新后的待办优先级
+
+1. **G1 / G2 / G6**：一行级，随下一个提交顺手做。
+2. **G3 / G4**：research 门禁刚接上线就带着两处结构缺口，趁热修；G4 是 L2 在研究侧的落点。
+3. **G5**：A/B 的核心结论——xdev 对小任务的固定开销问题——目前只落在实验文档里，没进流程；这是下一版最该做的方向性改动。
+4. **E1 / E2**：研究侧工具集与 verdict 双路仍是 research 从守则到系统的关键，未动。
+5. **L4–L7 / G7**：按 process-loopholes 的顺序增量做，每条带执行体与探针。
+
+**复算命令**
+```bash
+cat VERSION; sed -n 7p CHANGELOG.md                                   # G1
+rg -n "probe-run|timeout" claude-code/full-dev.md; sed -n 313,316p bin/install.sh   # G2
+ls ~/.dsh/.agent-presets/xdev/bin                                     # G2：无 probe-run.mjs
+rg -n "事实性前提|解释收窄" .claude/workflows/full-dev-gate.js         # G4：只在 full-dev 段
+rg -n "WORKFLOW_FILES = " -A1 tests/workflows.test.mjs                # G6
+wc -l claude-code/full-dev.md claude-code/research.md                 # G7
+```

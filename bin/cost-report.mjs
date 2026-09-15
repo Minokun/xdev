@@ -452,6 +452,12 @@ export function computeMetrics(events, tokens, id) {
     firstScaffold,
     firstImpl,
     firstTest,
+    /** 冻结违规（P2 审计指标）："裁决未出前禁止进入实现"——首个 src/ 写入早于决策简报呈交即违规。
+     *  实盘（2026-09-11 坦克会话）：面板审查在跑、主线程已开始写 src/，无人抓。事后审计靠此标记。 */
+    freezeViolation:
+      firstBrief && firstImpl && firstImpl.at != null && firstBrief.at != null && firstImpl.at < firstBrief.at
+        ? { implAtMin: firstImpl.at, briefAtMin: firstBrief.at, path: firstImpl.path }
+        : null,
     /** 阶段 2（计划与门）——实测这一段是最该盯的：产出 0 行代码却吃掉大量预算。 */
     planPhase: {
       endAtMin: phase2End,
@@ -508,6 +514,9 @@ export function renderMarkdown(m) {
   lines.push(`| **阶段 2 上下文占比** | **${m.planPhase.contextShare == null ? '未知' : fmt(m.planPhase.contextShare * 100, 1) + '%'}** | 边界锚之前的事件字节 ÷ 全部 |`)
   const short = (x) => (x ? '`' + x.path.split('/').slice(-2).join('/') + '`' : '未检测到')
   lines.push(`| **首个实现代码时刻** | **${fmtMin(m.firstImpl?.at)}** | ${short(m.firstImpl)}（写在源码目录里，即真正开始实现） |`)
+  if (m.freezeViolation) {
+    lines.push(`| ⚠️ **冻结违规** | **是** | 首个实现写入（${fmtMin(m.freezeViolation.implAtMin)}）早于决策简报呈交（${fmtMin(m.freezeViolation.briefAtMin)}）——"裁决未出前禁止进入实现"被违反，交付报告应记录 |`)
+  }
   lines.push(`| 首个脚手架文件时刻 | ${fmtMin(m.firstScaffold?.at)} | ${short(m.firstScaffold)}（根级入口，通常是工程脚手架） |`)
   lines.push(`| 首个测试文件时刻 | ${fmtMin(m.firstTest?.at)} | ${short(m.firstTest)}（TDD 先写测试属正常，故分列） |`)
   lines.push('')

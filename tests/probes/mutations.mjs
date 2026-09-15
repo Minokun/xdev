@@ -141,6 +141,19 @@ const PROBES = [
   { group: 'doc', name: '删掉映射表要求（L1 回归）', file: 'claude-code/full-dev.md',
     old: '**需求/真值映射表（机械核查面，不可省略）**', new: '**说明**' },
 
+  // ── L4/L5/L6/L7/P2（过程漏洞审查第二批）───────────────────────────────────
+  { group: 'bugfix', name: '删掉修复交付检查单（L4 回归）', file: 'claude-code/bugfix.md',
+    old: '**S2/S3 修复交付检查单（机械，逐项过）**', new: '**说明**' },
+  { group: 'bugfix', name: '删掉用户验收基线守卫（L5 回归·bugfix 侧）', file: 'claude-code/bugfix.md',
+    old: '**用户验收基线（L5）**', new: '**说明**' },
+  { group: 'doc', name: '删掉判据集差量要求（L7 回归）', file: 'claude-code/full-dev.md',
+    old: '**判据集差量**', new: '**备注**' },
+  { group: 'doc', name: '删掉用户验收回填（L5 回归·full-dev 侧）', file: 'claude-code/full-dev.md',
+    old: '用户验收回填（L5）', new: '说明' },
+  { group: 'cost', name: '冻结违规检测被关掉（P2 回归）', file: 'bin/cost-report.mjs',
+    old: 'firstImpl.at != null && firstBrief.at != null && firstImpl.at < firstBrief.at',
+    new: 'false' },
+
   // ── bin/drift-check.mjs ─────────────────────────────────────────────────
   { group: 'drift', name: 'actual 求值失败当通过', file: 'bin/drift-check.mjs',
     old: '    if (got.error) {', new: '    if (false) {' },
