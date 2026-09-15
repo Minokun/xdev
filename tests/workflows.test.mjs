@@ -38,7 +38,7 @@ async function runWorkflow(file, { args = {}, agentResults = [] } = {}) {
 
 // --- v3: zero external skill dependencies ---
 
-const WORKFLOW_FILES = ['full-dev', 'full-dev-design', 'full-dev-impl', 'bugfix', 'iterate', 'ask']
+const WORKFLOW_FILES = ['full-dev', 'full-dev-design', 'full-dev-impl', 'bugfix', 'iterate', 'ask', 'research']
   .map((name) => `claude-code/${name}.md`)
 
 test('workflows do not invoke external skills or removed dynamic workflows', async () => {
@@ -362,6 +362,7 @@ test('若 ~/.dsh 下装着本 preset，它与仓库源不得偏离', async () =>
     '.claude/workflows/full-dev-gate.js',
     'bin/cost-report.mjs',
     'bin/drift-check.mjs',
+    'bin/probe-run.mjs', // 审计 G2：后加的工具曾被 install.sh 的硬编码清单漏掉
   ]) {
     const [repoStat, liveStat] = await Promise.all([
       stat(join(repoRoot, rel)).catch(() => null),
@@ -1337,4 +1338,98 @@ test('硬规则 2 要求修复后的探针覆盖缺陷的全部语法形态（A/
   assert.match(rules, /每个字段位置/, 'must require covering every field position')
   assert.match(rules, /边界取值/, 'must require boundary values')
   assert.match(rules, /7~7|7≡0/, 'must carry the concrete field example')
+})
+
+// --- 2026-09-15 审计 §9.3 G2–G7 ---------------------------------------------------
+
+test('G2: 阶段 4 探针跑批指向 bin/probe-run.mjs（逐条 timeout），install.sh 用 glob 同步全部运行面工具', async () => {
+  // D1 曾"半接线"：引擎写好了、驱动了本仓库自己的探针，但 full-dev.md 阶段 4 一字未提，
+  // install.sh 的工具清单硬编码两个——项目侧探针仍会无 timeout 串行跑，已装目录里也没有它。
+  const flow = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage4 = flow.slice(flow.indexOf('## 阶段 4'), flow.indexOf('## 附录'))
+  assert.match(stage4, /probe-run\.mjs --probes/, 'stage 4 must run probes through bin/probe-run.mjs')
+  assert.match(stage4, /--timeout \d+/, 'the probe runner call must carry a per-probe timeout')
+  const install = await readFile(join(repoRoot, 'bin/install.sh'), 'utf8')
+  const dsh = install.slice(install.indexOf('install_dsh()'))
+  assert.match(dsh, /for f in "\$src\/bin\/"\*\.mjs/, 'install_dsh must glob bin/*.mjs, not a hard-coded list')
+  assert.doesNotMatch(dsh, /for f in cost-report\.mjs drift-check\.mjs/, 'the hard-coded pair must be gone')
+  assert.match(dsh, /gen-dsh\.mjs\) continue/, 'the repo-side generator is not a runtime tool')
+})
+
+/** 从 research.md 附录代码块里抽"判断条款"：编号项 ①…⑩、【…】块、检查：/五维裁决/纪律 行；续行（缩进）并入上一行。 */
+async function researchAppendixClauses(title) {
+  const src = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  const start = src.indexOf(`### ${title}`)
+  assert.ok(start >= 0, `research.md must have appendix "${title}"`)
+  const block = src.slice(start).match(/```\n([\s\S]*?)\n```/)
+  assert.ok(block, `appendix "${title}" must contain a fenced prompt block`)
+  const isFramework = (l) => /^(你是|输出|\{|"|【注入防护】|【第 2 轮起】|面板结果|\$\{)/.test(l)
+  const isMarker = (l) => /^([①-⑩]|【|检查：|五维裁决|四维裁决|纪律：)/.test(l)
+  const clauses = []
+  let inFramework = true
+  for (const raw of block[1].split('\n')) {
+    if (isMarker(raw) && !isFramework(raw)) {
+      clauses.push(raw)
+      inFramework = false
+    } else if (isFramework(raw)) {
+      inFramework = true
+    } else if (!inFramework && clauses.length && raw.trim()) {
+      clauses[clauses.length - 1] += raw // 续行（缩进或未加编号的下一句）并入上一条款
+    }
+  }
+  assert.ok(clauses.length >= 1, `appendix "${title}" yielded no clauses`)
+  return clauses.map((c) => c.replace(/\s+/g, ''))
+}
+
+test('G3: full-dev-gate.js research profile 的 R1a/R1b/R1c/R1 判断条款与 research.md 附录逐条一致', async () => {
+  // gate.js 里的 research prompt 是 research.md 附录的第二份拷贝（注释自称"真源 = research.md"），
+  // 此前无任何 parity 守卫——与 SKILL.md 由 gen-dsh 生成并守卫的做法不一致，必然漂移。
+  // 框架行（"你是…输入：…"、JSON 输出、第 2 轮说明）允许不同；**判断条款**必须逐字相同（忽略空白）。
+  const gate = (await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')).replace(/\s+/g, '')
+  for (const title of ['R1a 面板·方法论', 'R1b 面板·可行性', 'R1c 面板·可验证性', 'R1 预注册门下门（二值裁决）']) {
+    for (const clause of await researchAppendixClauses(title)) {
+      assert.ok(gate.includes(clause), `${title}: gate.js drifted from research.md on clause:\n  ${clause.slice(0, 80)}…`)
+    }
+  }
+})
+
+test('G4: research 门下门带事实性前提例外与目标覆盖维度（L2 的研究侧），proposal 必含目标→假设映射', async () => {
+  const src = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  const r1 = src.slice(src.indexOf('### R1 预注册门下门'), src.indexOf('### R2'))
+  assert.match(r1, /【事实性前提例外】/, 'R1 must challenge factual premises (T1 exception)')
+  assert.match(r1, /【目标覆盖/, 'R1 must carry the goal-coverage dimension')
+  assert.match(r1, /五维裁决[^。\n]*目标覆盖/, 'goal coverage must be a verdict dimension, not a remark')
+  assert.match(r1, /"premises_checked": true/, 'R1 output must report premises_checked')
+  const stage2 = src.slice(src.indexOf('## 阶段 2'), src.indexOf('## 阶段 3'))
+  assert.match(stage2, /目标→假设映射/, 'proposal.md must include the goal→hypothesis mapping')
+  assert.match(stage2, /【解释收窄】/, 'interpretive narrowings must be labelled')
+  // 脚本侧：research gate prompt 也必须走同一套（parity 测试保证文本，这里保证 schema 能接住）
+  const gate = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  assert.match(gate, /premises_checked: \{ type: 'boolean' \}/, 'gate schema must accept premises_checked')
+})
+
+test('G5: full-dev 有规模档位（mini/标准/攻坚），mini 映射到门禁 size:"small"，persona 路由提示定档', async () => {
+  // A/B：standard 2.24 M vs xdev 40.77 M（18.2×）——固定编排开销在小任务上占绝对主导。
+  // 此前 full-dev 只有一句"小功能可口述"，没有档位，路由把所有"新功能"一律送进完整流程。
+  const flow = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const stage0 = flow.slice(flow.indexOf('## 阶段 0'), flow.indexOf('## 硬规则'))
+  assert.ok(stage0.length > 0, 'stage 0 (effort tier) must exist before the hard rules')
+  assert.match(stage0, /\*\*mini\*\*/, 'mini tier')
+  assert.match(stage0, /\*\*攻坚\*\*/, 'heavy tier')
+  assert.match(stage0, /mini[^\n]*size:"small"/, 'mini must map to the scripted gate size:"small"')
+  assert.match(stage0, /18\.2×/, 'must cite the A/B evidence')
+  assert.match(stage0, /硬规则 1–5 不伸缩/, 'tiers must not relax the hard rules')
+  const cordis = await readFile(join(repoRoot, 'agent.cordis.yml'), 'utf8')
+  assert.match(cordis, /阶段 0 定档 mini\/标准\/攻坚/, 'persona routing must tell the agent to pick a tier')
+})
+
+test('G7: 流程文件行数预算只降不升（L8 的机械刹车）', async () => {
+  // 实盘失效多为"规则没被执行"而修法是再加规则；两份流程文件在 09-12 一天内再涨 49 行。
+  // 预算钉在当前体量：加规则必须先删规则或把规则脚本化。**只许下调这两个数字，不许上调。**
+  const BUDGET = { 'claude-code/full-dev.md': 560, 'claude-code/research.md': 415 }
+  for (const [file, max] of Object.entries(BUDGET)) {
+    const text = await readFile(join(repoRoot, file), 'utf8')
+    const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0) // 与 wc -l 同口径
+    assert.ok(lines <= max, `${file}: ${lines} 行 > 预算 ${max} —— 先删或脚本化，不要上调预算`)
+  }
 })

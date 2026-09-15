@@ -2,6 +2,12 @@
   "$comment": "xdev 自己的漂移断言表。每条 claim = 文档里的一个声称 + 一个 actual 规格（真值怎么算出来）。**actual 必填**：只与字面量比较等于自证，工具会拒绝执行。",
   "claims": [
     {
+      "doc": "VERSION",
+      "pattern": "^(\\d+\\.\\d+\\.\\d+)",
+      "actual": { "kind": "grepCapture", "path": "CHANGELOG.md", "regex": "^## \\[v(\\d+\\.\\d+\\.\\d+)\\]", "flags": "m" },
+      "detail": "VERSION 必须等于 CHANGELOG 顶部条目（曾停在 3.1.0 跨过 v3.2.0/v3.3.0 两个发布，审计 G1）"
+    },
+    {
       "doc": "CHANGELOG.md",
       "pattern": "workflows\\.test\\.mjs` grew from 11 to (\\d+) tests",
       "actual": { "kind": "testCases" },
@@ -125,6 +131,7 @@
     "node bin/gen-dsh.mjs",
     "node bin/cost-report.mjs",
     "node bin/drift-check.mjs",
+    "node bin/probe-run.mjs",
     "node --test tests/workflows.test.mjs"
   ]
 }

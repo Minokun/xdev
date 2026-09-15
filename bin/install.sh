@@ -308,12 +308,18 @@ install_dsh() {
     skill_count=$((skill_count + 1))
   done
 
-  # ② 运行面：测量工具 + 门禁 workflow（path-agnostic：全部输入由 args/--dir 传入）
+  # ② 运行面：测量工具 + 探针跑批器 + 门禁 workflow（path-agnostic：全部输入由 args/--dir 传入）
+  # 用 glob 而不是硬编码清单：清单曾漏掉后加的 probe-run.mjs（审计 G2）。gen-dsh.mjs 是仓库侧
+  # 生成器、不是运行面，跳过。
   local f
-  for f in cost-report.mjs drift-check.mjs; do
-    [ -f "$src/bin/$f" ] || err "missing runtime tool: bin/$f"
-    run cp -f "$src/bin/$f" "$target/bin/$f"
+  local tool_count=0
+  for f in "$src/bin/"*.mjs; do
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in gen-dsh.mjs) continue ;; esac
+    run cp -f "$f" "$target/bin/$(basename "$f")"
+    tool_count=$((tool_count + 1))
   done
+  [ "$tool_count" -gt 0 ] || err "no runtime tools found under bin/"
   local wf_count=0
   for f in "$src/.claude/workflows/"*.js; do
     [ -e "$f" ] || continue
@@ -321,7 +327,7 @@ install_dsh() {
     wf_count=$((wf_count + 1))
   done
 
-  log "dsh: synced preset.yml + agent.cordis.yml + $skill_count skills + 2 bin tools + $wf_count workflows"
+  log "dsh: synced preset.yml + agent.cordis.yml + $skill_count skills + $tool_count bin tools + $wf_count workflows"
 }
 
 # --- dispatch ---
@@ -342,6 +348,6 @@ for a in "${AGENTS[@]}"; do
       log "  verify codex prompts: ls -l \"$CODEX_PROMPTS_TARGET\" | grep xdev-"
       log "  verify codex skills:  ls -l \"$CODEX_SKILLS_TARGET\" | grep xdev-" ;;
     dsh)
-      log "  verify dsh runtime:   test -f \"$DSH_PRESET_TARGET/.claude/workflows/full-dev-gate.js\" && test -f \"$DSH_PRESET_TARGET/bin/cost-report.mjs\" && echo OK" ;;
+      log "  verify dsh runtime:   test -f \"$DSH_PRESET_TARGET/.claude/workflows/full-dev-gate.js\" && test -f \"$DSH_PRESET_TARGET/bin/cost-report.mjs\" && test -f \"$DSH_PRESET_TARGET/bin/probe-run.mjs\" && echo OK" ;;
   esac
 done
