@@ -87,7 +87,7 @@ test('bugfix carries the probe mechanism in its bugfix-specific form', async () 
   // 把"（…不可跳过）"改成"（可选步骤）"照样绿（变异探针实测）。
   assert.match(source, /反向确认（[^）]*不可跳过[^）]*）/, 'reverse-confirmation must be marked non-skippable')
   assert.match(source, /必须\*\*重新失败\*\*|重新失败/, 'the reverted fix must make the repro fail again')
-  assert.match(source, /同类扫描/, 'bugfix must require a same-class scan after the fix')
+  assert.match(source, /3\. \*\*同类扫描\*\*：对\*\*刚修好的那个模式\*\*做一次全仓 `rg`/, 'bugfix step 3 must carry the same-class scan duty')
   assert.match(source, /同款 N 处/, 'same-class scan must report counts, not just "checked"')
   // 不得把反向确认降级为可选
   assert.doesNotMatch(

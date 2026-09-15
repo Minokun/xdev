@@ -77,7 +77,8 @@ const PROBES = [
   { group: 'bugfix', name: '删除反向确认要求', file: 'claude-code/bugfix.md',
     old: '**反向确认（硬规则 2 在 bugfix 下的形态，不可跳过）**', new: '**可选步骤**' },
   { group: 'bugfix', name: '删除同类扫描', file: 'claude-code/bugfix.md',
-    old: '**同类扫描**', new: '**说明**' },
+    old: '3. **同类扫描**：对**刚修好的那个模式**做一次全仓 `rg`，报告"同款 N 处、本次修 M 处"',
+    new: '3. **说明**：略' },
 
   // ── research / ask ──────────────────────────────────────────────────────
   { group: 'research', name: '删除 T1 事实性前提例外', file: 'claude-code/research.md',
