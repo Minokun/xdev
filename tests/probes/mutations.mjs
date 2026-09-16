@@ -96,7 +96,7 @@ const PROBES = [
   { group: 'research', name: '哈希链退回手算、丢 git 锚（E1 回归）', file: 'claude-code/research.md',
     old: 'research.mjs manifest <dir>', new: '对目录手算 SHA-256 manifest' },
   { group: 'research', name: '主判定退回 5-seed bootstrap（E5 回归）', file: 'claude-code/research.md',
-    old: '**且配对置换检验 p<0.05**', new: '**且 bootstrap 95% CI 不含 0**' },
+    old: '且配对置换检验 p<0.05**（≥5 seed', new: '且 bootstrap 95% CI 不含 0**（≥5 seed' },
   { group: 'research', name: 'E2 verdict 双路复算条款被删（E2 回归）', file: 'claude-code/research.md',
     old: 'judge/independent/<cell>.verdict.md', new: 'judge/independent/（可选，可省略）' },
   { group: 'research', name: '独立判定器可读主 judge 实现（E2 独立性回归）', file: 'claude-code/research.md',
@@ -111,7 +111,8 @@ const PROBES = [
 
   // ── 2026-09-15 审计 §9.3 G1–G7 ─────────────────────────────────────────────
   { group: 'drift', name: 'VERSION 与 CHANGELOG 顶部脱钩（G1 回归）', file: 'VERSION',
-    old: '3.3.1', new: '9.9.9' },
+    // 锚动态取当前版本——写死会在下次 bump 后 NOT-APPLIED 空转（本批实测教训）
+    old: readFileSync('VERSION', 'utf8').trim(), new: '9.9.9' },
   { group: 'doc', name: '阶段 4 探针不再走 probe-run（G2 回归）', file: 'claude-code/full-dev.md',
     old: 'probe-run.mjs --probes', new: 'probe-loop.sh --probes' },
   { group: 'install', name: 'install.sh 退回硬编码工具清单（G2 回归）', file: 'bin/install.sh',

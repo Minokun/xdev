@@ -1574,6 +1574,7 @@ test('E1/E2: research.md 的工具指针与判定复算条款不回退（prose �
   assert.match(src, /judge\/independent\/<cell>\.verdict\.md/, '独立判定器落点')
   assert.match(src, /JUDGE_DIVERGED/, '分歧 fail-closed 标记')
   assert.match(src, /只读 proposal 必含项 11 的判定伪代码/, '独立侧禁读主 judge 实现')
+  assert.match(src, /禁读 judge\/ 实现/, '独立性条款不得弱化为"可参考实现"')
   // E5 小项
   assert.match(src, /配对置换检验 p<0\.05/, '主判定是配对置换检验（bootstrap CI 降参考）')
   assert.match(src, /预声明复跑容差/, '复跑容差是 proposal 必含项')
