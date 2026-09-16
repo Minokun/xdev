@@ -4,6 +4,71 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.3.2] - 2026-09-15
+
+Research-side tooling close-out (audit §9.4 items 4/5). Basis: `docs/plans/2026-09-15-xdev-research-tooling.md`.
+
+### Added
+
+- **`bin/research.mjs`** — five zero-dependency subcommands (`init` / `freeze` / `manifest` / `verify` /
+  `judge-template`) that mechanize the research flow's hash-chain, machine pre-check and judge duties:
+  manifests carry a **git commit anchor** (rewriting the log now requires rewriting git history),
+  `verify` is fail-closed (T1 freeze / hash chain / T2 persistent paths / matrix↔run reconciliation /
+  holdout ≤1 / git anchor / verdict dual-path), and the generated judge runs a **paired permutation
+  test** as the primary verdict (exact enumeration for n≤10, seeded Monte-Carlo above; bootstrap CI
+  demoted to reference output — replaces the unstable 5-seed bootstrap gate).
+- **Verdict dual-path recomputation (E2)** — a fresh subagent implements the judge from the proposal's
+  frozen pseudocode only (never reading `judge/`); `verify` mechanically reconciles both `VERDICT:`
+  lines and fails with `JUDGE_DIVERGED` on any disagreement.
+- **Probe ledger (L6)** — `probe-run.mjs` appends every batch result to `.xdev/probe-ledger.jsonl`
+  (probe-level caught/vacuous/timeout + timestamp + commit + node version); delivery reports cite it
+  instead of hand-filled catch records.
+- Fixture-level dogfood tests (positive chain + tamper / broken-chain / ephemeral-path / holdout-overuse /
+  verdict-divergence negatives) prove the tool is not always-green; 9 new mutation probes guard against
+  prose/tool regression. `tests/workflows.test.mjs` grew from 11 to 69 tests guarding each new mechanism.
+
+### Changed
+
+- `research.md` prose that the tool now enforces was replaced with tool pointers (stage-5 pre-check
+  paragraph, item-12 hash discipline, hash-chain paragraph); rerun tolerance `|Δ|` became a proposal
+  must-include; T1's two effect paths (gate confirmation / authorization-pack approve) are stated
+  side by side. Line budget 415 held (L8: budgets only go down).
+
+## [v3.3.1] - 2026-09-15
+
+Incremental-round hardening + audit close-out. Basis: `docs/reviews/2026-09-12-process-loopholes.md`
+(L4–L7, P2) and `docs/reviews/2026-09-12-xdev-audit.md` §9.3 (G1–G7).
+
+### Added
+
+- **Incremental-round gate parity (L4)** — `/bugfix` S2/S3 carry a mechanical delivery checklist:
+  impact list (`rg` every use site when retiring an implicit contract), same-class scan across all use
+  sites when a shared layer is touched, 100% probe re-run for criteria tied to touched files, E2E re-run
+  on the affected surface.
+- **User-verified baseline (L5)** — stage 4 step 8: behaviours the user confirmed by hand are written back
+  as smoke-level `user-verified` criteria; breaking one in a later round is a regression, not a re-scope.
+- **Comparable readings (L6/L7)** — the delivery report carries the criterion-set delta ("123 items,
+  +25/−0 vs last round") and the per-criterion catch record.
+- **Freeze-violation audit (P2)** — `cost-report.mjs` flags `freezeViolation` when the first `src/` write
+  precedes the decision-brief hand-off.
+- **Effort tiers for `/full-dev` (mini / standard / heavy)** — the A/B run showed xdev's fixed overhead
+  dominates small tasks (standard arm 2.24 M tokens vs xdev 40.77 M, 18.2×). Tier is chosen before
+  stage 1; `mini` = spoken design, no plan document, gate `size:"small"`, probes still mandatory.
+- **Research gate gains the factual-premise exception and a goal-coverage dimension** — the R1 menxia
+  prompt (in `research.md` and the `research` profile of `full-dev-gate.js`) now rejects unverified
+  "we can't get X" premises and unlabelled interpretive narrowings of the user's goal (L2 on the research side).
+- **Probe runner wired into the flow** — stage 4 step 1 points at `bin/probe-run.mjs` (per-probe timeout,
+  parallel, sha256-pinned results); `install.sh dsh` syncs every `bin/*.mjs` runtime tool instead of a
+  hard-coded pair.
+
+### Fixed
+
+- `VERSION` had stayed at 3.1.0 through v3.2.0/v3.3.0; now pinned to the top CHANGELOG entry by a drift claim.
+- `full-dev-gate.js` research-profile prompts are now parity-tested against `research.md` appendices R1a–R1
+  (they were a second, unguarded copy).
+- `tests/workflows.test.mjs` external-skill guard now also covers `research.md`; both flow files carry a
+  ratchet-only line budget.
+
 ## [v3.3.0] - 2026-09-12
 
 Requirement-coverage release: the gates now look at *what the user asked for*, not only
@@ -157,7 +222,7 @@ Basis: `docs/reviews/2026-09-12-xdev-audit.md` (three-round falsification chain,
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 59 tests guarding each new mechanism, including stage-4 ordering,
+- `tests/workflows.test.mjs` grew from 11 to 69 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
   mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
   anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only

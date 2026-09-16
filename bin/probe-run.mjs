@@ -26,7 +26,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -218,6 +218,24 @@ export function runProbeSet(o) {
     // 整批结果的指纹：交付报告里引用它 = "23/23 变红"从声称变成可复算对象
     fingerprint: sha256(JSON.stringify(results.map((r) => [r.group, r.name, r.verdict, r.timeout === true]))).slice(0, 16),
   }
+
+  // L6 判据台账：每批结果追加 .xdev/probe-ledger.jsonl（append-only，gitignore——它是本地取证
+  // 记录；交付报告的"判据抓获记录"从该文件取数，不再手填）。双 node 复跑靠 node 字段区分。
+  try {
+    const ledgerDir = join(root, '.xdev')
+    mkdirSync(ledgerDir, { recursive: true })
+    const entry = {
+      ts: new Date().toISOString(),
+      commit: git(['rev-parse', 'HEAD'], root),
+      node: process.version,
+      cmd: typeof cmd === 'string' ? cmd : cmd.join(' '),
+      baseline: summary.baseline, total: summary.total, caught, vacuous, notApplied, restoreFail,
+      timeouts: summary.timeouts, restoreOk, fingerprint: summary.fingerprint,
+      probes: results.map((r) => `${r.group}/${r.name}:${r.verdict}${r.timeout ? '(timeout)' : ''}`),
+    }
+    appendFileSync(join(ledgerDir, 'probe-ledger.jsonl'), JSON.stringify(entry) + '\n')
+  } catch { /* 台账失败不阻断跑批结果本身，但见 stderr */ console.error('⚠ probe-ledger 追加失败（不影响本批结果）') }
+
   return { exit: vacuous === 0 && notApplied === 0 && restoreFail === 0 && restoreOk ? 0 : 1, summary }
 }
 

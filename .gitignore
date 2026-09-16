@@ -17,3 +17,6 @@ graphify-out/
 .vscode/
 .idea/
 *.swp
+
+# L6 判据台账（本地取证记录，append-only；交付报告从此取数）
+.xdev/probe-ledger.jsonl
