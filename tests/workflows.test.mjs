@@ -1433,3 +1433,154 @@ test('G7: 流程文件行数预算只降不升（L8 的机械刹车）', async (
     assert.ok(lines <= max, `${file}: ${lines} 行 > 预算 ${max} —— 先删或脚本化，不要上调预算`)
   }
 })
+
+// ── E1/E2 dogfood（fixture 级）：bin/research.mjs 全链路正/负用例（2026-09-15 收口计划 §6）──
+// 分层声明：这里证明的是**工具本身不恒绿**（四组阴性全红）；流程级有效性需一次真实任务
+// 真跑（含植入造假 run），fixture 通过不证明那条。
+
+async function buildResearchFixture(t, { holdoutTwice = false } = {}) {
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { execFileSync } = await import('node:child_process')
+  const root = await mkdtemp(join(tmpdir(), 'xdev-research-'))
+  t.after(() => execFileSync('rm', ['-rf', root]))
+
+  const node = process.execPath
+  const run = (args, opts = {}) => execFileSync(node, [join(repoRoot, 'bin/research.mjs'), ...args], { encoding: 'utf8', ...opts })
+  const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stderr: 'ignore' })
+
+  run(['init', root])
+  const seeds = [1, 2, 3, 4, 5, 6]
+  let matrix = 'metric: mrr\nthreshold: 0.05\n'
+  matrix += holdoutTwice ? 'holdout:\n  - new-h1\n  - new-h2\n' : 'holdout: new-h1\n'
+  matrix += 'cells:\n'
+  const cells = []
+  for (const s of seeds) cells.push([`base-s${s}`, 'base', true], [`new-s${s}`, 'new', false])
+  cells.push(['new-h1', 'new', false])
+  if (holdoutTwice) cells.push(['new-h2', 'new', false])
+  for (const [id, method, base] of cells) {
+    matrix += `  - id: ${id}\n    method: ${method}\n${base ? '    baseline: true\n' : ''}    seed: ${id.endsWith('h1') || id.endsWith('h2') ? 9 : id.slice(-1)}\n`
+  }
+  await writeFile(join(root, 'matrix.yaml'), matrix)
+  await writeFile(join(root, 'proposal.md'), 'H1: new ≥ base+0.05（判定伪代码：均值差 ≥ threshold 且配对置换 p<0.05）\n')
+  for (const [id, method] of cells) {
+    await mkdir(join(root, 'runs', id), { recursive: true })
+    await writeFile(join(root, 'runs', id, 'metrics.json'), JSON.stringify({ mrr: method === 'base' ? 0.2 : 0.4 }))
+  }
+  run(['freeze', root])
+  git(['init', '-q']); git(['config', 'user.email', 't@t']); git(['config', 'user.name', 't'])
+  git(['add', '-A']); git(['commit', '-qm', 'init'])
+  run(['manifest', root])
+  git(['add', '-A']); git(['commit', '-qm', 'manifest'])
+  run(['judge-template', root])
+  execFileSync(node, [join(root, 'judge/judge.mjs'), root], { encoding: 'utf8' })
+  await mkdir(join(root, 'judge/independent'), { recursive: true })
+  for (const f of (await import('node:fs')).readdirSync(join(root, 'judge'))) {
+    if (f.endsWith('.verdict.md')) {
+      const v = await readFile(join(root, 'judge', f), 'utf8')
+      await writeFile(join(root, 'judge/independent', f), v)
+    }
+  }
+  await writeFile(join(root, 'report.md'), `# report\n关键数字 runs/new-s1/metrics.json（fixture）\n`)
+  return { root, run, verifyOut: () => run(['verify', root], { stdio: 'pipe' }) }
+}
+
+test('E1 dogfood(fixture): init→freeze→manifest→judge→verify 全链路绿', async (t) => {
+  const { root, run } = await buildResearchFixture(t)
+  const out = run(['verify', root])
+  assert.match(out, /verify PASS/)
+  assert.match(out, /哈希链：\d+ 块连续/)
+  assert.match(out, /verdict 双路：1\/1 格一致/)
+})
+
+test('E1 dogfood(阴性): 篡改 metrics / 断链 / /tmp 引用 / 留出集二次访问 —— verify 必须全红', async (t) => {
+  const { writeFile } = await import('node:fs/promises')
+  const { root, run } = await buildResearchFixture(t)
+  const red = (expect) => {
+    let out = ''
+    try { out = run(['verify', root]) } catch (e) { out = `${e.stdout}${e.stderr}` }
+    assert.match(out, new RegExp(expect), `阴性用例必须报 ${expect}（fail-closed）`)
+    assert.match(out, /verify FAIL/)
+  }
+
+  // ① 篡改 run 的 metrics（manifest 之后改数字 = 审计断链）
+  const p = join(root, 'runs/new-s1/metrics.json')
+  const orig = await readFile(p, 'utf8')
+  await writeFile(p, JSON.stringify({ mrr: 0.99 }))
+  red('HASH-MISMATCH')
+  await writeFile(p, orig)
+
+  // ② 断链：删掉最后一块 manifest（run 从链上消失）
+  const st = join(root, 'state.md')
+  const stText = await readFile(st, 'utf8')
+  const blocks = [...stText.matchAll(/<!-- xdev:manifest\n[^\n]*\n-->\n/g)]
+  await writeFile(st, stText.replace(blocks[blocks.length - 1][0], ''))
+  red('CHAIN-INCOMPLETE')
+  await writeFile(st, stText)
+
+  // ③ T2：引用易失位置
+  const rp = join(root, 'report.md')
+  const rOrig = await readFile(rp, 'utf8')
+  await writeFile(rp, rOrig + '\n数字在 /tmp/cache/metrics.json\n')
+  red('T2-EPHEMERAL')
+  await writeFile(rp, rOrig)
+
+  // ④ 留出集二次访问（两个 holdout 格都已执行 run）
+  const d2 = await buildResearchFixture(t, { holdoutTwice: true })
+  let out2 = ''
+  try { out2 = d2.run(['verify', d2.root]) } catch (e) { out2 = `${e.stdout}${e.stderr}` }
+  assert.match(out2, /HOLDOUT-OVERACCESS/, '两个留出集 run 必须被拒（≤1）')
+})
+
+test('E2 dogfood(阴性): verdict 双路分歧 → JUDGE_DIVERGED（判定复算条款的机械对账）', async (t) => {
+  const { writeFile } = await import('node:fs/promises')
+  const { root, run } = await buildResearchFixture(t)
+  // 模拟"judge 实现被改坏一个符号后独立复算与主判分歧"：翻转独立侧 VERDICT 行
+  const ip = join(root, 'judge/independent/new.verdict.md')
+  const v = await readFile(ip, 'utf8')
+  await writeFile(ip, v.replace(/^VERDICT: PASS/m, 'VERDICT: FAIL'))
+  let out = ''
+  try { out = run(['verify', root]) } catch (e) { out = `${e.stdout}${e.stderr}` }
+  assert.match(out, /JUDGE_DIVERGED/)
+  // 缺独立复算对应物同样 fail-closed（JUDGE_MISSING）
+  await writeFile(ip, v)
+  const { rmSync } = await import('node:fs')
+  rmSync(ip)
+  let out2 = ''
+  try { out2 = run(['verify', root]) } catch (e) { out2 = `${e.stdout}${e.stderr}` }
+  assert.match(out2, /JUDGE-MISSING/)
+})
+
+test('E5: judge-template 主判定是配对置换检验，bootstrap CI 仅参考（替代 5-seed bootstrap）', async (t) => {
+  const { root } = await buildResearchFixture(t)
+  const judge = await readFile(join(root, 'judge/judge.mjs'), 'utf8')
+  assert.match(judge, /配对置换检验/, 'generated judge must run paired permutation test')
+  assert.match(judge, /1 << n/, 'n≤10 must be exact enumeration')
+  assert.match(judge, /mulberry32\(20260915\)/, 'n>10 must fall back to seeded Monte-Carlo (可复算)')
+  assert.match(judge, /仅参考/, 'bootstrap CI is reference-only, not the verdict gate')
+  const verdict = await readFile(join(root, 'judge/new.verdict.md'), 'utf8')
+  assert.match(verdict, /^VERDICT: (PASS|FAIL)\b/, 'verdict file first line is machine-reconcilable')
+})
+
+test('E1/E2: research.md 的工具指针与判定复算条款不回退（prose 已被脚本替换，不许回流）', async () => {
+  const src = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  // E1 五子命令各就各位：替换掉的 prose 段落必须指向脚本而非"现场手写"
+  assert.match(src, /research\.mjs init <dir>/, '目录约定指向 init')
+  assert.match(src, /research\.mjs freeze` 计算/, '必含项 12 哈希纪律由 freeze 机械化')
+  assert.match(src, /research\.mjs manifest <dir>/, '阶段 3 哈希链由 manifest + git 锚落地')
+  assert.match(src, /research\.mjs judge-template <dir>` 生成/, '阶段 4 judge 脚手架来源')
+  assert.match(src, /research\.mjs verify <dir>/, '阶段 5 机器预检由 verify 执行')
+  // E2 verdict 双路复算条款
+  assert.match(src, /judge\/independent\/<cell>\.verdict\.md/, '独立判定器落点')
+  assert.match(src, /JUDGE_DIVERGED/, '分歧 fail-closed 标记')
+  assert.match(src, /只读 proposal 必含项 11 的判定伪代码/, '独立侧禁读主 judge 实现')
+  // E5 小项
+  assert.match(src, /配对置换检验 p<0\.05/, '主判定是配对置换检验（bootstrap CI 降参考）')
+  assert.match(src, /预声明复跑容差/, '复跑容差是 proposal 必含项')
+  assert.match(src, /生效路径两条（显式并列）/, 'T1 两种生效路径显式并列')
+  // 工具自身：零依赖（只许 node:* 内置模块——install.sh glob bin/*.mjs 同步 dsh）
+  const tool = await readFile(join(repoRoot, 'bin/research.mjs'), 'utf8')
+  for (const m of tool.matchAll(/^import .*?from '([^']+)'/gm)) {
+    assert.match(m[1], /^node:/, `bin/research.mjs 必须零依赖（发现 ${m[1]}）`)
+  }
+})

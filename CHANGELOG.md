@@ -4,6 +4,36 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.3.2] - 2026-09-15
+
+Research-side tooling close-out (audit §9.4 items 4/5). Basis: `docs/plans/2026-09-15-xdev-research-tooling.md`.
+
+### Added
+
+- **`bin/research.mjs`** — five zero-dependency subcommands (`init` / `freeze` / `manifest` / `verify` /
+  `judge-template`) that mechanize the research flow's hash-chain, machine pre-check and judge duties:
+  manifests carry a **git commit anchor** (rewriting the log now requires rewriting git history),
+  `verify` is fail-closed (T1 freeze / hash chain / T2 persistent paths / matrix↔run reconciliation /
+  holdout ≤1 / git anchor / verdict dual-path), and the generated judge runs a **paired permutation
+  test** as the primary verdict (exact enumeration for n≤10, seeded Monte-Carlo above; bootstrap CI
+  demoted to reference output — replaces the unstable 5-seed bootstrap gate).
+- **Verdict dual-path recomputation (E2)** — a fresh subagent implements the judge from the proposal's
+  frozen pseudocode only (never reading `judge/`); `verify` mechanically reconciles both `VERDICT:`
+  lines and fails with `JUDGE_DIVERGED` on any disagreement.
+- **Probe ledger (L6)** — `probe-run.mjs` appends every batch result to `.xdev/probe-ledger.jsonl`
+  (probe-level caught/vacuous/timeout + timestamp + commit + node version); delivery reports cite it
+  instead of hand-filled catch records.
+- Fixture-level dogfood tests (positive chain + tamper / broken-chain / ephemeral-path / holdout-overuse /
+  verdict-divergence negatives) prove the tool is not always-green; 9 new mutation probes guard against
+  prose/tool regression. `tests/workflows.test.mjs` grew from 11 to 69 tests guarding each new mechanism.
+
+### Changed
+
+- `research.md` prose that the tool now enforces was replaced with tool pointers (stage-5 pre-check
+  paragraph, item-12 hash discipline, hash-chain paragraph); rerun tolerance `|Δ|` became a proposal
+  must-include; T1's two effect paths (gate confirmation / authorization-pack approve) are stated
+  side by side. Line budget 415 held (L8: budgets only go down).
+
 ## [v3.3.1] - 2026-09-15
 
 Incremental-round hardening + audit close-out. Basis: `docs/reviews/2026-09-12-process-loopholes.md`
@@ -192,7 +222,7 @@ Basis: `docs/reviews/2026-09-12-xdev-audit.md` (three-round falsification chain,
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 64 tests guarding each new mechanism, including stage-4 ordering,
+- `tests/workflows.test.mjs` grew from 11 to 69 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
   mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
   anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only

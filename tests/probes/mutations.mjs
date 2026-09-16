@@ -88,6 +88,27 @@ const PROBES = [
   { group: 'research', name: 'E3 产出隔离被解除（E3 回归）', file: 'claude-code/research.md',
     old: '**禁入 report.md 结论区**', new: '**可直接写入 report.md 结论区**' },
 
+  // ── 2026-09-15 收口计划 E1/E2/E5 ────────────────────────────────────────
+  { group: 'research', name: '阶段 5 机器预检退回现场手写（E1 回归）', file: 'claude-code/research.md',
+    old: 'research.mjs verify <dir>', new: '机器预检脚本（现场手写）' },
+  { group: 'research', name: '必含项 12 哈希纪律退回自律（E1 回归）', file: 'claude-code/research.md',
+    old: '`research.mjs freeze` 计算', new: '手工 sha256sum 计算' },
+  { group: 'research', name: '哈希链退回手算、丢 git 锚（E1 回归）', file: 'claude-code/research.md',
+    old: 'research.mjs manifest <dir>', new: '对目录手算 SHA-256 manifest' },
+  { group: 'research', name: '主判定退回 5-seed bootstrap（E5 回归）', file: 'claude-code/research.md',
+    old: '**且配对置换检验 p<0.05**', new: '**且 bootstrap 95% CI 不含 0**' },
+  { group: 'research', name: 'E2 verdict 双路复算条款被删（E2 回归）', file: 'claude-code/research.md',
+    old: 'judge/independent/<cell>.verdict.md', new: 'judge/independent/（可选，可省略）' },
+  { group: 'research', name: '独立判定器可读主 judge 实现（E2 独立性回归）', file: 'claude-code/research.md',
+    old: '（禁读 judge/ 实现），独立实现判定器', new: '（可参考 judge/ 实现），仿写判定器' },
+  { group: 'research', name: '复跑容差必含项被删（E5 回归）', file: 'claude-code/research.md',
+    old: '预声明复跑容差', new: '可选声明复跑参考' },
+  { group: 'research', name: 'T1 生效路径收回括号（E5 措辞回归）', file: 'claude-code/research.md',
+    old: '**生效路径两条（显式并列）**', new: '（两种生效路径见括号）' },
+  { group: 'research', name: 'verify 失败降级为退出 0（fail-closed 拆除）', file: 'bin/research.mjs',
+    old: "项（fail-closed，不得软化）`)\n    process.exit(1)",
+    new: "项（fail-closed，不得软化）`)\n    process.exit(0)" },
+
   // ── 2026-09-15 审计 §9.3 G1–G7 ─────────────────────────────────────────────
   { group: 'drift', name: 'VERSION 与 CHANGELOG 顶部脱钩（G1 回归）', file: 'VERSION',
     old: '3.3.1', new: '9.9.9' },
