@@ -1575,8 +1575,9 @@ test('E1/E2: research.md 的工具指针与判定复算条款不回退（prose �
   assert.match(src, /JUDGE_DIVERGED/, '分歧 fail-closed 标记')
   assert.match(src, /只读 proposal 必含项 11 的判定伪代码/, '独立侧禁读主 judge 实现')
   assert.match(src, /禁读 judge\/ 实现/, '独立性条款不得弱化为"可参考实现"')
-  // E5 小项
-  assert.match(src, /配对置换检验 p<0\.05/, '主判定是配对置换检验（bootstrap CI 降参考）')
+  // E5 小项（主判定须同时出现在必含项 2 与阶段 4 判定形态——只守一处会漏掉另一处回退）
+  assert.ok((src.match(/配对置换检验 p<0\.05/g) || []).length >= 2,
+    '主判定是配对置换检验且必含项 2 与阶段 4 两处齐备（bootstrap CI 降参考）')
   assert.match(src, /预声明复跑容差/, '复跑容差是 proposal 必含项')
   assert.match(src, /生效路径两条（显式并列）/, 'T1 两种生效路径显式并列')
   // 工具自身：零依赖（只许 node:* 内置模块——install.sh glob bin/*.mjs 同步 dsh）
