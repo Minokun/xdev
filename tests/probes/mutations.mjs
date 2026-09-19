@@ -132,6 +132,23 @@ const PROBES = [
   { group: 'ask', name: '删除否定性结论可复现命令要求', file: 'claude-code/ask.md',
     old: '**否定性结论必须附一条可复现命令（本流程唯一的"探针"）**', new: '**说明**' },
 
+  // ── 2026-09-20 引用断言核验（双审同错实盘：主核验与 fresh 复核都把裸行号
+  //    锚到同一文件、命中即止，同判 gate.js L333 为引错）──────────────────────
+  { group: 'ask', name: '删除引用断言反查核验协议', file: 'claude-code/ask.md',
+    old: '**引用断言核验（评审文档 / 核对"X 在 L<n>"类断言时）**', new: '**补充说明**' },
+  { group: 'ask', name: '反查纪律退回"命中即止"', file: 'claude-code/ask.md',
+    old: '**禁止"在假设的文件里 grep 到一次命中即止"**', new: '在任一文件命中即可确认' },
+  { group: 'ask', name: '删除 fresh 复核方法独立性', file: 'claude-code/ask.md',
+    old: '**fresh 复核的方法独立性**', new: '**复核要求**' },
+  { group: 'doc', name: '事实性前提证据退回裸行号可用', file: 'claude-code/full-dev.md',
+    old: '**裸 `L<n>` 不算证据**', new: '裸行号也可以' },
+  { group: 'gate', name: '门下门丢掉证据完整性条款（两个 profile 之一）', file: '.claude/workflows/full-dev-gate.js',
+    old: '【证据完整性】事实性前提 / 引注断言的证据引用必须带文件名（file:line）；裸 L<n> 按证据不完整记 missing，不得就近文件脑补。\n【目标覆盖（独立于方法论的一维）】',
+    new: '【目标覆盖（独立于方法论的一维）】' },
+  { group: 'research', name: 'R1 附录丢掉证据完整性条款（G3 parity）', file: 'claude-code/research.md',
+    old: '【证据完整性】事实性前提 / 引注断言的证据引用必须带文件名（file:line）；裸 L<n> 按证据不完整记 missing，不得就近文件脑补。',
+    new: '' },
+
   // ── bin/cost-report.mjs ─────────────────────────────────────────────────
   { group: 'cost', name: '阶段 2 边界锚回 firstSource（原 bug）', file: 'bin/cost-report.mjs',
     old: 'const fileAnchor = [firstImpl?.at, firstTest?.at].filter((x) => x != null)',

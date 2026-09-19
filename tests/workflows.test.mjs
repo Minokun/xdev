@@ -1586,3 +1586,27 @@ test('E1/E2: research.md 的工具指针与判定复算条款不回退（prose �
     assert.match(m[1], /^node:/, `bin/research.mjs 必须零依赖（发现 ${m[1]}）`)
   }
 })
+
+test('引用断言核验：裸行号不算证据 + 反查核验 + fresh 方法独立性（2026-09-20 双审同错实盘）', async () => {
+  // 实盘：被审文档混排两个文件的裸行号，主核验与 fresh 独立复核都锚定到同一文件、
+  // 各自 grep 出一次命中即下结论，得出同一条错误判断（gate.js L333 被判"引错"）。
+  // 两条"独立"核验走了同一条方法路径——上下文独立 ≠ 方法独立。本测试守三处载体：
+  const ask = await readFile(join(repoRoot, 'claude-code/ask.md'), 'utf8')
+  assert.match(ask, /引用断言核验/, 'ask 必须有引用断言核验协议')
+  assert.match(ask, /禁止"在假设的文件里 grep 到一次命中即止"/, '反查纪律：单文件命中即止是被禁的核验方式')
+  assert.match(ask, /引注歧义本身就是一条 Finding/, '裸行号歧义本身是 finding，不许替文档猜文件')
+  assert.match(ask, /fresh 复核的方法独立性/, 'fresh 复核必须方法独立（prompt 只带断言不带核验路径）')
+  assert.match(ask, /不得计为独立证据/, '方法同构的双审不算独立证据')
+  // 双源 parity：SKILL.md 由 gen-dsh 生成，必须同步（另有 equality 测试兜底）
+  const askSkill = await readFile(join(repoRoot, 'skills/xdev-ask/SKILL.md'), 'utf8')
+  assert.match(askSkill, /引用断言核验/, 'skills/xdev-ask/SKILL.md 未同步（run: node bin/gen-dsh.mjs）')
+  // full-dev：设计文档侧的写作纪律——证据必须 file:line
+  const flow = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  assert.match(flow, /裸 `L<n>` 不算证据/, 'full-dev 事实性前提的证据必须写全 file:line')
+  // gate.js：门下门判读规则（full-dev 与 research 两个 profile 都要有，research 另有附录 parity 测试）
+  const gate = await readFile(join(repoRoot, '.claude/workflows/full-dev-gate.js'), 'utf8')
+  assert.ok((gate.match(/裸 L<n> 按证据不完整记 missing/g) || []).length >= 2,
+    'full-dev 与 research 两个门下门 prompt 都必须带证据完整性条款')
+  const research = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  assert.match(research, /裸 L<n> 按证据不完整记 missing/, 'research.md R1 附录必须有同款条款（真源）')
+})

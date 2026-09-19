@@ -4,6 +4,18 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.3.3] - 2026-09-20
+
+Reference-assertion verification discipline (live incident: two "independent" reviewers made the *same* wrong line-number finding).
+
+### Added
+
+- **Reverse-lookup verification for line-number claims** (`/xdev:ask`) — citations like "X at L333" must be resolved to `file:line` before checking; bare line numbers in a doc that mixes several files are themselves a finding. Verification must enumerate all candidate locations repo-wide (`rg -n`) — a single grep hit in the *assumed* file no longer counts as confirmation.
+- **Method independence for fresh re-review** — a fresh reviewer's prompt carries the assertion only, never the main thread's commands, file assumptions or hits; context-independent but method-identical double checks don't count as independent evidence.
+- **`file:line` evidence requirement** — design-doc factual premises and gate (门下门) evidence references must carry the filename; bare `L<n>` is treated as incomplete evidence (`missing`), in both the full-dev and research gate prompts.
+
+Basis: 2026-09-20 live review where the main verifier and a fresh auditor both anchored a doc's bare line numbers to the same wrong file, each stopped at one grep hit, and jointly mis-flagged a correct `full-dev-gate.js:333` reference. Guarded by 1 new test (70 total) and 6 new mutation probes.
+
 ## [v3.3.2] - 2026-09-15
 
 Research-side tooling close-out (audit §9.4 items 4/5). Basis: `docs/plans/2026-09-15-xdev-research-tooling.md`.
@@ -25,7 +37,7 @@ Research-side tooling close-out (audit §9.4 items 4/5). Basis: `docs/plans/2026
   instead of hand-filled catch records.
 - Fixture-level dogfood tests (positive chain + tamper / broken-chain / ephemeral-path / holdout-overuse /
   verdict-divergence negatives) prove the tool is not always-green; 9 new mutation probes guard against
-  prose/tool regression. `tests/workflows.test.mjs` grew from 11 to 69 tests guarding each new mechanism.
+  prose/tool regression. `tests/workflows.test.mjs` grew from 11 to 70 tests guarding each new mechanism.
 
 ### Changed
 
@@ -222,7 +234,7 @@ Basis: `docs/reviews/2026-09-12-xdev-audit.md` (three-round falsification chain,
 - **Review orchestration gains a fifth axis: cost.** "Add another reviewer" now requires answering "which class of defect can it see that the current panel cannot?" Node-level checks (`rg`, `command -v`, mutation probes) are preferred over another LLM reviewer — cheaper by roughly three orders of magnitude.
 - **Reviewers that time out or never report are no longer silently treated as passing** — re-dispatch once, then mark `missing` and treat the dimension as unknown; an incomplete panel may not approve. Waiting must use completion notifications, not `sleep` (an observed `sleep 60` was SIGTERM-killed at the 60000 ms cap).
 - **Persona (`agent.cordis.yml`) realigned** with the above; the old "rule 5: everything else is a default" was replaced by falsifiability and grounding duties, and review discipline was folded into rule 3.
-- `tests/workflows.test.mjs` grew from 11 to 69 tests guarding each new mechanism, including stage-4 ordering,
+- `tests/workflows.test.mjs` grew from 11 to 70 tests guarding each new mechanism, including stage-4 ordering,
   persona/skill parity, installed-vs-repo preset drift, and the bugfix probe form. Every guard is
   mutation-probed by `node tests/probes/mutations.mjs` — **currently 46 caught / 0 vacuous**, reproducible by
   anyone. (An earlier draft of this entry claimed "12 mutations, all caught" while the probe scripts lived only

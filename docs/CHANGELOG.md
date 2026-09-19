@@ -9,6 +9,35 @@
 
 ---
 
+## [v3.3.3] - 2026-09-20 (引用断言核验：反查纪律 + fresh 复核方法独立性)
+
+**改动位置：** `claude-code/ask.md`（+ 生成的 `skills/xdev-ask/SKILL.md`）、`claude-code/full-dev.md`、
+`claude-code/research.md` 附录 R1、`.claude/workflows/full-dev-gate.js`（两个 profile 的门下门 prompt）、`tests/`
+
+**Rationale（实盘事故，2026-09-20）：** 方案评审中，被审文档一段混排两个文件的裸行号
+（`L284` 属 full-dev.md、`L333` 属 gate.js，全都不带文件名）。主核验者与 fresh 独立复核
+**犯了同一个错**：都把行号锚定到同一文件、各自 grep 出一次命中即下结论，据此把一条
+**正确**的 `gate.js:333` 引用判成"行号引错"，直到第三方按标识符全仓反查才纠正。
+根因不是勤奋度而是结构性：**fresh 上下文 ≠ fresh 方法**——两个"独立"核验走了同一条
+方法路径（同一文件假设 + 同一 grep 策略 + 命中即止），等于一次核验。这正是多审查员
+体制要防的同质化盲区，但此前的独立性只定义在上下文层，没定义在方法层。
+
+**What was tried first（放弃的方向）：** 给门下门审查员加"核验时全仓 rg 反查"的工具指令——
+放弃：门下门 prompt 明文"读完不再用工具"，强加工具步骤与既有纪律冲突；引用核验发生在
+评审/问答流（ask），不在 dev 门禁内。改为**判读规则**（裸行号按证据不完整处理）而非工具义务。
+
+**What landed：**
+1. **ask 引用断言核验协议**：行号断言必须先解析成 `file:line`；裸行号混引多文件 →
+   引注歧义本身就是一条 Finding；核验必须全仓反查（`rg -n` 列出全部候选再对回断言），
+   **禁止"假设文件里一次命中即止"**。
+2. **fresh 复核方法独立性**：fresh subagent 的 prompt 只带断言本身，不带主线程的核验命令/
+   文件假设/命中结果；方法同构的双审不计为独立证据。
+3. **写作与判读双面收紧**：full-dev 事实性前提的证据必须写全 `file:line`（裸 `L<n>` 不算证据）；
+   两个门下门 prompt 加【证据完整性】条款（裸行号 → missing，不得就近脑补），research.md
+   附录 R1 同步（既有 G3 parity 测试双向兜底）。
+4. 守卫：1 条新测试（70 总）+ 6 条变异探针（含 gate.js 单侧删除与 research 附录单侧删除两个
+   parity 方向）。VERSION → 3.3.3。
+
 ## [v3.3.1] - 2026-09-15 (full-dev 规模档位 + research 门禁五维 + 审计 G1–G7 收口)
 
 **改动位置：** `claude-code/full-dev.md`（新增阶段 0）、`claude-code/research.md`（必含项 1 / 附录 R1）、

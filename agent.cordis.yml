@@ -242,8 +242,11 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    # dsh >=0.1.6-alpha renamed dsh-workflow-worker-thread -> dsh-workflow-ptc
+    # (same config: the shared sandboxed Node PTC runtime). Older dsh builds
+    # that still ship worker-thread are no longer targeted by this preset.
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 
