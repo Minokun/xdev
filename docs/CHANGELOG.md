@@ -46,7 +46,13 @@ R15（manifest 禁占位）生效后 W5/W6 照样再犯，直到写进 `check_ru
    仍守 G7 预算 560 / 415。薄壳行数预算补覆盖 design/impl。
 5. 顺带修复：README `node --test tests/` 在 node 22/25 均失败；research.md 工具路径与 `manifest.sha256` 陈旧约定；
    research.mjs git stderr 泄漏；README 目录树陈旧。
-6. 守卫：13 条新测试（83 总）+ 30 条变异探针。VERSION → 3.4.0。
+6. **dsh 安装在 0.2.x 上是静默 no-op（实测 dsh 0.2.0-rc.2）**：没有任何代码扫描 `~/.dsh/.agent-presets/`——preset 是
+   cordis patch 行（`@deepseek-ai/dsh-agent-preset`），需经 profile `cordis.patch.yml` 或 `--patch` 注册；`agent.cordis.yml`
+   经 `cordis-plugin-include` 挂载（其 `!!js baseUrl` 即为此设计），但 include 的 baseUrl 是 preset 目录，`@deepseek-ai/*`
+   插件名无 `node_modules` 链接时全部 ERR_MODULE_NOT_FOUND。`install.sh dsh` 现在：同步文件 → `node_modules` 软链 →
+   `profiles/node_modules` → 生成 `dsh.patch.yml` → 把 `preset-xdev` 注册行追加进每个组合 `dsh-web-app` 的 profile。
+   已在 compose（--dump-config）与挂载（启动诊断零 include 错误）两层验证。
+7. 守卫：14 条新测试（84 总）+ 32 条变异探针（含一条 dsh 注册机制回归测试 + 两条 install 注册变异）。VERSION → 3.4.0。
 
 ## [v3.3.3] - 2026-09-20 (引用断言核验：反查纪律 + fresh 复核方法独立性)
 

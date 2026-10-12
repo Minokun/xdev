@@ -226,6 +226,32 @@ test('dsh preset: every row with required config carries it (plan-mode section)'
   assert.match(cordis, /dsh-plan-mode[\s\S]{0,400}exit_plan_mode/)
 })
 
+test('install.sh dsh registers the preset the way dsh 0.2 actually discovers it', async () => {
+  // Verified against dsh 0.2.0-rc.2 (2026-10-12): nothing scans
+  // ~/.dsh/.agent-presets/ — presets are @deepseek-ai/dsh-agent-preset cordis
+  // rows composed into the profile tree. The registration row carries one
+  // cordis-plugin-include child that mounts agent.cordis.yml (its `!!js`
+  // baseUrl resolves skills/ relative to the file). The include's baseUrl is
+  // the preset dir, so '@deepseek-ai/*' plugin names need a node_modules link
+  // to profiles/node_modules — without it every row fails ERR_MODULE_NOT_FOUND
+  // at boot (observed in ~/.dsh/logs/startup-*).
+  const install = await readFile(join(repoRoot, 'bin/install.sh'), 'utf8')
+  assert.match(install, /@deepseek-ai\/dsh-agent-preset/, 'must declare the preset row type')
+  assert.match(install, /cordis-plugin-include/, 'must mount agent.cordis.yml via include, not inline')
+  assert.match(install, /path: file:\/\/\$target_url\/agent\.cordis\.yml/, 'include must point at the installed file')
+  assert.match(install, /ln -sfn "\$DSH_HOME\/profiles\/node_modules" "\$target\/node_modules"/, 'must link the preset dir node_modules to the profile resolution root')
+  assert.match(install, /cordis\.patch\.yml/, 'must register into the profile patch layer')
+  assert.match(install, /dsh-web-app/, 'must only patch profiles that compose the preset registry')
+  assert.match(install, /preset-xdev/, 'registration row id')
+  // Honors a non-default dsh home and skips file sync when the repo IS the preset dir.
+  assert.match(install, /DSH_HOME/, 'must honor $DSH_HOME')
+  assert.match(install, /pwd -P/, 'must detect clone-in-place installs')
+  // agent.cordis.yml's skills dir must stay include-mounted (baseUrl = file's dir),
+  // not inlined into a patch where baseUrl would be the profile dir.
+  const cordis = await readFile(join(repoRoot, 'agent.cordis.yml'), 'utf8')
+  assert.match(cordis, /customSkillDirs:[\s\S]{0,160}baseUrl/, 'skills dir must resolve via baseUrl (include semantics)')
+})
+
 // --- v3.1: 伪证优先（falsification-first）-----------------------------------
 // 依据：2026-09-10 三会话实盘对照（standard 15.0M token / 13.7min 交付 vs xdev
 // 132.9M / 62.2min）。两个 xdev 运行的全部闸门都是自证假绿的盲区——"命令真跑了"

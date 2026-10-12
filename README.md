@@ -16,13 +16,20 @@ English | [中文](./README.zh.md) | [Release notes](./CHANGELOG.md)
 
 ## Quick Start (dsh / DeepSeek Harness)
 
-**dsh is the flagship target.** xdev ships as a first-class dsh agent preset — "xdev 模式" — with its own persona, tool stack, and preset-private skills (registered via `customSkillDirs`). `git clone` IS the installer (the repo root already carries the generated preset files):
+**dsh is the flagship target.** xdev ships as a first-class dsh agent preset — "xdev 模式" — with its own persona, tool stack, and preset-private skills (registered via `customSkillDirs`). dsh 0.2+ composes agent presets from cordis patch rows — the preset directory alone is never scanned — so install is clone **plus one registration step** (mechanism verified on dsh `0.2.0-rc.2`):
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.dsh/.agent-presets/xdev
+~/.dsh/.agent-presets/xdev/bin/install.sh dsh
 ```
 
-Non-default dsh home? Use `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`.
+`install.sh dsh` (idempotent) does three things beyond placing the files:
+
+1. Links `node_modules` → `~/.dsh/profiles/node_modules` inside the preset dir so the `@deepseek-ai/*` plugin names in `agent.cordis.yml` resolve. (Exists once any profile's bundles are installed — i.e. after `dsh web` has ever run. If it is missing, run `dsh plugin --profile <name> install` first.)
+2. Appends the `preset-xdev` registration row to the `cordis.patch.yml` of every profile that composes `dsh-web-app` (e.g. `web`); `headless` has no preset registry and is skipped.
+3. Writes `dsh.patch.yml` for ad-hoc use: `dsh --patch ~/.dsh/.agent-presets/xdev/dsh.patch.yml <profile>`.
+
+Non-default dsh home? Set `DSH_HOME` before running the installer; the preset dir is `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`. Already cloned elsewhere? `bash <clone>/bin/install.sh dsh` works too — it syncs into the preset dir and registers.
 
 Start (or restart) dsh — the mode selector now shows **xdev 模式**. Invoke the workflows as dsh gestures (they also work mid-sentence; xdev auto-routes even without a gesture):
 
@@ -43,11 +50,14 @@ Start (or restart) dsh — the mode selector now shows **xdev 模式**. Invoke t
 | "reviewers must return structured verdicts" | `agent(prompt, {schema})` — JSON-Schema-validated output |
 | "strong model plans, cheap model implements" | `agent(prompt, {provider, model})` per subagent |
 
+**v3.4 (opt-in):** an `.xdev/review-models.json` roster (example shipped) makes the stage-2 gate cross-provider — the gate reviewer must sit on a different provider than the author, a failed reviewer fails over to another provider, and `model-routing-probe.js` proves the routing overrides are actually honored before you enable it.
+
 **Upgrading / uninstalling:**
 
 ```bash
-git -C ~/.dsh/.agent-presets/xdev pull      # upgrade
-rm -rf ~/.dsh/.agent-presets/xdev           # uninstall
+git -C ~/.dsh/.agent-presets/xdev pull      # upgrade — files are read in place, registration persists
+rm -rf ~/.dsh/.agent-presets/xdev           # uninstall — then also remove the "xdev preset" insert
+                                          # block from ~/.dsh/profiles/*/cordis.patch.yml and restart dsh
 ```
 
 Design rationale: [`docs/experiments/dsh-integration/RESEARCH.md`](./docs/experiments/dsh-integration/RESEARCH.md).
@@ -228,7 +238,7 @@ This is **self-directed execution**, not blind script following. The AI reads co
 
 > **dsh note:** on dsh, `full-dev-design` / `full-dev-impl` are folded into `/xdev-full-dev` — dsh's per-subagent `model` option replaces the cross-tool handoff files (strong model plans, cheap model implements).
 
-> **Cross-tool handoff:** `full-dev-design` + `full-dev-impl` let you use the best model for each phase — plan with a powerful reasoning model (e.g. Opus), implement with a fast execution model (e.g. Codex). xdev handles the handoff automatically via a shared plan file.
+> **Cross-tool handoff:** `full-dev-design` + `full-dev-impl` let you use the best model for each phase — plan with a powerful reasoning model (e.g. Opus), implement with a fast execution model (e.g. Codex). Since v3.4 the handoff requires a **filled execution contract** — `bin/handoff.mjs contract` generates the skeleton (iron rules / stop conditions / environment table with measured evidence / check-in / judgment-step list) and `contract --check` refuses unfilled slots.
 
 ### Concrete scenarios — pick the right command
 
@@ -319,7 +329,7 @@ Stage 4: Deliver — falsification probes → full tests (really executed) → a
 
 **Review orchestration (appendix E)** — Reviewers are not piled on; they're staffed. Default lineup = A1–A3 panel (finders: coverage / dependency / BDD quality) + A4 gate (adjudicator) + B/C/D verifiers. Conditional reviewers are added only on triggers: irreversible ops / production data / money / multi-tenant → **E1 red team**; multi-channel / multi-role / multi-device acceptance → **E2 scenario walkthrough**. The only legal reason to add a reviewer is a structurally different blind spot — the N1–N5 experiment showed stacking same-perspective reviewers adds tokens, not findings. **v3.1 adds a cost axis**: review returns diminish fast (round 1 has the highest hit rate; from round 3 most findings are residue of the same classes), so "add another reviewer" must also answer "which class can it see that the current rounds missed?" — if you can't, add a mechanical check instead (`rg` / `command -v` / a mutation probe cost roughly three orders of magnitude less than an LLM reviewer). **Findings must be followed by a same-class scan**: for every HIGH a reviewer reports, the main thread greps the pattern repo-wide and reports "N instances, M fixed" — in the field, a dead module in `core/tank.ts` was found and fixed while the same class in `core/powerup.ts` survived to delivery, carrying two acceptance criteria's entire evidence chain.
 
-**Session recovery / cross-tool handoff** — At the end of stage 2 the flow writes a minimal state file `docs/state/xdev--<branch>.md` (branch / stage / plan path / next action) and commits the plan. `/full-dev-impl` resumes from that file's next action without replaying the conversation; a missing plan or an anchor commit no longer in history → ask the user to re-plan, never guess. v2-format state files (`full-dev-design--<branch>--<slug>.md`) are not parsed — the flow tells you to finish them with v2 or re-plan.
+**Session recovery / cross-tool handoff** — At the end of stage 2 the flow writes a minimal state file `docs/state/xdev--<branch>.md` (branch / stage / plan path / next action) and commits the plan. `/full-dev-impl` resumes from that file's next action without replaying the conversation; a missing plan or an anchor commit no longer in history → ask the user to re-plan, never guess. v2-format state files (`full-dev-design--<branch>--<slug>.md`) are not parsed — the flow tells you to finish them with v2 or re-plan. **v3.4:** any handoff to another model/session carries a filled execution contract, and executor mistakes go into `.xdev/execution-failures.jsonl` — a mistake class that recurs while still only a text rule fails `handoff.mjs failure-check` until it becomes a mechanical gate or a stop condition (only reviewers may mark a recurrence).
 
 **Base-branch guard** (hard rule 4) — Never commit to `main`/`master`. On the base branch, create an `xdev-<slug>` feature branch first — optionally in a `git worktree` (remember worktrees don't carry `.env*` or build artifacts). Worktrees are removed at stage 4 once the PR is merged.
 
@@ -331,7 +341,7 @@ Stage 4: Deliver — falsification probes → full tests (really executed) → a
 
 **Adversarial pre-landing review** — Before the PR, a fresh subagent is told to assume the diff *will* cause a production incident and to find the three most likely paths (data loss > security > regression > performance), each with a trigger path and file:line evidence — and to report fewer than three rather than invent them (appendix D). Conditional deep review (appendix C) is added when the diff touches auth / payment / PII / schema / new dependencies.
 
-**Single source of truth** — `claude-code/` is the only hand-edited source. The dsh preset artifacts (`preset.yml`, `agent.cordis.yml`, `skills/xdev-*/`) are generated by `bin/gen-dsh.mjs` and committed so `git clone` is a complete install; `tests/workflows.test.mjs` fails if they are stale, if any workflow re-introduces external skill calls, or if `bugfix` / `iterate` grow past their thin-shell budget.
+**Single source of truth** — `claude-code/` is the only hand-edited workflow source, and `skills/xdev-*/` are generated from it by `bin/gen-dsh.mjs` and committed (`preset.yml` / `agent.cordis.yml` are hand-maintained preset files). `tests/workflows.test.mjs` fails if the generated skills are stale, if any workflow re-introduces external skill calls, or if the thin-shell files grow past their line budgets.
 
 ### /bugfix — root cause first, then the full-dev stage 3–4 loop
 
@@ -376,7 +386,10 @@ Stage 3: Run experiments — baseline reproduced first; matrix frozen before exe
          parser scripts unit-tested against real-log fixtures before batch runs; detached long runs w/
          runtime.json + heartbeat discipline (launch verified within 60s; no "running" entries without
          measured evidence; monitoring failures are themselves logged as failure events); per-run SHA-256
-         manifests chained in state.md; batch drift check vs the preregistered proposal.
+         manifests chained in state.md; `research.mjs run-check` gates each run's delivery (manifest
+         fields / placeholders / script hashes / voided-run refs / outputs / plot evidence) and
+         `research.mjs void` keeps the append-only voided-run register `verify` enforces; batch drift
+         check vs the preregistered proposal.
 Stage 4: Analyze & judge — a JUDGE SCRIPT mechanically adjudicates (compiler-as-judge, fail-closed on missing
          runs / format drift); conclusions are only 证实/证伪/不确定; key numbers independently recomputed
          by two blind fresh subagents; bounded top-up iterations (append-only, tuning set only, reported
@@ -410,7 +423,7 @@ git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
 ~/.claude/skills/xdev/bin/install.sh claude    # or: codex / "claude codex" / "all"
 ```
 
-Done. `/iterate` and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash. For dsh, see the [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) above — one `git clone`, no install script needed.
+Done. `/iterate` and `/ask` (rg mode) work right away. Heavy commands (`/full-dev`, `/bugfix`, `/ask` with Graphify audit) need extra skills, but xdev **degrades gracefully** to the runnable subset when they're missing — it won't crash. For dsh, see the [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) above — clone plus one `bin/install.sh dsh` registration step.
 
 ### Pick your install tier (choose what you need)
 
@@ -421,7 +434,7 @@ xdev v2 is **self-contained** — install xdev itself and everything works:
 | What you want to use | Install | Cumulative time |
 |----------------------|---------|-----------------|
 | `/iterate`, `/ask`, `/bugfix`, `/full-dev`, `/research` (full pipeline) | **xdev itself** | 1 min |
-| **dsh "xdev 模式" preset** (all of the above as native dsh skills) | `git clone` into `~/.dsh/.agent-presets/xdev` — see [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) | 1 min |
+| **dsh "xdev 模式" preset** (all of the above as native dsh skills) | `git clone` into `~/.dsh/.agent-presets/xdev` + `bin/install.sh dsh` — see [Quick Start (dsh)](#quick-start-dsh--deepseek-harness) | 1 min |
 | Optional: code-graph context for `/ask` | Graphify (installing = implicit authorization for LLM extraction) | +2 min |
 
 > External skill libraries (gstack / superpowers) are **no longer referenced or required**.
@@ -521,7 +534,7 @@ Targets land in the standard Windows locations the agents already read from:
 | Claude Code | `%USERPROFILE%\.claude\commands\xdev\` |
 | Codex prompts | `%USERPROFILE%\.codex\prompts\` |
 | Codex skills | `%USERPROFILE%\.agents\skills\` |
-| dsh preset | `%USERPROFILE%\.dsh\.agent-presets\xdev\` (git clone) |
+| dsh preset | `%USERPROFILE%\.dsh\.agent-presets\xdev\` (git clone + `bin/install.sh dsh`, needs Git Bash/WSL) |
 
 > No native PowerShell installer is shipped today. If `pwsh bin/install.ps1` would meaningfully improve your flow, please open an issue.
 
@@ -546,7 +559,7 @@ cd ~/.claude/skills/xdev && git pull
 
 > Claude Code uses a directory symlink — `git pull` alone keeps it up to date; no need to re-run the install script.
 > Codex uses per-file symlinks plus generated `SKILL.md` wrappers. If a release adds, renames, or rewords the description of a workflow file, re-run the install script with the same agent target(s) to refresh links and regenerate skill wrappers.
-> dsh keeps its own clone — update with `git -C ~/.dsh/.agent-presets/xdev pull` (or set `DSH_HOME` accordingly).
+> dsh keeps its own clone — update with `git -C ~/.dsh/.agent-presets/xdev pull`; registration persists. If you cloned elsewhere, re-run `bin/install.sh dsh` after pulling (or set `DSH_HOME` accordingly).
 
 ### Skill dependency map (v2: none required)
 
@@ -612,7 +625,7 @@ Corollary: when tightening a gate, first ask "is this mechanical or judgement?".
 
 ## Built-in tooling (plain `node`, no dependencies)
 
-Two measurement scripts ship with xdev. Both exist because a specific, measured failure
+Verification and measurement tools ship with xdev. Each exists because a specific, measured failure
 mode kept recurring — they are not generic utilities.
 
 ```bash
@@ -620,6 +633,8 @@ node bin/cost-report.mjs --latest        # what did this session actually cost?
 node bin/cost-report.mjs --session <id> --json
 node bin/drift-check.mjs                 # do the docs still match the repo?
 node bin/drift-check.mjs --init          # scaffold a claims table (.xdev/drift.json)
+node bin/handoff.mjs contract --dir .    # generate an execution-contract skeleton for a handoff
+node bin/research.mjs run-check <run-dir>  # per-run delivery gate for /research runs
 ```
 
 **`cost-report.mjs` — the cost ledger.** Process overhead used to be invisible, which is
@@ -639,6 +654,21 @@ A27). Reviews caught the *class* and the last rewrite reintroduced it, with no s
 round to catch it. `rg` does not get tired, so this is mechanical now. xdev runs it on
 itself: `.xdev/drift.json` holds its own claims and a test asserts the repo is drift-free.
 
+**`handoff.mjs` — execution contract + failure ledger (v3.4).** Born from a live
+Opus→GLM handoff where text rules held the weak executor only until a mistake recurred.
+`contract` generates the skeleton the designer fills; `--check` rejects unfilled slots
+and unchecked "measured" claims. `failure-add` / `failure-check` keep
+`.xdev/execution-failures.jsonl`: a class of mistake seen twice while still only a text
+rule fails the check until it is mechanized or upgraded to a stop condition — and only
+reviewers may mark a recurrence.
+
+**`research.mjs run-check` / `void` (v3.4).** The per-run delivery gate for `/research`
+runs — manifest fields, placeholder text, script sha256 vs repo, references to voided
+runs, output existence, and plot evidence — verdicts verified against the live
+`check_run.py` on 9 real runs. `void` keeps the append-only voided-run register, and
+`verify` fails closed on a deleted register entry, a report citing a voided run, or a
+run whose manifest fails run-check.
+
 ---
 
 ## File Structure
@@ -647,8 +677,8 @@ itself: `.xdev/drift.json` holds its own claims and a test asserts the repo is d
 xdev/
 ├── README.md              ← This file (English)
 ├── README.zh.md           ← Chinese version
-├── preset.yml             ← dsh preset metadata (GENERATED by gen-dsh — "xdev 模式")
-├── agent.cordis.yml       ← dsh preset composition (GENERATED — persona + tool stack)
+├── preset.yml             ← dsh preset metadata (hand-maintained — "xdev 模式")
+├── agent.cordis.yml       ← dsh preset composition (hand-maintained — persona + tool stack)
 ├── skills/                ← dsh preset-private skills (GENERATED from claude-code/)
 │   ├── xdev-ask/SKILL.md
 │   ├── xdev-bugfix/SKILL.md
@@ -660,8 +690,8 @@ xdev/
 ├── .xdev/review-models.example.json ← Cross-provider review roster example (dsh; copy to enable)
 ├── .claude/workflows/     ← full-dev-gate.js (stage-2 gate) · ask-investigate.js · model-routing-probe.js
 ├── bin/
-│   ├── install.sh         ← Idempotent installer (claude / codex / dsh)
-│   ├── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
+│   ├── install.sh         ← Idempotent installer (claude / codex / dsh; dsh also registers the preset)
+│   ├── gen-dsh.mjs        ← Generates skills/xdev-*/ from claude-code/
 │   ├── cost-report.mjs    ← Cost ledger for a session (tokens, cache amplification, phase-2 share)
 │   ├── drift-check.mjs    ← Mechanical "documented claim vs repo reality" comparison
 │   ├── probe-run.mjs      ← Mutation-probe batch runner (per-probe timeout, parallel, sha256 restore check)

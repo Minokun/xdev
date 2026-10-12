@@ -16,13 +16,20 @@
 
 ## 快速上手（dsh / DeepSeek Harness）
 
-**dsh 是旗舰目标。** xdev 以一等公民形态发布为 dsh agent preset——"xdev 模式"，自带 persona、工具栈和 preset 私有技能（经 `customSkillDirs` 注册）。**git clone 即安装**（仓库根已携带生成好的 preset 文件）：
+**dsh 是旗舰目标。** xdev 以一等公民形态发布为 dsh agent preset——"xdev 模式"，自带 persona、工具栈和 preset 私有技能（经 `customSkillDirs` 注册）。dsh 0.2+ 从 cordis patch 行组合 agent preset——preset 目录本身不会被扫描——所以安装是 clone **加一步注册**（机制已在 dsh `0.2.0-rc.2` 上实测）：
 
 ```bash
 git clone --depth 1 https://github.com/Minokun/xdev.git ~/.dsh/.agent-presets/xdev
+~/.dsh/.agent-presets/xdev/bin/install.sh dsh
 ```
 
-dsh 装在非默认位置？用 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`。
+`install.sh dsh`（幂等）在放置文件之外做三件事：
+
+1. 在 preset 目录里把 `node_modules` 软链到 `~/.dsh/profiles/node_modules`，让 `agent.cordis.yml` 里的 `@deepseek-ai/*` 插件名可解析。（该目录在任一 profile 的 bundle 装好后即存在——也就是 `dsh web` 跑过一次之后。若缺失，先执行 `dsh plugin --profile <name> install`。）
+2. 把 `preset-xdev` 注册行追加到每个组合了 `dsh-web-app` 的 profile 的 `cordis.patch.yml`（如 `web`）；`headless` 没有 preset 注册表，自动跳过。
+3. 生成 `dsh.patch.yml` 供临时挂载：`dsh --patch ~/.dsh/.agent-presets/xdev/dsh.patch.yml <profile>`。
+
+dsh 装在非默认位置？先设 `DSH_HOME` 再跑安装器；preset 目录为 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`。仓库克隆在别处也行：`bash <clone>/bin/install.sh dsh`——它会把文件同步进 preset 目录并完成注册。
 
 启动（或重启）dsh，模式选择器里即出现 **xdev 模式**。用 dsh 手势触发（也支持出现在句子任意位置；不带手势时 xdev 也会自动路由）：
 
@@ -43,11 +50,14 @@ dsh 装在非默认位置？用 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/xdev`。
 | "审核员必须返回结构化裁决" | `agent(prompt, {schema})`——JSON Schema 校验输出 |
 | "强模型规划、便宜模型实现" | 每个子 agent 独立的 `agent(prompt, {provider, model})` |
 
+**v3.4（可选启用）：** `.xdev/review-models.json` 阵容文件（仓库附带示例）让阶段 2 门禁跨 provider——门下门评审必须坐在与作者不同的 provider 上，评审员失败会 failover 到另一个 provider 重派，启用前先用 `model-routing-probe.js` 实证路由覆盖真实生效。
+
 **升级 / 卸载：**
 
 ```bash
-git -C ~/.dsh/.agent-presets/xdev pull      # 升级
-rm -rf ~/.dsh/.agent-presets/xdev           # 卸载
+git -C ~/.dsh/.agent-presets/xdev pull      # 升级——文件原地生效，注册不变
+rm -rf ~/.dsh/.agent-presets/xdev           # 卸载——另需从 ~/.dsh/profiles/*/cordis.patch.yml
+                                          # 删掉标注 "xdev preset" 的 insert 块并重启 dsh
 ```
 
 设计依据：[`docs/experiments/dsh-integration/RESEARCH.md`](./docs/experiments/dsh-integration/RESEARCH.md)。
@@ -230,7 +240,7 @@ mini（1–3 run，半天内）  → 免三视角派发 / 免方向看板 / 门�
 
 > **dsh 说明：** dsh 上 `full-dev-design` / `full-dev-impl` 并入 `/xdev-full-dev`——dsh 的子 agent 级 `model` 参数取代了跨工具交接文件（强模型规划、便宜模型实现）。
 
-> **跨工具交接：** `full-dev-design` + `full-dev-impl` 让你为不同阶段选择最合适的模型 —— 用强推理模型（如 Opus）做规划，用快速执行模型（如 Codex）做实现。xdev 通过共享计划文件自动完成交接。
+> **跨工具交接：** `full-dev-design` + `full-dev-impl` 让你为不同阶段选择最合适的模型 —— 用强推理模型（如 Opus）做规划，用快速执行模型（如 Codex）做实现。v3.4 起交接必须携带**填好的执行契约**——`bin/handoff.mjs contract` 生成骨架（铁律 / 停止条件 / 带实测证据的环境表 / 开工打卡 / 判断步骤清单），`contract --check` 拒绝未填的槽位。
 
 ### 具体场景 —— 怎么挑命令
 
@@ -319,7 +329,7 @@ mini（1–3 run，半天内）  → 免三视角派发 / 免方向看板 / 门�
 
 **审查编排（附录 E）** —— 审查员不是堆上去的，是按阵容配的。默认阵容 = A1–A3 面板（发现者：覆盖 / 依赖 / BDD 质量）+ A4 门下门（裁决者）+ B/C/D（验证者）。命中触发才加条件审查员：不可逆操作 / 生产数据 / 资金 / 多租户 → **E1 红队**；验收涉及多交互通道 / 多角色 / 多端 → **E2 场景推衍**。加一个审查员的唯一合法理由是它有结构性不同的盲区——N1–N5 实验证明堆同视角审查员只加 token 不加发现。**v3.1 新增成本轴**：审查边际收益递减很快（第 1 轮命中率最高，第 3 轮起多是同类残余），所以"再加一个审查员"必须同时回答"它能发现前几轮漏掉的哪一类"；答不出就加一条机械检查——`rg` / `command -v` / 变异探针比一次 LLM 审核便宜约三个数量级。**发现后必须扫类**：审核员每报一条 HIGH，主线程对该模式做一次全仓 `rg`，报"共 N 处、已修 M 处"（实盘：修好了 `core/tank.ts` 的死模块，同类的 `core/powerup.ts` 活到了交付，两条验收标准的证据全建在它上面）。
 
-**会话恢复 / 跨工具交接** —— 阶段 2 结束时写入最小状态文件 `docs/state/xdev--<branch>.md`（分支 / 阶段 / 计划路径 / next action）并 commit 计划。`/full-dev-impl` 以该文件的 next action 续跑，不回放对话；计划文件缺失或锚点 commit 不在历史中 → 提示用户重新规划，不猜。v2 格式状态文件（`full-dev-design--<branch>--<slug>.md`）不再解析——流程会明确告知"用 v2 完成或重新规划"。
+**会话恢复 / 跨工具交接** —— 阶段 2 结束时写入最小状态文件 `docs/state/xdev--<branch>.md`（分支 / 阶段 / 计划路径 / next action）并 commit 计划。`/full-dev-impl` 以该文件的 next action 续跑，不回放对话；计划文件缺失或锚点 commit 不在历史中 → 提示用户重新规划，不猜。v2 格式状态文件（`full-dev-design--<branch>--<slug>.md`）不再解析——流程会明确告知"用 v2 完成或重新规划"。**v3.4：** 交接给另一个模型/会话必须携带填好的执行契约，执行者失误记入 `.xdev/execution-failures.jsonl`——同类失误复发且仍只是文字规则时 `handoff.mjs failure-check` 判不通过，直到升级为机检门或停止条件（只有复核方有权标记复发）。
 
 **base 分支守卫**（硬规则 3）—— 不向 `main`/`master` 提交。在 base 分支上时先建 `xdev-<slug>` feature 分支，可选放进 `git worktree`（注意 worktree 不带 `.env*` 与构建产物）。PR 合并后在阶段 4 清理 worktree。
 
@@ -331,7 +341,7 @@ mini（1–3 run，半天内）  → 免三视角派发 / 免方向看板 / 门�
 
 **对抗性 pre-landing review** —— 开 PR 前由 fresh subagent 假设这份 diff *一定会*造成生产事故，找出最可能的 3 个途径（数据丢失 > 安全 > 功能回归 > 性能），每条给触发路径与 file:line 证据；找不到 3 条如实报告，不许凑数（附录 D）。diff 涉及 auth / 支付 / PII / schema / 新依赖时另加一轮条件深度审查（附录 C）。
 
-**单一源** —— 只有 `claude-code/` 是手写源。dsh preset 产物（`preset.yml`、`agent.cordis.yml`、`skills/xdev-*/`）由 `bin/gen-dsh.mjs` 生成并提交入库，保证 `git clone` 即完整安装；`tests/workflows.test.mjs` 在产物过期、工作流重新引入外部 skill 调用、或 `bugfix` / `iterate` 超出薄壳预算时失败。
+**单一源** —— 只有 `claude-code/` 是手写工作流源；`skills/xdev-*/` 由 `bin/gen-dsh.mjs` 从它生成并提交入库（`preset.yml` / `agent.cordis.yml` 是手工维护的 preset 文件）。`tests/workflows.test.mjs` 在产物过期、工作流重新引入外部 skill 调用、或薄壳文件超出行数预算时失败。
 
 ### /bugfix —— 先找根因，再走 full-dev 阶段 3–4 循环
 
@@ -373,7 +383,9 @@ mini（1–3 run，半天内）  → 免三视角派发 / 免方向看板 / 门�
 阶段 3：实验执行 —— 基线先复现；矩阵先冻结后执行（追加 = append-only 留痕）；解析脚本对真实日志
         fixture 单测通过才许批量跑；超会话 run detached 启动 + 值守心跳纪律（启动 60 秒内实测；
         无实测不得写"运行中"；监控失灵本身也是失败事件，必须落盘）；每 run 目录 SHA-256 manifest
-        链入 state.md；批次 drift check（对照预注册 proposal）。
+        链入 state.md；`research.mjs run-check` 对每个 run 做交付门（manifest 字段 / 占位文本 /
+        脚本哈希 / 作废 run 引用 / 产物存在 / 分布图证据），`research.mjs void` 维护 append-only
+        作废登记册供 verify 强制检查；批次 drift check（对照预注册 proposal）。
 阶段 4：分析判定 —— judge 脚本机械判定（编译器即裁判，缺 run/格式漂移即 fail-closed 中止）；
         结论只有 证实/证伪/不确定 三种；关键数字双路独立复算；补跑迭代（append-only、只判调优集、
         与原矩阵分组报告禁止合并）。
@@ -403,7 +415,7 @@ git clone --depth 1 https://github.com/Minokun/xdev.git ~/.claude/skills/xdev
 ~/.claude/skills/xdev/bin/install.sh claude    # 或：codex / "claude codex" / "all"
 ```
 
-完事。`/iterate` 和 `/ask`（rg 模式）已经能用。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 的体检模式）需要额外 skill，但缺 skill 时 xdev **优雅降级**到能运行的子集，不会崩。dsh 用户见上方[快速上手（dsh）](#快速上手dsh--deepseek-harness)——一条 `git clone` 即可，无需安装脚本。
+完事。`/iterate` 和 `/ask`（rg 模式）已经能用。深度命令（`/full-dev`、`/bugfix`、`/ask` 接 Graphify 的体检模式）需要额外 skill，但缺 skill 时 xdev **优雅降级**到能运行的子集，不会崩。dsh 用户见上方[快速上手（dsh）](#快速上手dsh--deepseek-harness)——clone 加一步 `bin/install.sh dsh` 注册。
 
 ### 选择安装层级（按需选）
 
@@ -412,7 +424,7 @@ xdev 自身只是工作流文件，重活由外部 skill 完成。按你要用�
 | 想用什么 | 需要装 | 累计时间 |
 |---------|--------|---------|
 | `/iterate`、`/ask`、`/bugfix`、`/full-dev`、`/research` 全部功能 | **xdev 本体** | 1 分钟 |
-| **dsh "xdev 模式" preset**（以上全部，以原生 dsh 技能形态） | `git clone` 到 `~/.dsh/.agent-presets/xdev`——见[快速上手（dsh）](#快速上手dsh--deepseek-harness) | 1 分钟 |
+| **dsh "xdev 模式" preset**（以上全部，以原生 dsh 技能形态） | `git clone` 到 `~/.dsh/.agent-presets/xdev` + `bin/install.sh dsh`——见[快速上手（dsh）](#快速上手dsh--deepseek-harness) | 1 分钟 |
 | `/ask` 的代码图谱上下文 | + **Graphify**（第 2.6 步；已装视为隐式授权 LLM 抽取） | +2 分钟 |
 
 > Graphify 缺失时 `/ask` 自动降级 `rg`，不报错。
@@ -513,7 +525,7 @@ bash "$USERPROFILE/.claude/skills/xdev/bin/install.sh" all
 | Claude Code | `%USERPROFILE%\.claude\commands\xdev\` |
 | Codex prompts | `%USERPROFILE%\.codex\prompts\` |
 | Codex skills | `%USERPROFILE%\.agents\skills\` |
-| dsh preset | `%USERPROFILE%\.dsh\.agent-presets\xdev\`（git clone） |
+| dsh preset | `%USERPROFILE%\.dsh\.agent-presets\xdev\`（git clone + `bin/install.sh dsh`，需 Git Bash/WSL） |
 
 > 暂未提供原生 PowerShell 安装器。如果你需要 `pwsh bin/install.ps1`，欢迎开 issue 反馈。
 
@@ -538,7 +550,7 @@ cd ~/.claude/skills/xdev && git pull
 
 > Claude Code 用的是目录软链，`git pull` 后无需重跑安装脚本。
 > Codex 用的是逐文件软链（附带生成的 `SKILL.md` 薄壳）；如果发布说明里有新增 / 改名 / 改 description 的工作流文件，请用相同的 agent 目标重跑安装脚本以刷新软链和重生成 skill 薄壳。
-> dsh 用独立 clone——`git -C ~/.dsh/.agent-presets/xdev pull` 升级（或按 `DSH_HOME` 相应调整）。
+> dsh 用独立 clone——`git -C ~/.dsh/.agent-presets/xdev pull` 升级，注册保持不变；若仓库克隆在别处，pull 后需重跑 `bin/install.sh dsh`（或按 `DSH_HOME` 相应调整）。
 
 ### Skill 来源对照表
 
@@ -592,7 +604,7 @@ xdev 的所有质量门禁分两类，**不要混淆**——混淆是一个常�
 
 ## 内置工具（纯 `node`，零依赖）
 
-两个测量脚本随 xdev 一起分发。它们的存在理由都是**一个已被实测的具体失效模式**，
+验证与测量工具随 xdev 一起分发。它们的存在理由都是**一个已被实测的具体失效模式**，
 不是通用小工具。
 
 ```bash
@@ -600,6 +612,8 @@ node bin/cost-report.mjs --latest        # 这次会话到底花了多少？
 node bin/cost-report.mjs --session <id> --json
 node bin/drift-check.mjs                 # 文档还对得上仓库吗？
 node bin/drift-check.mjs --init          # 生成断言表模板（.xdev/drift.json）
+node bin/handoff.mjs contract --dir .    # 为一次交接生成执行契约骨架
+node bin/research.mjs run-check <run-dir>  # /research 单个 run 的交付门
 ```
 
 **`cost-report.mjs` —— 成本账本。** 流程开销原本不透明，这是 7.3× 的 token 差距
@@ -616,6 +630,17 @@ node bin/drift-check.mjs --init          # 生成断言表模板（.xdev/drift.j
 所以这条现在是机械检查。xdev 对自己也跑它：`.xdev/drift.json` 存着 xdev 自己的断言，
 另有一条测试断言本仓库零漂移。
 
+**`handoff.mjs` —— 执行契约 + 失误台账（v3.4）。** 来自一次 Opus→GLM 实盘交接：文字规则
+对弱执行者的约束力以"复发"为界。`contract` 生成设计方填写的契约骨架，`--check` 拒绝
+未填槽位和没有证据的"已实测"；`failure-add` / `failure-check` 维护
+`.xdev/execution-failures.jsonl`：同类失误出现第二次仍只是文字规则时判不通过，直到
+机械化或升级为停止条件——且只有复核方有权标记复发。
+
+**`research.mjs run-check` / `void`（v3.4）。** `/research` 单个 run 的交付门——manifest
+必填字段、占位文本、脚本 sha256、作废 run 引用、产物存在性、分布图证据——判定已在 9 个
+实盘 run 上与 `check_run.py` 逐个对齐。`void` 维护 append-only 作废登记册，`verify` 对
+登记条目被删、报告引用作废 run、run manifest 不合格三种情况 fail-closed。
+
 ---
 
 ## 文件结构
@@ -624,8 +649,8 @@ node bin/drift-check.mjs --init          # 生成断言表模板（.xdev/drift.j
 xdev/
 ├── README.md              ← 英文版文档
 ├── README.zh.md           ← 本文件（中文版文档）
-├── preset.yml             ← dsh preset 元数据（生成产物——"xdev 模式"）
-├── agent.cordis.yml       ← dsh preset 组合（生成产物——persona + 工具栈）
+├── preset.yml             ← dsh preset 元数据（手工维护——"xdev 模式"）
+├── agent.cordis.yml       ← dsh preset 组合（手工维护——persona + 工具栈）
 ├── skills/                ← dsh preset 私有技能（生成产物，源自 claude-code/）
 │   ├── xdev-ask/SKILL.md
 │   ├── xdev-bugfix/SKILL.md
@@ -637,8 +662,8 @@ xdev/
 ├── .xdev/review-models.example.json ← 跨 provider 评审阵容示例（dsh；复制后启用）
 ├── .claude/workflows/     ← full-dev-gate.js（阶段 2 门禁）· ask-investigate.js · model-routing-probe.js
 ├── bin/
-│   ├── install.sh         ← 幂等安装器（claude / codex / dsh）
-│   ├── gen-dsh.mjs        ← 从 claude-code/ 生成 dsh preset 产物
+│   ├── install.sh         ← 幂等安装器（claude / codex / dsh；dsh 另负责注册 preset）
+│   ├── gen-dsh.mjs        ← 从 claude-code/ 生成 skills/xdev-*/
 │   ├── cost-report.mjs    ← 会话成本账本（token / 缓存放大倍数 / 阶段 2 占比）
 │   ├── drift-check.mjs    ← 机械比对"交付声明 vs 仓库实际"
 │   ├── probe-run.mjs      ← 变异探针跑批（逐条超时、并行、回滚 sha256 校验）

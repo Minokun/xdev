@@ -26,8 +26,9 @@ Weak-model execution contract + cross-provider review roster. Basis: a live hand
 - `research.md` pointed at `node bin/research.mjs` (doesn't resolve from a user project) → `../../bin/research.mjs`, matching full-dev's skill-relative convention; the directory layout listed a `manifest.sha256` that no tool produces.
 - `research.mjs` leaked git's stderr (`stderr: 'ignore'` is not an `execFileSync` option).
 - README repo layout was missing `probe-run.mjs` / `research.mjs` and described `install.sh` as claude/codex only.
+- **dsh install was a silent no-op on dsh 0.2.x** — cloning into `~/.dsh/.agent-presets/xdev` alone was never discovered (dsh 0.2+ composes agent presets from cordis patch rows; verified on `0.2.0-rc.2`: nothing scans that directory, and an include-mounted preset fails `ERR_MODULE_NOT_FOUND` without a resolution root). `install.sh dsh` now registers `preset-xdev` into every profile that composes `dsh-web-app`, links `node_modules` → `profiles/node_modules` so `@deepseek-ai/*` plugin names resolve, emits `dsh.patch.yml` for `dsh --patch` boots, honors `DSH_HOME`, and skips file sync when the repo *is* the preset dir. Both READMEs corrected — clone alone is not an install.
 
-`tests/workflows.test.mjs` grew from 11 to 83 tests guarding each new mechanism; 30 new mutation probes.
+`tests/workflows.test.mjs` grew from 11 to 84 tests guarding each new mechanism; 32 new mutation probes.
 
 ## [v3.3.3] - 2026-09-20
 

@@ -20,3 +20,8 @@ graphify-out/
 
 # L6 判据台账（本地取证记录，append-only；交付报告从此取数）
 .xdev/probe-ledger.jsonl
+
+# dsh clone-in-place install artifacts (bin/install.sh dsh writes these into the
+# preset dir when the repo IS ~/.dsh/.agent-presets/xdev)
+node_modules/
+dsh.patch.yml
