@@ -12,3 +12,5 @@ description: 仅设计阶段 — 执行 full-dev 阶段 1-2，产出计划后停
 >
 > 阶段 1-2 的全部规则（规模自适应、3 反思、`--menxia` 门下门、状态文件格式）
 > 以 `full-dev.md` 为唯一权威，本文件不重复。
+>
+> 交接给异模型/异会话 = 必须先产出**执行契约**（`handoff.mjs contract` → 填写 → `--check` 绿），见 `full-dev.md` 阶段 2 末。

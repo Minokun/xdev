@@ -9,6 +9,45 @@
 
 ---
 
+## [v3.4.0] - 2026-10-12 (弱模型执行契约 + 跨 provider 评审阵容)
+
+**改动位置：** `bin/research.mjs`（run-check / void / verify 集成）、新 `bin/handoff.mjs`、`.claude/workflows/full-dev-gate.js`
+（roster）、新 `.claude/workflows/model-routing-probe.js`、`.xdev/review-models.example.json`、`claude-code/full-dev.md` /
+`research.md` / 两个交接薄壳（+ 生成的 skills）、`tests/`。方案：`docs/plans/2026-10-11-weak-model-execution-contract-design.md`（r3）。
+
+**Rationale（实盘，2026-10-09 ~ 10-12，big-model-app 零样本部件发现 P0-a）：** 强模型写 plan + EXECUTION 双文档、GLM-5.3 执行。
+可靠面成立（四次停止条件全部停下询问、从不越权改 plan、判据不通过如实上报），但**文字规则的约束力以复发为界**：
+R15（manifest 禁占位）生效后 W5/W6 照样再犯，直到写进 `check_run.py` 才止住；机检门上线即抓 a2 五项 FAIL。
+10-12 W13 又以 W11 同类复发，第一次走"升级为停止条件"分支。实盘自己长出的元规则——**同类第二犯必须机械化**——
+正是 xdev 缺的一层：design→impl 交接只交计划 + 四行状态文件，没有面向弱执行者的"怎么做"手册，也没有执行侧失误台账。
+第二线程：三省实验证明强模型盲区结构性正交，但所有评审 subagent 与主线同模型——视角独立只在上下文层。
+
+**What was tried first（放弃的方向）：**
+1. 执行契约模板做成 `claude-code/execution-contract.md`（r1）——放弃：`install.sh` 会把 `claude-code/*.md` 全部装成斜杠命令 /
+   Codex prompt / skill；改放 `docs/templates/`（r2）也放弃：dsh preset 只同步 `skills/`、`bin/*.mjs`、workflows。
+   落地为 `bin/handoff.mjs contract` 内嵌骨架——`bin/` 是三个目标都送达的唯一载体。
+2. 薄壳 design/impl 各扩写 ~40 行规则——放弃：薄壳自声明"以 full-dev.md 为唯一权威"，扩写即造第二权威源；且 gen-dsh
+   不把薄壳生成进 preset，实盘执行位恰是 DSH 子代理。规则进 full-dev.md，薄壳只加 ≤3 行指针。
+3. 独立 `bin/run-gate.mjs`——放弃："bugfix/iterate 也能用"无落点（它们不产出 run manifest）；并入 `research.mjs run-check`，
+   verify 复用同一实现。
+4. VOIDED.md "纳入哈希链"——不可实现（hashTree 以 run 目录为单位）；改为 `void` 机器块为真源、VOIDED.md 为视图。
+5. `cost-report.mjs` 按 provider 分列成本——推迟：现有日志解析无任何 provider/model 字段，需先摸清 dsh session 格式。
+
+**What landed：**
+1. **run-check**（check_run.py 6 类检查的通用化移植；项目口径走 `runs/manifest.schema.json`），对实盘 9 个 run 判定逐个一致；
+   **void** + verify 新增 `VOID-REMOVED` / `VOIDED-REF` / `RUN-CHECK`。
+2. **handoff.mjs**：`contract`（八件套骨架，风险预检含第 ⑥ 项适用性）+ `--check`（残留标记 / 删节 / ✅ 无实测证据）；
+   `failure-add` / `failure-check`——复发次数取"自报"与"同类链长度"大者，执行方不得自判同类，停止条件算闭环。
+3. **跨 provider 阵容**（dsh，默认不启用）：确定性分配、门下门异 provider + strong 档（fail-closed）、失败换 provider 重派、
+   单 provider 披露进决策简报、台账带 `reviewer_model`。接口存在已由 dsh 源码静态核实（`dsh-tool-workflow/lib/index.js:143`、
+   `dsh-workflow-ptc/lib/index.js:152-162,336-337`）；**运行时路由未验证**，启用前跑 `model-routing-probe.js`（阴性对照：不存在的
+   provider 必须失败）。
+4. prose：full-dev / research 元规则、交接契约指令、开工打卡、步骤级风险预检、对账与形态、[实测]/[推断]——等量置换后
+   仍守 G7 预算 560 / 415。薄壳行数预算补覆盖 design/impl。
+5. 顺带修复：README `node --test tests/` 在 node 22/25 均失败；research.md 工具路径与 `manifest.sha256` 陈旧约定；
+   research.mjs git stderr 泄漏；README 目录树陈旧。
+6. 守卫：13 条新测试（83 总）+ 30 条变异探针。VERSION → 3.4.0。
+
 ## [v3.3.3] - 2026-09-20 (引用断言核验：反查纪律 + fresh 复核方法独立性)
 
 **改动位置：** `claude-code/ask.md`（+ 生成的 `skills/xdev-ask/SKILL.md`）、`claude-code/full-dev.md`、

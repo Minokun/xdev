@@ -634,11 +634,16 @@ xdev/
 │   └── xdev-research/SKILL.md
 ├── docs/experiments/      ← 三省模式实验 + dsh 集成调研（preset 设计依据）
 ├── .xdev/drift.json       ← 漂移断言表："文档说了什么" vs "仓库实际是什么"（自食其果）
+├── .xdev/review-models.example.json ← 跨 provider 评审阵容示例（dsh；复制后启用）
+├── .claude/workflows/     ← full-dev-gate.js（阶段 2 门禁）· ask-investigate.js · model-routing-probe.js
 ├── bin/
-│   ├── install.sh         ← 创建软链，幂等可重跑（claude / codex）
+│   ├── install.sh         ← 幂等安装器（claude / codex / dsh）
 │   ├── gen-dsh.mjs        ← 从 claude-code/ 生成 dsh preset 产物
 │   ├── cost-report.mjs    ← 会话成本账本（token / 缓存放大倍数 / 阶段 2 占比）
-│   └── drift-check.mjs    ← 机械比对"交付声明 vs 仓库实际"
+│   ├── drift-check.mjs    ← 机械比对"交付声明 vs 仓库实际"
+│   ├── probe-run.mjs      ← 变异探针跑批（逐条超时、并行、回滚 sha256 校验）
+│   ├── research.mjs       ← 研究工具：init / freeze / manifest / verify / judge-template / run-check / void
+│   └── handoff.mjs        ← 设计→实现交接：执行契约骨架 + 执行者失误台账
 └── claude-code/           ← 唯一手写源；.claude/commands/xdev/ 与 Codex prompts 软链到这里
     ├── full-dev.md
     ├── full-dev-design.md
@@ -656,7 +661,7 @@ xdev/
 欢迎参与贡献！你可以：
 
 - 提 issue 反馈 bug、提问或建议新工作流
-- 提 PR 改进或扩展现有工作流文件——只改 `claude-code/`，然后跑 `node bin/gen-dsh.mjs` 与 `node --test tests/`
+- 提 PR 改进或扩展现有工作流文件——只改 `claude-code/`，然后跑 `node bin/gen-dsh.mjs` 与 `node --test`
 - 分享你如何将 xdev 适配到自己的技术栈
 
 ---

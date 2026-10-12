@@ -11,6 +11,14 @@
 //   verify <dir>          fail-closed 机器预检（替换阶段 5 的 prose 预检段 + R2 ⑧）
 //   judge-template <dir>  生成 judge/judge.mjs：配对置换检验主判定（n≤10 精确枚举，
 //                         >10 固定 seed Monte-Carlo），bootstrap CI 仅参考——替代 5-seed bootstrap
+//   run-check <run-dir>   单 run 交付机检门（v3.4，移植 big-model-app check_run.py 的 6 类检查）：
+//                         manifest.json 必填字段 / 占位符 / 脚本 sha256 与仓库实算 / 作废引用 /
+//                         outputs 存在 / 判据步骤分布图与读图步骤拼图。实盘：上线即抓 a2 五项 FAIL
+//   void <dir> <run_id> <理由>  作废登记：VOIDED.md 表行 + state.md `void` 机器块（append-only，
+//                         verify 发现 VOIDED.md 条目被删即 FAIL）
+//
+// manifest 有两种，互补不重叠：`manifest` 子命令写的是**完整性链**（run 目录内容哈希，防篡改）；
+// run 目录里的 manifest.json 是**溯源声明**（命令/输入/脚本哈希/主机，防"说不清怎么来的"）。
 //
 // 零依赖单文件；install.sh 已 glob bin/*.mjs 同步进 dsh preset。
 // 纪律：verify 输出的是"证据"不是"背书"——它只检查能机械检查的，LLM 审计员仍然必要。
@@ -20,7 +28,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 
@@ -115,7 +123,7 @@ function scalar(v) {
 // ── git 锚 ──────────────────────────────────────────────────────────────────
 
 function git(dir, args) {
-  return execFileSync('git', args, { cwd: dir, encoding: 'utf8', stderr: 'ignore' }).trim()
+  return execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 }
 
 function gitAnchorCommit(dir) {
@@ -163,6 +171,7 @@ function cmdInit(dir) {
       '- 待办: -', '- 活跃 job: 无', '', '## run 状态', '（无）', '', '## 机器块（append-only，由 research.mjs 维护）', '',
     ].join('\n'),
   }
+  files['runs/VOIDED.md'] = VOIDED_HEADER
   for (const [name, content] of Object.entries(files)) {
     const p = join(dir, name)
     if (existsSync(p)) { console.log(`· 已存在，跳过 ${name}`); continue }
@@ -298,6 +307,28 @@ function cmdVerify(dir) {
     }
   }
   if (!problems.some((p) => p.startsWith('[T2'))) ok(`T2 溯源：${refN} 处 runs/ 引用全部存在且在持久位置`)
+
+  // 5b) 作废登记：void 机器块是 append-only 真源，VOIDED.md 条目被删 → FAIL；
+  //     报告/verdict 以 runs/<id> 路径引用作废 run → FAIL（作废 run 不能当证据）
+  const voidBlocks = blocks.filter((b) => b.kind === 'void').map((b) => b.data.run_id)
+  const listed = readVoidedTable(join(dir, 'runs'))
+  for (const id of voidBlocks) if (!listed.has(id)) bad('VOID-REMOVED', `作废 run ${id} 有 void 机器块，但已从 runs/VOIDED.md 删除`)
+  const voided = new Set([...listed, ...voidBlocks])
+  for (const df of docFiles) {
+    if (!existsSync(df)) continue
+    const text = readFileSync(df, 'utf8')
+    for (const id of voided) if (mentions(text, `runs/${id}`)) bad('VOIDED-REF', `${relative(dir, df)} 引用了已作废的 runs/${id}`)
+  }
+  if (!problems.some((p) => p.startsWith('[VOID'))) ok(`作废登记：${voided.size} 个作废 run，无删除、无引用`)
+
+  // 5c) run 溯源声明：有 manifest.json 的 run 逐个过 run-check（同一实现，不另写一套）
+  const runsRoot = join(dir, 'runs')
+  const declared = existsSync(runsRoot) ? readdirSync(runsRoot).filter((n) => existsSync(join(runsRoot, n, 'manifest.json'))) : []
+  for (const id of declared) {
+    const r = runCheck(join(runsRoot, id), { extraVoided: voidBlocks })
+    for (const f of r.fails) bad('RUN-CHECK', `${id}: ${f}`)
+  }
+  if (declared.length && !problems.some((p) => p.startsWith('[RUN-CHECK'))) ok(`run-check：${declared.length} 个 run 的 manifest.json 全部通过`)
 
   // 6) git 外部锚：每个 manifest 哈希必须已进 git 历史
   for (const m of mans) {
@@ -462,18 +493,154 @@ function cmdJudgeTemplate(dir) {
   console.log('  · 独立复算：fresh subagent 只读 proposal 判定伪代码（禁读 judge/ 实现）→ judge/independent/')
 }
 
+// ── run-check（v3.4）────────────────────────────────────────────────────────
+// 通用默认口径；项目口径用 runs/manifest.schema.json 覆盖：
+//   { "required": [...], "criterion_step": "<正则>", "reading_step": "<正则>", "script_path": "<正则，组 1 = 仓库相对路径>" }
+// 不带 schema 时，图件检查只由 manifest 的 step_kind（criterion / reading / exploratory）驱动。
+
+const RUN_REQUIRED = ['run_id', 'step', 'host', 'command', 'code_commit', 'inputs', 'params', 'started_at', 'finished_at', 'status', 'outputs']
+const PLACEHOLDER = /见工作区|未提交）?$|TODO|TBD|待填|placeholder|<[^<>]{1,40}>/i
+const SCRIPT_PATH = '((?:scripts|src|bin|tools|judge)/[\\w/.-]+\\.(?:py|mjs|cjs|js|ts|sh))'
+const HEX64 = /^[0-9a-f]{64}$/
+const VOIDED_HEADER = [
+  '# 作废 run 名单', '',
+  '> 列入本表的 run 不得在报告、manifest 或后续 run 中引用（`research.mjs run-check` / `verify` 拦截）。',
+  '> 确需引用时在引用方 manifest.json 写 `"voided_refs_ack": {"<run_id>": "<理由>"}`。',
+  '> 登记用 `research.mjs void <dir> <run_id> <理由>`（同时写 state.md 机器块）；执行者发现自己的 run 有缺陷须主动登记；**不得删除条目**。', '',
+  '| run_id | 作废原因 | 登记时间 |', '|---|---|---|', '',
+].join('\n')
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** 整词引用：前后不得紧贴 [\w.-]，防止 x-0050 误命中 x-0050_trial2。 */
+const mentions = (text, id) => new RegExp(`(?<![\\w.-])${escapeRe(id)}(?![\\w-])`).test(text)
+
+function readVoidedTable(runsDir) {
+  const p = join(runsDir, 'VOIDED.md')
+  const out = new Set()
+  if (!existsSync(p)) return out
+  for (const line of readFileSync(p, 'utf8').split('\n')) {
+    const m = /^\|\s*`?([^|`\s]+)`?\s*\|/.exec(line)
+    if (m && m[1] !== 'run_id' && !/^:?-+:?$/.test(m[1])) out.add(m[1])
+  }
+  return out
+}
+
+function repoRootOf(start) {
+  try { return git(start, ['rev-parse', '--show-toplevel']) } catch { /* 非 git 目录 */ }
+  for (let p = start; p !== dirname(p); p = dirname(p)) if (existsSync(join(p, '.git'))) return p
+  return process.cwd()
+}
+
+function walkStrings(obj, path, out = []) {
+  if (Array.isArray(obj)) obj.forEach((v, i) => walkStrings(v, `${path}[${i}]`, out))
+  else if (obj && typeof obj === 'object') for (const [k, v] of Object.entries(obj)) walkStrings(v, `${path}.${k}`, out)
+  else if (typeof obj === 'string') out.push([path, obj])
+  return out
+}
+
+/** 单 run 机检；返回 { passes, fails, runId }。verify 复用同一实现。 */
+function runCheck(runDir, { extraVoided = [] } = {}) {
+  const passes = []
+  const fails = []
+  const mf = join(runDir, 'manifest.json')
+  if (!existsSync(mf)) return { passes, fails: [`manifest.json 不存在：${mf}`], runId: null }
+  let m
+  try { m = JSON.parse(readFileSync(mf, 'utf8')) } catch { return { passes, fails: ['manifest.json 不是合法 JSON'], runId: null } }
+  const schemaPath = join(dirname(runDir), 'manifest.schema.json')
+  let schema = {}
+  try { if (existsSync(schemaPath)) schema = JSON.parse(readFileSync(schemaPath, 'utf8')) } catch { return { passes, fails: [`${schemaPath} 不是合法 JSON`], runId: null } }
+
+  // ① 必填字段
+  const missing = (schema.required ?? RUN_REQUIRED).filter((k) => !(k in m) || ['', null].includes(m[k]) || (typeof m[k] === 'object' && !Object.keys(m[k]).length))
+  ;(missing.length ? fails : passes).push(missing.length ? `必填字段缺失：${missing.join(', ')}` : '必填字段齐全')
+
+  // ② 占位符（notes / voided_refs_ack 豁免——那里本来就写说明文字）
+  const ph = walkStrings(m, '').filter(([p, s]) => !p.startsWith('.notes') && !p.startsWith('.voided_refs_ack') && PLACEHOLDER.test(s))
+  if (ph.length) fails.push('存在占位文字：' + ph.map(([p, s]) => `${p}=${JSON.stringify(s.slice(0, 60))}`).join('; '))
+  else passes.push('无占位文字')
+
+  // ③ 脚本哈希与仓库实算一致
+  const root = repoRootOf(runDir)
+  const scriptRe = new RegExp(schema.script_path ?? SCRIPT_PATH)
+  for (const inp of Array.isArray(m.inputs) ? m.inputs : []) {
+    const p = String(inp && typeof inp === 'object' ? inp.path ?? '' : inp)
+    const hit = scriptRe.exec(p)
+    if (!hit) continue
+    const rel = hit[1]
+    const got = inp && typeof inp === 'object' ? String(inp.sha256 ?? '') : ''
+    const local = join(root, rel)
+    if (!HEX64.test(got)) fails.push(`脚本哈希不是 64 位 sha256：${rel} -> ${JSON.stringify(got.slice(0, 40))}`)
+    else if (!existsSync(local)) fails.push(`仓库内找不到脚本：${rel}`)
+    else if (sha256(readFileSync(local)) !== got) fails.push(`脚本哈希与仓库文件不一致：${rel}（manifest ${got.slice(0, 12)}… vs 实际 ${sha256(readFileSync(local)).slice(0, 12)}…）`)
+    else passes.push(`脚本哈希一致：${rel}`)
+  }
+
+  // ④ 不得引用作废 run（例外须在 manifest 内 voided_refs_ack 声明理由）
+  const voided = new Set([...readVoidedTable(dirname(runDir)), ...extraVoided])
+  const ack = new Set(Object.keys(m.voided_refs_ack ?? {}))
+  const body = JSON.stringify(Object.fromEntries(Object.entries(m).filter(([k]) => k !== 'notes' && k !== 'voided_refs_ack')))
+  const bad = [...voided].filter((id) => id !== m.run_id && !ack.has(id) && mentions(body, id)).sort()
+  if (bad.length) fails.push('引用了已作废的 run（见 runs/VOIDED.md）：' + bad.join(', '))
+  else passes.push('未引用作废 run' + (ack.size ? `（已声明例外：${[...ack].sort().join(', ')}）` : ''))
+
+  // ⑤ outputs 均存在（条目可带括号说明，取首个 token 作文件名）
+  const missOut = (Array.isArray(m.outputs) ? m.outputs : []).map((o) => String(o).split(/[（(\s]/)[0]).filter((n) => n && !existsSync(join(runDir, n)))
+  ;(missOut.length ? fails : passes).push(missOut.length ? `outputs 缺文件：${missOut.join(', ')}` : 'outputs 均存在')
+
+  // ⑥ 证据形态：判据步骤须有分布图，读图步骤须有裁图拼图；探索性免检但结论不得入判定
+  const step = String(m.step ?? '')
+  const kind = String(m.step_kind ?? '')
+  const pngs = readdirSync(runDir).filter((n) => /\.png$/i.test(n))
+  const isCriterion = kind === 'criterion' || (schema.criterion_step && new RegExp(schema.criterion_step, 'i').test(step))
+  const isReading = kind === 'reading' || (schema.reading_step && new RegExp(schema.reading_step, 'i').test(step))
+  if (kind === 'exploratory' || step.includes('探索性')) passes.push('探索性 run：免图件检查（结论不得进入判定）')
+  else {
+    if (isCriterion) (pngs.length ? passes : fails).push(`判据步骤分布图：${pngs.length} 张 png`)
+    if (isReading) {
+      const sheets = pngs.filter((n) => /samples|contact/i.test(n))
+      ;(sheets.length ? passes : fails).push(`读图步骤裁图拼图：${sheets.length} 张`)
+    }
+  }
+  return { passes, fails, runId: m.run_id ?? null }
+}
+
+function cmdRunCheck(runDir) {
+  const { passes, fails, runId } = runCheck(runDir)
+  for (const s of passes) console.log(`PASS  ${s}`)
+  for (const s of fails) console.log(`FAIL  ${s}`)
+  console.log(`\n结论：${fails.length ? `不可交付（${fails.length} 项 FAIL）` : '可交付'}  [${runId ?? runDir}]`)
+  if (fails.length) process.exit(1)
+}
+
+function cmdVoid(dir, [runId, ...why]) {
+  if (!runId || !why.length) fail('用法: research.mjs void <研究目录> <run_id> <作废理由>', 2)
+  const runsDir = join(dir, 'runs')
+  const blocks = parseBlocks(readState(dir).text)
+  if (readVoidedTable(runsDir).has(runId) || blocks.some((b) => b.kind === 'void' && b.data.run_id === runId)) fail(`${runId} 已登记作废`)
+  const reason = why.join(' ').replace(/\|/g, '/')
+  const at = new Date().toISOString()
+  mkdirSync(runsDir, { recursive: true })
+  const p = join(runsDir, 'VOIDED.md')
+  const text = existsSync(p) ? readFileSync(p, 'utf8') : VOIDED_HEADER
+  writeFileSync(p, `${text.replace(/\n*$/, '\n')}| ${runId} | ${reason} | ${at} |\n`)
+  appendBlock(dir, 'void', { run_id: runId, reason, git_commit: gitAnchorCommit(dir), recorded_at: at })
+  console.log(`✓ 作废 ${runId} → runs/VOIDED.md + state.md 机器块（记得 commit）`)
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
 const [cmd, ...rest] = process.argv.slice(2)
 const dir = resolve(rest[0] ?? '.')
-const cmds = { init: cmdInit, freeze: cmdFreeze, manifest: cmdManifest, verify: cmdVerify, 'judge-template': cmdJudgeTemplate }
+const cmds = { init: cmdInit, freeze: cmdFreeze, manifest: cmdManifest, verify: cmdVerify, 'judge-template': cmdJudgeTemplate, 'run-check': cmdRunCheck, void: cmdVoid }
 if (!cmd || !cmds[cmd]) {
-  console.error('用法: node bin/research.mjs <init|freeze|manifest|verify|judge-template> <研究目录>')
+  console.error('用法: node bin/research.mjs <init|freeze|manifest|verify|judge-template|run-check|void> <研究目录|run 目录> [...]')
   console.error('  init           scaffold 目录约定（literature/directions/proposal/matrix/runs/judge/report/state.md）')
   console.error('  freeze         proposal/matrix 内容哈希 → state.md（预注册生效记录）')
   console.error('  manifest       逐 run sha256 → state.md 哈希链 + git commit 锚（外部锚）')
   console.error('  verify         fail-closed 机器预检：T1 冻结 / 链 / T2 溯源 / 格子对账 / 留出集 ≤1 / git 锚 / verdict 双路')
   console.error('  judge-template 生成 judge/judge.mjs（配对置换检验主判定，bootstrap CI 仅参考）')
+  console.error('  run-check      单 run 交付机检：manifest.json 必填/占位/脚本哈希/作废引用/outputs/图件（参数是 run 目录）')
+  console.error('  void           作废登记：void <研究目录> <run_id> <理由>（VOIDED.md + state.md 机器块）')
   process.exit(2)
 }
-cmds[cmd](dir)
+cmds[cmd](dir, rest.slice(1))

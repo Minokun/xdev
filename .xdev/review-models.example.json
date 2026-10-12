@@ -1,0 +1,10 @@
+{
+  "$comment": "xdev v3.4 跨 provider 评审阵容示例（dsh 专属）。复制为项目根的 .xdev/review-models.json 才生效；不存在即单模型现状。启用前先跑 .claude/workflows/model-routing-probe.js 确认 provider 覆盖真实生效。规则：同 provider 算一个视角；gate.provider 必须 ≠ author.provider 且 tier 必须 strong（否则 full-dev-gate.js 拒绝开工）；panel 允许 cheap。provider/model 名按你本机 dsh 已配置的名称填写。",
+  "author": { "provider": "kimi-coding", "model": "k3" },
+  "panel": [
+    { "provider": "zai-coding-cn", "model": "glm-5.3", "tier": "cheap" },
+    { "provider": "bailian", "model": "deepseek-v4-pro", "tier": "strong" },
+    { "provider": "qwen-token-plan-cn", "model": "qwen3.8-max", "tier": "strong" }
+  ],
+  "gate": { "provider": "bailian", "model": "deepseek-v4-pro", "tier": "strong" }
+}

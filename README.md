@@ -657,11 +657,16 @@ xdev/
 │   └── xdev-research/SKILL.md
 ├── docs/experiments/      ← Sansheng + dsh-integration research (rationale & evidence)
 ├── .xdev/drift.json       ← Claims table: "what the docs say" vs "what the repo is" (dogfooded)
+├── .xdev/review-models.example.json ← Cross-provider review roster example (dsh; copy to enable)
+├── .claude/workflows/     ← full-dev-gate.js (stage-2 gate) · ask-investigate.js · model-routing-probe.js
 ├── bin/
-│   ├── install.sh         ← Idempotent symlink installer (claude / codex)
+│   ├── install.sh         ← Idempotent installer (claude / codex / dsh)
 │   ├── gen-dsh.mjs        ← Generates the dsh preset artifacts from claude-code/
 │   ├── cost-report.mjs    ← Cost ledger for a session (tokens, cache amplification, phase-2 share)
-│   └── drift-check.mjs    ← Mechanical "documented claim vs repo reality" comparison
+│   ├── drift-check.mjs    ← Mechanical "documented claim vs repo reality" comparison
+│   ├── probe-run.mjs      ← Mutation-probe batch runner (per-probe timeout, parallel, sha256 restore check)
+│   ├── research.mjs       ← Research tooling: init / freeze / manifest / verify / judge-template / run-check / void
+│   └── handoff.mjs        ← Design→impl handoff: execution-contract skeleton + executor failure ledger
 └── claude-code/           ← Single hand-edited source; .claude/commands/xdev/ + Codex prompts symlink here
     ├── full-dev.md
     ├── full-dev-design.md
@@ -679,7 +684,7 @@ xdev/
 Contributions are welcome! Feel free to:
 
 - Open an issue for bugs, questions, or workflow suggestions
-- Submit a PR to improve or extend existing workflow files — edit `claude-code/`, then run `node bin/gen-dsh.mjs` and `node --test tests/`
+- Submit a PR to improve or extend existing workflow files — edit `claude-code/`, then run `node bin/gen-dsh.mjs` and `node --test`
 - Share how you've adapted xdev for your own stack
 
 ---

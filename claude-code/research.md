@@ -7,20 +7,13 @@ argument-hint: <研究思路 / 论文 / 假设描述>
 
 **研究输入：** $ARGUMENTS
 
-> 本流程不是独立流程，而是 xdev 体系的研究特化——**复用 full-dev 的整套机制，只替换审查维度**：
-> 三审查员面板 + 门下门（A1–A4 → R1a–R1c + R1 门下门）、worker receipt 派发、drift check
-> （对照基准换成预注册 proposal.md）、pre-landing 对抗审查（附录 D → 报告对抗审查）。
-> 三大机制的映射：**对照基准 = 预注册的假设与判定阈值**（≈ Intent Contract），
-> **真实执行 = 实验真跑且指标落盘**，**fresh 审核 = 研究视角的审查员面板 + 结果溯源审计**。
+> 本流程是 xdev 的研究特化——**复用 full-dev 的整套机制，只替换审查维度**：面板 + 门下门（A1–A4 → R1a–R1c + R1）、worker receipt、
+> drift check（基准换成预注册 proposal.md）、对抗审查（附录 D → 报告对抗审查）。映射：**对照基准 = 预注册的假设与判定阈值**
+> （≈ Intent Contract），**真实执行 = 实验真跑且指标落盘**，**fresh 审核 = 研究视角的审查员面板 + 结果溯源审计**。
 > 硬规则 1–5 全部生效（定义见 `full-dev.md`，速览见本文附录 H），另有研究专属铁律 T1–T3（见下）。
-> 设计依据：AI-Scientist / Agent Laboratory / RE-Bench / SWE-bench 的自动实验经验——
-> 预注册防事后调标、指标必须由落盘文件解析、评测集固定禁子采样、负结果同样落盘；
-> 以及 DeepResearch 类系统（Anthropic multi-agent research、STORM、plan-execute-replan）经验——
-> 三视角开局、orchestrator-worker + 文件系统产物指针（防传话失真）、replan 循环显式退出条件。
-> 专业实践溯源（均已在线验证）：OSF 严格预注册（门禁 + if-then 决策树 + 结局分级）；
-> 晶体学 R-free（留出集调优/终判分离 + 访问记账）；cryo-EM 金标准半图（关键数字双路独立复算）；
-> CASP（judge 机器盲判——审查员提供独立性而非盲性）；wwPDB OneDep（judge 输出随报告归档）；
-> FLT/Prove2Me（matrix 先冻结后执行）；NCI 实验记录规范（append-only + SHA-256 哈希链）。
+> 设计依据（均已在线验证）：自动实验（AI-Scientist / Agent Laboratory / RE-Bench / SWE-bench）、DeepResearch（STORM、
+> multi-agent research：三视角开局 + 文件系统产物指针 + replan 显式退出）；OSF 预注册、晶体学 R-free、cryo-EM 金标准半图、
+> CASP 机器盲判、wwPDB OneDep 归档、FLT/Prove2Me 先冻结后执行、NCI append-only 哈希链——出处标在对应条款旁。
 
 ## 研究专属铁律（在通用 5 条之上，违反即流程失败）
 
@@ -43,11 +36,12 @@ argument-hint: <研究思路 / 论文 / 假设描述>
   必须报错或算出不同的数——恒绿的解析脚本与恒绿的断言等价，而它会污染整条溯源链。
 - **T3 负结果同样落盘**：假设被证伪、实验失败、方向走不通，都必须写入报告与实验记录，
   不得只报喜。**用户喊停只阻止开新轮，不豁免已产生数据的报告义务**。
+- **失误复发 → 机械化**（同 `full-dev.md` 附录 E）：执行侧同类失误第二次出现 → 写进 run-check / 解析脚本或停止条件；只加文字规则 = 未闭环（`handoff.mjs failure-check` 红）。
 
 ## 目录约定（默认值，按项目惯例可调）
 
 ```
-docs/research/<date>-<slug>/      # node bin/research.mjs init <dir> 一键 scaffold
+docs/research/<date>-<slug>/      # node ../../bin/research.mjs init <dir> 一键 scaffold（路径相对本 skill 资源目录，同 full-dev 阶段 4）
   literature.md    # 文献与现状扫描（阶段 1）
   directions.md    # 方向看板：候选方向清单 + 每轮后的状态更新（阶段 1 建，轮级循环维护）
                    #   只记方向级结论（证实/证伪/搁置+证据），不记 run 状态
@@ -55,7 +49,8 @@ docs/research/<date>-<slug>/      # node bin/research.mjs init <dir> 一键 scaf
   matrix.yaml      # 机器可读实验矩阵（阶段 2 随方案冻结 = "陈述"，阶段 3 执行）
   judge/           # judge 判定脚本 + 解析脚本 + fixtures + 单测 + 冻结内容哈希
   runs/<run-id>/   # 每 run 独立目录：config 副本 + append-only 日志 + metrics.json
-                   #   + runtime.json（pid/job 句柄）+ receipt.md + manifest.sha256
+                   #   + runtime.json（pid/job 句柄）+ receipt.md + manifest.json（溯源声明，run-check 校验）
+  runs/VOIDED.md   # 作废 run 名单（research.mjs void 登记，只增不删；作废 run 不得被引用）
   report.md        # 报告，按轮追加；终稿含结局核对表与 judge 原始输出（阶段 5）
   state.md         # 跨会话状态：固定头部（当前阶段/已过门禁/待办/活跃 job）+ run 状态 +
                    #   哈希链清单。只记 run 级状态，不记方向结论（与 directions.md 互斥）
@@ -81,7 +76,8 @@ docs/research/<date>-<slug>/      # node bin/research.mjs init <dir> 一键 scaf
   （H1 / 判定阈值 / 阈值依据 / 用户确认时间）经用户确认即生效；R2 退化为单点数字核对；
   结论只许标"**初步支持**"，不得上方向看板当定论。
 - **标准**（≤10 run）：完整流程。
-- **攻坚**（>10 run 或跨天）：完整流程 + state.md 固定头部强制 + 阶段 3 结束才许汇报。
+- **攻坚**（>10 run 或跨天）：完整流程 + state.md 固定头部强制 + 阶段 3 结束才许汇报 + **开工打卡**（每会话先
+  `git log -p --since=<上次会话>` 重读 proposal/方案变更）；执行交给异模型时先 `handoff.mjs contract` 产出执行契约。
 
 ## 阶段 1：文献与现状（先穷尽材料源，再三视角派发）
 
@@ -163,7 +159,8 @@ Workflow({
           phases: [{ title: "Panel" }, { title: "Gate" }, { title: "Ledger" }] },
   args: { profile: "research",
           proposal: "proposal.md", literature: "literature.md", matrix: "matrix.yaml",
-          ledger: [] },   // 第 2 轮起原样传回上一轮返回的 ledger——轮次由台账推导，不要手写 round
+          ledger: [],     // 第 2 轮起原样传回上一轮返回的 ledger——轮次由台账推导，不要手写 round
+          models: <.xdev/review-models.json，可省> },   // 跨 provider 阵容，规则同 full-dev 阶段 2
   script: "<full-dev-gate.js 去掉 export const meta 后的正文>",
 })
 ```
@@ -194,6 +191,8 @@ approve 后经 ask_user_question 呈决策简报给用户**单次确认**。**�
 
 - 实验代码走开发流纪律：先写**能复现基线/现象的脚本**并真跑通过，再上方法（对照 SWE-bench 经验：
   先确认现象存在）；**基线复现成功后复核预算估计**并留痕
+- **步骤级风险预检**（写码前写进 state.md，每项答"已检查：结论"或"不适用：理由"）：①重复/别名 ②与训练集/评测集重叠 ③来源/设备/期次混杂
+  ④坐标单位口径 ⑤样本独立性 ⑥**适用性**——判据对象与判据**实际依赖的结构指标**须实测计数，为 0 或明显不足即停（实盘：用总量代替同图共现数）
 - **blueprint 纪律（FLT/Prove2Me 教训）**：matrix.yaml **先冻结后执行**——"陈述"与"执行"分离。
   **冻结语义 = 已有格子不可改；追加新格子是 append-only 留痕操作，属补跑迭代，不回阶段 2**；
   改已有格子才回阶段 2。多 agent 协作时 matrix.yaml + state.md + runs/ 是**唯一共享记忆**
@@ -203,19 +202,18 @@ approve 后经 ask_user_question 呈决策简报给用户**单次确认**。**�
 - **run 生命周期**：每个 run 独立目录、独立进程。启动时写 `runtime.json`（pid/pgid 或集群 job id、
   启动命令、日志路径）；**预期超会话的 run 必须 detached 启动**（setsid/nohup + pidfile），
   会话结束不杀 run，跨会话靠 pidfile 判活 + 日志断点续判
-- **派发纪律（复用 full-dev 阶段 3）**：互不依赖的 run 并行派发 subagent / `run_in_background`；
-  **worker 单次尝试原则**——失败即返回，重试计数与诊断归主线程，每次 attempt 落盘 state.md；
-  worker 的 receipt（命令/输出摘要/落盘路径）同步落盘 `runs/<id>/receipt.md`，不只是对话产物
+- **派发纪律（复用 full-dev 阶段 3）**：互不依赖的 run 并行派发；**worker 单次尝试原则**——失败即返回，重试计数与诊断归主线程，
+  每次 attempt 落盘 state.md；worker 的 receipt（命令/输出摘要/落盘路径）同步落盘 `runs/<id>/receipt.md`，不只是对话产物
 - 每个 run 落盘：config 副本（含代码 git commit 与数据集哈希）、append-only 日志
   （**头部强制环境指纹**：时间戳/git commit/数据集 SHA256/硬件标识）、metrics.json。
   **run 结束即跑 `research.mjs manifest <dir>`**（sha256 清单追加进 state.md 哈希链 + git commit
-  外部锚）——哈希与被审对象不再同源，改日志需改写 git 历史
+  外部锚）——哈希与被审对象不再同源，改日志需改写 git 历史；**每个 run 写 `manifest.json` 并过 `research.mjs run-check <run 目录>`**
+  （必填/占位/脚本哈希/作废引用/outputs/图件，实盘上线即抓 5 项 FAIL），有 FAIL 不得声称完成；缺陷 run 用 `research.mjs void` 登记作废
 - **批次 drift check（复用 full-dev 附录 B 精神，对照基准 = 预注册 proposal.md）**：批 = 单次并行
   派发组或累计 ≥5 个 run，先到为准。fresh subagent 对照 diff 与 runs/ 日志，只报"未申报的步骤
   偏差 / 代码变更 / 评测集变动"；已申报的调整不算 drift。未申报偏差 → 该批 run 结论降权并标注
-- 单 run 3 次失败（run 级失败，环境级失败由 preflight fail-fast 拦截、不走重试）→
-  **换实现路径重试一次**（同假设同格子内调整；换"方向"是轮级动作，必须回阶段 2），
-  再败标记 FAILED 落盘并继续其余 run（铁律 T3）
+- 单 run 3 次失败（run 级；环境级由 preflight fail-fast 拦截、不走重试）→ **换实现路径重试一次**（同假设同格子内调整；
+  换"方向"是轮级动作，必须回阶段 2），再败标记 FAILED 落盘并继续其余 run（铁律 T3）
 - **留出集批次隔离（实盘教训）**：调优集 run 与留出集 run 分批派发，批间设 tune 筛选检查点——
   混批启动会让"tune 淘汰组不跑 holdout"的检查点结构性失效（"不看 holdout"降级为纯自律）
 - state.md 固定头部（当前阶段 / 已过门禁及哈希 / 待办 / 活跃 job）**阶段切换即更新**；
@@ -250,8 +248,10 @@ approve 后经 ask_user_question 呈决策简报给用户**单次确认**。**�
   bootstrap 95% CI 仅参考输出；多 seed 报均值 ± 方差；
   seed=3 一律标"探索性"；异常 run 如实列出
 - 结论只有三种：**证实 / 证伪 / 不确定（数据不足以判定）**——"不确定"必须写清缺什么
+- **对账与形态**：关键计数与上游相关 run 对账后才许入报告；每个判据附分布形态（单峰/多峰/长尾/离群），
+  形态与判据假设不符 → 观察项，不改判定（实盘：双峰直方图就在产物里，执行者只报"不通过"）
 - **关键数字双路独立复算（标准档及以上默认；cryo-EM 金标准半图实践）**：由两个互不见对方实现的
-  fresh subagent 各写一条解析路径，从原始输出分别复算关键指标，一致才采信，不一致先查解析管线
+  fresh subagent 各写一条解析路径，从原始输出分别复算关键指标，一致才采信，不一致先查解析管线（有 roster 时两路强制不同 provider）
 - **verdict 双路复算（R2 条款）**：此前双路只复算 metrics 不复算 verdict——judge 自写自审无独立对照。
   fresh subagent **只读 proposal 必含项 11 的判定伪代码**（禁读 judge/ 实现），独立实现判定器 →
   `judge/independent/<cell>.verdict.md`（首行 `VERDICT: PASS/FAIL`）；`research.mjs verify`
@@ -305,11 +305,11 @@ a) 收尾交付报告；b) 追求更优：立**新假设 H1′（更高标准/�
 report.md（按轮追加；终稿）必含：结论 → 关键数字表（每格带 `runs/<id>/metrics.json` 路径）→
 **预注册结局核对表**（每条预注册结局 → 判定 → run 路径，逐条无遗漏，含难看的）→
 负结果与失败 run → 复现步骤（命令级）→ 环境元数据（git commit / 依赖 lock / 数据集哈希）→
-judge 原始输出归档路径。
+judge 原始输出归档路径。结论逐条标 **[实测]**（有产物文件支撑）/ **[推断]**——[推断] 禁入结论与关键数字表。
 
-**结果溯源审计（fresh subagent，prompt 见附录 R2）**：先跑 `node bin/research.mjs verify <dir>`
+**结果溯源审计（fresh subagent，prompt 见附录 R2）**：先跑 `node ../../bin/research.mjs verify <dir>`
 （fail-closed 机器预检：T1 冻结 / 哈希链 / T2 溯源路径 / 格子↔run 对账 / 留出集 ≤1 / git 锚 /
-verdict 双路），LLM 审计员只吃预检报告 + 抽样材料（每种失败模式 ≥1 + 随机 10% run），
+verdict 双路 / 作废登记 / run-check），LLM 审计员只吃预检报告 + 抽样材料（每种失败模式 ≥1 + 随机 10% run），
 并**抽样 ≥2 个 run 从原始日志手工重算**（禁止跑原解析脚本）。
 reject → 返工分析或修正报告，不得软化。
 **每轮必做，不只终稿做**：单轮结论（哪怕只是看板回写引用的数字）也要过审计后才许驱动下一轮决策。
