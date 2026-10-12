@@ -1665,7 +1665,8 @@ test('run-check: 合规 run 可交付；6 类检查各自能被打红（变异�
     await f.write(f.manifest)
   }
   await red('① 必填字段缺失', (m) => { delete m.host }, /必填字段缺失：host/)
-  await red('② 占位哈希（W5 原文）', (m) => { m.inputs[0].sha256 = '见工作区 sha256sum' }, /占位文字|不是 64 位/)
+  await red('② 占位文字（W5 原文，非哈希字段——哈希字段另有 64 位校验会兜住）', (m) => { m.code_commit = '见工作区' }, /存在占位文字：\.code_commit/)
+  await red('② 占位哈希', (m) => { m.inputs[0].sha256 = '见工作区 sha256sum' }, /不是 64 位/)
   await red('③ 脚本哈希错一个字符', (m) => { m.inputs[0].sha256 = m.inputs[0].sha256.replace(/^./, (c) => (c === 'a' ? 'b' : 'a')) }, /与仓库文件不一致/)
   await red('④ 引用作废 run（W6）', (m) => { m.inputs.push({ path: 'runs/r-bad-0050/x.csv' }) }, /已作废的 run.*r-bad-0050/)
   await red('⑤ outputs 缺文件', (m) => { m.outputs.push('missing.json') }, /outputs 缺文件：missing\.json/)
@@ -1746,9 +1747,10 @@ test('failure-check: 实盘 W1–W13 绿；W5 退回文字规则红；W13 的停
   assert.match(w5.out, /W5.*未闭环/)
   const w13 = await handoff(['failure-check', await save(mut('W13', { enforcement: 'prose' }))])
   assert.equal(w13.code, 1, 'W11 类第二次出现仍为文字规则必须红')
-  // 漏填 recurrence 绕不过去：复发次数由同类链长度推出
+  // 漏填 recurrence 绕不过去：声明同类却不报复发次数本身就红
   const sneaky = await handoff(['failure-check', await save(mut('W13', { enforcement: 'prose', recurrence: undefined }))])
   assert.equal(sneaky.code, 1)
+  assert.match(sneaky.out, /声明同类复发但 recurrence < 2/)
   const exec = await handoff(['failure-check', await save([...rows, { ...rows[0], id: 'W14', recorded_by: 'executor', recurrence: 2, same_class_as: 'W1', enforcement: 'mechanical' }])])
   assert.equal(exec.code, 1)
   assert.match(exec.out, /执行方条目不得填写/)
@@ -1839,6 +1841,11 @@ test('gate roster: 3 provider 时 large 面板三人互不同 provider，门下�
   // 同一 roster → 同一映射（跨轮次 verdict 可比）
   const again = await runGate({ args: { plan: 'p.md', size: 'large', models: ROSTER3 }, agentStub: (p, o) => (o.phase === 'Gate' ? APPROVE : FINDING(o.label.split(':')[1])) })
   assert.deepEqual(again.out.modelAssignment, out.modelAssignment)
+  // 同 provider 多模型排在前面时，"先换 provider 再换模型"才看得出区别（ROSTER3 里两条规则结果相同，守不住）
+  const crowded = { ...ROSTER3, panel: [{ provider: 'zai', model: 'a' }, { provider: 'zai', model: 'b' }, ...ROSTER3.panel.slice(1)] }
+  const c = await runGate({ args: { plan: 'p.md', size: 'large', models: crowded }, agentStub: (p, o) => (o.phase === 'Gate' ? APPROVE : FINDING(o.label.split(':')[1])) })
+  const cp = c.calls.filter((x) => x.opts.phase === 'Panel').map((x) => x.opts.provider)
+  assert.equal(new Set(cp).size, 3, `provider 数足够时不得让同 provider 的两个模型占两席：${cp}`)
 })
 
 test('gate roster: 门下门与作者同 provider / cheap 档 → 配置错误 fail-closed，一个审核员都不派', async () => {

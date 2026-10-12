@@ -37,7 +37,7 @@ R15（manifest 禁占位）生效后 W5/W6 照样再犯，直到写进 `check_ru
 1. **run-check**（check_run.py 6 类检查的通用化移植；项目口径走 `runs/manifest.schema.json`），对实盘 9 个 run 判定逐个一致；
    **void** + verify 新增 `VOID-REMOVED` / `VOIDED-REF` / `RUN-CHECK`。
 2. **handoff.mjs**：`contract`（八件套骨架，风险预检含第 ⑥ 项适用性）+ `--check`（残留标记 / 删节 / ✅ 无实测证据）；
-   `failure-add` / `failure-check`——复发次数取"自报"与"同类链长度"大者，执行方不得自判同类，停止条件算闭环。
+   `failure-add` / `failure-check`——声明同类必须报复发 ≥2（漏填即红）、按同类链看最新一条，执行方不得自判同类，停止条件算闭环。
 3. **跨 provider 阵容**（dsh，默认不启用）：确定性分配、门下门异 provider + strong 档（fail-closed）、失败换 provider 重派、
    单 provider 披露进决策简报、台账带 `reviewer_model`。接口存在已由 dsh 源码静态核实（`dsh-tool-workflow/lib/index.js:143`、
    `dsh-workflow-ptc/lib/index.js:152-162,336-337`）；**运行时路由未验证**，启用前跑 `model-routing-probe.js`（阴性对照：不存在的

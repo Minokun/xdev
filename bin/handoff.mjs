@@ -188,14 +188,14 @@ export function checkLedger(rows) {
     if (r.same_class_as != null && !(Number(r.recurrence) >= 2)) problems.push(`${at}: 声明同类复发但 recurrence < 2`)
     if (r.id != null) byId.set(r.id, r)
   }
-  // 元规则：同类失误第二次出现 → 必须机械化（机检或停止条件）。复发次数取"声明值"与"同类链长度"的大者，
-  // 链长度由台账结构推出，不依赖自报——漏填 recurrence 绕不过去。
+  // 元规则：同类失误第二次出现 → 必须机械化（机检或停止条件）。按同类链归类、看链上最新一条；
+  // 漏填 recurrence 绕不过去——上面的行规则已拒绝"声明同类但 recurrence < 2"。
   const rootOf = (r) => { let x = r; const seen = new Set(); while (x?.same_class_as && byId.has(x.same_class_as) && !seen.has(x.id)) { seen.add(x.id); x = byId.get(x.same_class_as) } return x?.id }
   const classes = new Map()
   for (const r of rows) if (r.id != null) { const k = rootOf(r); if (!classes.has(k)) classes.set(k, []); classes.get(k).push(r) }
   for (const [k, members] of classes) {
     const latest = members[members.length - 1]
-    const times = Math.max(members.length, ...members.map((m) => Number(m.recurrence) || 1))
+    const times = Math.max(...members.map((m) => Number(m.recurrence) || 1))
     if (times >= 2 && latest.enforcement === 'prose') problems.push(`${k}: 同类失误已出现 ${times} 次，最新条目 ${latest.id} 仍只有文字规则——必须升级为机检或停止条件（未闭环）`)
   }
   return problems
