@@ -4,6 +4,32 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.4.0] - 2026-10-12
+
+Weak-model execution contract + cross-provider review roster. Basis: a live handoff where a strong model wrote the plan and GLM-5.3 executed it (2026-10-09 ~ 10-12) — the executor was reliable under "iron rules + stop conditions + machine gate", but **text rules held only until a mistake recurred**: placeholder hashes and references to voided runs came back after the written rule, and stopped only once a script checked them.
+
+### Added
+
+- **`research.mjs run-check <run-dir>`** — per-run delivery gate ported from the live `check_run.py` (6 checks: required manifest fields / placeholders / script sha256 vs repo / references to voided runs / outputs exist / distribution plot & contact sheet for criterion/reading steps). Verdicts match `check_run.py` on all 9 live runs. Project-specific fields and step patterns go in `runs/manifest.schema.json`; defaults are generic.
+- **`research.mjs void <dir> <run_id> <reason>`** — voided-run register (`runs/VOIDED.md` + an append-only `void` block in `state.md`). `verify` now fails on a deleted register entry (`VOID-REMOVED`), on reports citing a voided run (`VOIDED-REF`), and on any run whose `manifest.json` fails run-check (`RUN-CHECK`).
+- **`bin/handoff.mjs`** — `contract` generates an execution-contract skeleton (iron rules, stop conditions, environment table with measured evidence, start-of-work check-in, 6-item risk preflight incl. *applicability*, judgment-step list, completion checklist, failure-ledger pointer); `contract --check` fails on unfilled designer slots, deleted sections, or ✅ environment rows without evidence. `failure-add` / `failure-check` keep `.xdev/execution-failures.jsonl`: **a mistake class seen twice that is still only a text rule fails the check**; a same-class entry must declare recurrence ≥ 2 (under-reporting is rejected), and only reviewers may mark same-class/recurrence.
+- **Cross-provider review roster (dsh, opt-in)** — `full-dev-gate.js` accepts `args.models` (`.xdev/review-models.json`; example shipped): deterministic per-dimension assignment preferring distinct providers, gate must differ from the author's provider and be `strong` tier (fail-closed config error otherwise), failed reviewers are re-dispatched on a *different* provider, single-provider rosters are disclosed in the decision brief, and every ledger row / panel finding carries `reviewer_model`. `model-routing-probe.js` verifies overrides are actually honored (negative control: a nonexistent provider must fail) before you enable a roster.
+
+### Changed
+
+- `full-dev.md`: handing off to another model/session now requires a filled execution contract; stage 3 starts with the contract's check-in; appendix E adds the "recurrence → mechanize" meta-rule. `research.md`: the same meta-rule, a 6-item step-level risk preflight, count reconciliation + distribution-shape notes per criterion, `[measured]/[inferred]` tagging (inferences barred from the conclusions table), run-check / void in stage 3. Both files stay within the G7 line budgets (560 / 415) via equal-size compression.
+- Thin-shell line budget (<120) now also covers `full-dev-design` / `full-dev-impl` (previously unguarded).
+
+### Fixed
+
+- README / README.zh contributor command `node --test tests/` fails on Node 22 and 25 (directory loaded as a module) → `node --test`.
+- `research.md` pointed at `node bin/research.mjs` (doesn't resolve from a user project) → `../../bin/research.mjs`, matching full-dev's skill-relative convention; the directory layout listed a `manifest.sha256` that no tool produces.
+- `research.mjs` leaked git's stderr (`stderr: 'ignore'` is not an `execFileSync` option).
+- README repo layout was missing `probe-run.mjs` / `research.mjs` and described `install.sh` as claude/codex only.
+- **dsh install was a silent no-op on dsh 0.2.x** — cloning into `~/.dsh/.agent-presets/xdev` alone was never discovered (dsh 0.2+ composes agent presets from cordis patch rows; verified on `0.2.0-rc.2`: nothing scans that directory, and an include-mounted preset fails `ERR_MODULE_NOT_FOUND` without a resolution root). `install.sh dsh` now registers `preset-xdev` into every profile that composes `dsh-web-app`, links `node_modules` → `profiles/node_modules` so `@deepseek-ai/*` plugin names resolve, emits `dsh.patch.yml` for `dsh --patch` boots, honors `DSH_HOME`, and skips file sync when the repo *is* the preset dir. Both READMEs corrected — clone alone is not an install.
+
+`tests/workflows.test.mjs` grew from 11 to 84 tests guarding each new mechanism; 32 new mutation probes.
+
 ## [v3.3.3] - 2026-09-20
 
 Reference-assertion verification discipline (live incident: two "independent" reviewers made the *same* wrong line-number finding).

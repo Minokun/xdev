@@ -15,3 +15,5 @@ description: 仅实现阶段 — 读取状态文件与计划，执行 full-dev �
 >
 > 阶段 3-4 的全部规则（TDD 循环、worker receipt、drift check、pre-landing 对抗审查）
 > 以 `full-dev.md` 为唯一权威，本文件不重复。
+>
+> 存在执行契约（`<plan>.execution.md`）→ 按 `full-dev.md` 阶段 3 首段先开工打卡；契约中的机检门过了才许声称完成。

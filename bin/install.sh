@@ -9,10 +9,13 @@
 #   codex      Codex CLI — installs BOTH custom prompts and skills:
 #                ~/.codex/prompts/xdev-*.md           (per-file symlinks; /prompts:xdev-*)
 #                ~/.agents/skills/xdev-*/SKILL.md     (generated wrappers; $xdev-* + implicit)
-#   dsh        DeepSeek Harness — full sync into ~/.dsh/.agent-presets/xdev/:
-#              配置面（preset.yml / agent.cordis.yml / skills/）+ **运行面**
-#              （bin/*.mjs、.claude/workflows/*.js）。只同步配置面会让门禁脚本与
-#              测量工具在运行时不可达、门禁退回 prose（2026-09-11 实盘 P0）。
+#   dsh        DeepSeek Harness — sync into ~/.dsh/.agent-presets/xdev/ +
+#              REGISTER the preset into every web-capable profile's
+#              cordis.patch.yml (dsh 0.2+ composes agent presets from cordis
+#              patch rows; the .agent-presets directory alone is never scanned).
+#              Sync covers 配置面（preset.yml / agent.cordis.yml / skills/）+
+#              **运行面**（bin/*.mjs、.claude/workflows/*.js）。只同步配置面会让
+#              门禁脚本与测量工具在运行时不可达、门禁退回 prose（2026-09-11 实盘 P0）。
 #   all        Shorthand for: claude codex dsh
 #
 # Note: the Windsurf IDE target was REMOVED in v3.0.0 — Windsurf is no longer supported.
@@ -41,7 +44,8 @@ XDEV_ROOT="$( cd -- "$SCRIPT_DIR/.." && pwd )"
 CLAUDE_DEFAULT_TARGET="$HOME/.claude/commands/xdev"
 CODEX_PROMPTS_TARGET="$HOME/.codex/prompts"
 CODEX_SKILLS_TARGET="$HOME/.agents/skills"
-DSH_PRESET_TARGET="$HOME/.dsh/.agent-presets/xdev"
+DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+DSH_PRESET_TARGET="$DSH_HOME/.agent-presets/xdev"
 
 DRY_RUN=0
 TARGET_OVERRIDE=""
@@ -277,57 +281,153 @@ install_codex() {
   install_codex_skills
 }
 
-# dsh install: FULL sync into the preset directory. dsh reads the preset in place
-# (~/.dsh/.agent-presets/xdev IS the preset — there is no copy-on-load), so anything
-# the runtime needs must physically live there. Syncing only the config face
-# (preset.yml / agent.cordis.yml / skills/) leaves the gate script and the
+# The preset registration row, emitted into dsh.patch.yml and appended to
+# web-capable profiles' cordis.patch.yml. dsh 0.2+ composes agent presets from
+# cordis patch rows; the row declares @deepseek-ai/dsh-agent-preset whose
+# plugins is a single cordis-plugin-include mounting agent.cordis.yml (so
+# agent.cordis.yml stays the single source of truth). Verified on dsh
+# 0.2.0-rc.2: the include mounts eagerly at profile boot and its rows resolve
+# once node_modules (below) is linked.
+dsh_patch_block() {
+  local target_url="${1// /%20}"
+  local pname pdesc porder
+  pname="$(sed -n 's/^name: *//p' "$XDEV_ROOT/preset.yml" | head -1)"
+  pdesc="$(sed -n 's/^description: *//p' "$XDEV_ROOT/preset.yml" | head -1)"
+  porder="$(sed -n 's/^order: *//p' "$XDEV_ROOT/preset.yml" | head -1)"
+  cat <<EOF
+- insert:
+    - id: preset-xdev
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: xdev
+${pname:+        name: $pname
+}${pdesc:+        description: $pdesc
+}${porder:+        order: $porder
+}        plugins:
+          - id: xdev-include
+            name: '@deepseek-ai/cordis-plugin-include'
+            config:
+              path: file://$target_url/agent.cordis.yml
+EOF
+}
+
+# dsh install: FULL sync into the preset directory + REGISTER the preset.
+# dsh reads the preset in place (~/.dsh/.agent-presets/xdev IS the preset —
+# there is no copy-on-load), so anything the runtime needs must physically
+# live there. Syncing only the config face leaves the gate script and the
 # measurement tools unreachable and the gate degenerates to prose — this exact
 # failure shipped on 2026-09-11 (docs/plans/2026-09-10-xdev-optimization.md §11.3-P0-1).
 #
-# Copies (not symlinks): the historical install form is copies and
-# tests/probes/mutations.mjs regenerate() also writes copies. Idempotent;
-# only ever touches paths listed below.
+# Registration (dsh 0.2+): nothing scans .agent-presets/ — presets are
+# @deepseek-ai/dsh-agent-preset rows in the profile's cordis tree. We append an
+# `- insert:` row to every profile that composes dsh-web-app, and write a
+# standalone dsh.patch.yml for ad-hoc `dsh --patch` boots.
+#
+# Copies (not symlinks) for the payload files: the historical install form is
+# copies and tests/probes/mutations.mjs regenerate() also writes copies.
+# Idempotent; only ever touches paths listed below.
 install_dsh() {
   local target="$DSH_PRESET_TARGET"
   local src="$XDEV_ROOT"
   [ -d "$src/skills" ] || err "missing source dir: $src/skills"
 
-  log "dsh preset → $target (full sync: config + runtime)"
-  run mkdir -p "$target/skills" "$target/bin" "$target/.claude/workflows"
+  local src_real dst_real=""
+  src_real="$(cd "$src" && pwd -P)"
+  [ -d "$target" ] && dst_real="$(cd "$target" && pwd -P)"
 
-  # ① 配置面
-  run cp -f "$src/preset.yml" "$src/agent.cordis.yml" "$target/"
-  local skill_count=0
-  local d
-  for d in "$src/skills"/xdev-*/; do
-    [ -d "$d" ] || continue
-    local name
-    name="$(basename "$d")"
-    run mkdir -p "$target/skills/$name"
-    run cp -f "$d/SKILL.md" "$target/skills/$name/SKILL.md"
-    skill_count=$((skill_count + 1))
-  done
+  if [ "$src_real" = "$dst_real" ]; then
+    # Cloned straight into the preset dir: files are already in place, only
+    # registration remains.
+    log "dsh preset: repo is $target (clone-in-place) — skipping file sync"
+  else
+    log "dsh preset → $target (full sync: config + runtime)"
+    run mkdir -p "$target/skills" "$target/bin" "$target/.claude/workflows"
 
-  # ② 运行面：测量工具 + 探针跑批器 + 门禁 workflow（path-agnostic：全部输入由 args/--dir 传入）
-  # 用 glob 而不是硬编码清单：清单曾漏掉后加的 probe-run.mjs（审计 G2）。gen-dsh.mjs 是仓库侧
-  # 生成器、不是运行面，跳过。
-  local f
-  local tool_count=0
-  for f in "$src/bin/"*.mjs; do
-    [ -f "$f" ] || continue
-    case "$(basename "$f")" in gen-dsh.mjs) continue ;; esac
-    run cp -f "$f" "$target/bin/$(basename "$f")"
-    tool_count=$((tool_count + 1))
-  done
-  [ "$tool_count" -gt 0 ] || err "no runtime tools found under bin/"
-  local wf_count=0
-  for f in "$src/.claude/workflows/"*.js; do
-    [ -e "$f" ] || continue
-    run cp -f "$f" "$target/.claude/workflows/$(basename "$f")"
-    wf_count=$((wf_count + 1))
-  done
+    # ① 配置面
+    run cp -f "$src/preset.yml" "$src/agent.cordis.yml" "$target/"
+    local skill_count=0
+    local d
+    for d in "$src/skills"/xdev-*/; do
+      [ -d "$d" ] || continue
+      local name
+      name="$(basename "$d")"
+      run mkdir -p "$target/skills/$name"
+      run cp -f "$d/SKILL.md" "$target/skills/$name/SKILL.md"
+      skill_count=$((skill_count + 1))
+    done
 
-  log "dsh: synced preset.yml + agent.cordis.yml + $skill_count skills + $tool_count bin tools + $wf_count workflows"
+    # ② 运行面：测量工具 + 探针跑批器 + 门禁 workflow（path-agnostic：全部输入由 args/--dir 传入）
+    # 用 glob 而不是硬编码清单：清单曾漏掉后加的 probe-run.mjs（审计 G2）。gen-dsh.mjs 是仓库侧
+    # 生成器、不是运行面，跳过。
+    local f
+    local tool_count=0
+    for f in "$src/bin/"*.mjs; do
+      [ -f "$f" ] || continue
+      case "$(basename "$f")" in gen-dsh.mjs) continue ;; esac
+      run cp -f "$f" "$target/bin/$(basename "$f")"
+      tool_count=$((tool_count + 1))
+    done
+    [ "$tool_count" -gt 0 ] || err "no runtime tools found under bin/"
+    local wf_count=0
+    for f in "$src/.claude/workflows/"*.js; do
+      [ -e "$f" ] || continue
+      run cp -f "$f" "$target/.claude/workflows/$(basename "$f")"
+      wf_count=$((wf_count + 1))
+    done
+
+    log "dsh: synced preset.yml + agent.cordis.yml + $skill_count skills + $tool_count bin tools + $wf_count workflows"
+  fi
+
+  # ③ Resolution root: the include mounts agent.cordis.yml with baseUrl = the
+  # preset dir, so '@deepseek-ai/*' plugin names resolve by walking up from
+  # here. Without this link the preset fails to mount ("Cannot find package
+  # '@deepseek-ai/dsh-persona' imported from <preset dir>"). profiles/
+  # node_modules is pnpm-managed and exists once any profile's bundles are
+  # installed (i.e. after the web profile has ever booted).
+  run ln -sfn "$DSH_HOME/profiles/node_modules" "$target/node_modules"
+  if [ ! -d "$DSH_HOME/profiles/node_modules/@deepseek-ai" ]; then
+    warn "$DSH_HOME/profiles/node_modules/@deepseek-ai not found — install a profile's plugin deps first (dsh plugin --profile <name> install), or the xdev preset will fail to mount"
+  fi
+
+  # ④ Standalone patch overlay for ad-hoc boots: dsh --patch <file> <profile>
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '  + write %s\n' "$target/dsh.patch.yml"
+  else
+    dsh_patch_block "$target" > "$target/dsh.patch.yml"
+  fi
+  log "dsh: wrote $target/dsh.patch.yml (ad-hoc: dsh --patch '$target/dsh.patch.yml' <profile>)"
+
+  # ⑤ Register into every profile that composes dsh-web-app (the bundle that
+  # provides the agent-preset registry — headless has none, so it is skipped).
+  local pkg patch_file profile registered=""
+  for pkg in "$DSH_HOME"/profiles/*/package.json; do
+    [ -f "$pkg" ] || continue
+    grep -q 'dsh-web-app' "$pkg" || continue
+    profile="$(basename "$(dirname "$pkg")")"
+    patch_file="$(dirname "$pkg")/cordis.patch.yml"
+    if [ -f "$patch_file" ] && grep -q 'preset-xdev' "$patch_file"; then
+      registered="$registered $profile(already)"
+      continue
+    fi
+    if [ "$DRY_RUN" -eq 1 ]; then
+      printf '  + append preset-xdev to %s\n' "$patch_file"
+    else
+      {
+        # keep an existing patch layer intact; drop only a bare `[]` placeholder
+        [ -f "$patch_file" ] && grep -v '^[[:space:]]*\[\][[:space:]]*$' "$patch_file" || true
+        printf '\n# ── xdev preset (added by xdev bin/install.sh dsh) ──\n'
+        dsh_patch_block "$target"
+      } > "$patch_file.xdev-tmp"
+      mv "$patch_file.xdev-tmp" "$patch_file"
+    fi
+    registered="$registered $profile"
+  done
+  if [ -n "$registered" ]; then
+    log "dsh: registered preset-xdev in profile patch layers:$registered"
+  else
+    warn "no dsh-web-app profile found under $DSH_HOME/profiles — register manually: dsh --patch '$target/dsh.patch.yml' <profile>"
+  fi
+  log "dsh: restart the profile; 'xdev 模式' should appear in the preset selector"
 }
 
 # --- dispatch ---
@@ -348,6 +448,7 @@ for a in "${AGENTS[@]}"; do
       log "  verify codex prompts: ls -l \"$CODEX_PROMPTS_TARGET\" | grep xdev-"
       log "  verify codex skills:  ls -l \"$CODEX_SKILLS_TARGET\" | grep xdev-" ;;
     dsh)
-      log "  verify dsh runtime:   test -f \"$DSH_PRESET_TARGET/.claude/workflows/full-dev-gate.js\" && test -f \"$DSH_PRESET_TARGET/bin/cost-report.mjs\" && test -f \"$DSH_PRESET_TARGET/bin/probe-run.mjs\" && echo OK" ;;
+      log "  verify dsh runtime:   test -f \"$DSH_PRESET_TARGET/.claude/workflows/full-dev-gate.js\" && test -f \"$DSH_PRESET_TARGET/bin/cost-report.mjs\" && test -f \"$DSH_PRESET_TARGET/bin/probe-run.mjs\" && echo OK"
+      log "  verify dsh preset:    dsh --profile web --dump-config | grep -A3 preset-xdev   (then restart dsh web)" ;;
   esac
 done

@@ -1,0 +1,13 @@
+{"id":"W1","date":"2026-10-10","step":"a4 初版","mistake":"看到异常只记录、不核实：两机位杆数几乎相同只写\"来源待核对\"就交付","evidence":"state.md 2026-10-10 阻塞记录","rule_ref":"R13、R21","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W2","date":"2026-10-11","step":"a4 去重","mistake":"写出 bug 不对账并据错误数字下结论：别名合并后未再去重，图片数翻倍","evidence":"runs/p0a_a4_dedup-20261011-1656（已作废）","rule_ref":"R12、R18","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W3","date":"2026-10-11","step":"a4","mistake":"想不到领域层面的风险：未考虑 YOLO 训练集与候选线路重叠","evidence":"state.md「Devin 复核 a4」第 2 条","rule_ref":"R17","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W4","date":"2026-10-11","step":"a1","mistake":"照字面执行、不报告反常形态：直方图明显双峰只报\"不通过\"","evidence":"runs/p0a_a1-20261011-1722/a1_d_hist.png","rule_ref":"R14","enforcement":"mechanical","recorded_by":"reviewer"}
+{"id":"W5","date":"2026-10-11","step":"a1","mistake":"manifest 写占位哈希","evidence":"a1 manifest 原文\"见工作区 sha256sum\"；a2、a4 去重二轮再犯","rule_ref":"R15","enforcement":"mechanical","recorded_by":"reviewer","recurrence":2}
+{"id":"W6","date":"2026-10-11","step":"a1","mistake":"引用已作废 run 的产物","evidence":"a1、a2 均引用 p0a_a4_dedup-20261011-1656；a2 再犯","rule_ref":"R15、runs/VOIDED.md","enforcement":"mechanical","recorded_by":"reviewer","recurrence":2}
+{"id":"W7","date":"2026-10-11","step":"a2","mistake":"未打卡即开工：脚本与 run 目录已建，state.md 仍写\"未开始\"","evidence":"2026-10-11 18:37–18:42 时间线","rule_ref":"R16","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W8","date":"2026-10-11","step":"a2","mistake":"读图步骤无视觉证据：未保存任何裁图样例","evidence":"runs/p0a_a2-20261011-1838/ 只有 json","rule_ref":"R19","enforcement":"mechanical","recorded_by":"reviewer"}
+{"id":"W9","date":"2026-10-11","step":"a4 去重","mistake":"把推断写成事实：summary 主表写入 bug 假象","evidence":"pool_size_dedup_summary.md（1656 版）","rule_ref":"R18","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W10","date":"2026-10-11","step":"多次","mistake":"state.md 编辑粗糙：同一行会话日志重复写入两次","evidence":"state.md 2026-10-11 修正二轮①","rule_ref":"R11","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W11","date":"2026-10-11","step":"a3 前置","mistake":"不检查适用性：判据对象在所选组合实测 0 次命中仍按草稿开跑","evidence":"7号线/5.13/03 全部 10,315 图的类别计数","rule_ref":"R17⑥","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W12","date":"2026-10-11","step":"a2 补正","mistake":"代码注释断言未经核实的事实，拼图二次反归一化致视觉证据失真","evidence":"p0a_a2.py 第 189–194 行","rule_ref":"R19 修订","enforcement":"prose","recorded_by":"reviewer"}
+{"id":"W13","date":"2026-10-12","step":"a3 候选定位","mistake":"可行性判断用总量代替结构指标（同图双线夹实测仅 20/3,140）","evidence":"DSH 2026-10-12 在 90 对 jsonl 全量复算","rule_ref":"R17⑥ 修订 + §2 停止条件","enforcement":"stop-condition","recorded_by":"reviewer","same_class_as":"W11","recurrence":2}

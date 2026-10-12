@@ -78,6 +78,50 @@ const SOURCES_BLOCK = SOURCES.length
   ? `\n【一手源（未经被审者加工，内容优先于设计文档的转述）】\n${SOURCES.map((s) => `- ${s}`).join('\n')}\n审查时至少抽检其中一份原文，确认设计的转写没有失真/遗漏。`
   : ''
 
+// ── 模型阵容（v3.4，dsh 专属；无 args.models = 现状：全部评审与主线同模型）────────────
+// 评审面板的价值来自盲区不相关：**同 provider 算一个视角，跨 provider 才算第二个视角**。
+// 主线程读 `.xdev/review-models.json` 原样传入（脚本不能读文件）。roster 形如：
+//   { author: {provider, model}, panel: [{provider, model, tier}], gate: {provider, model, tier} }
+// 边界（诚实说明）：author 是 roster 的**声明**——脚本只能校验"声明的门下门 ≠ 声明的作者"，
+// 无法校验主线程实际跑在哪个模型上；主线程须在调用前自核。启用前须先跑 model-routing-probe.js。
+const ROSTER = args && args.models && typeof args.models === 'object' ? args.models : null
+const who = (m) => (m && m.provider ? `${m.provider}/${m.model || '?'}` : null)
+const rosterError = (() => {
+  if (!ROSTER) return null
+  const author = ROSTER.author || {}
+  if (!author.provider) return 'roster 缺 author.provider（裁决者与被裁决者是否同源无从判断）'
+  if (!ROSTER.gate || !ROSTER.gate.provider) return 'roster 缺 gate.provider'
+  if (ROSTER.gate.provider === author.provider) return `门下门 provider（${ROSTER.gate.provider}）与作者相同——裁决者与被裁决者同源等于自审`
+  if (ROSTER.gate.tier === 'cheap') return '门下门必须 strong 档（裁决是质量敏感位，cheap 只许用于面板发现者）'
+  return null
+})()
+if (rosterError) {
+  return { verdict: 'reject', escalate: true, reasons: [`模型阵容配置错误（fail-closed）：${rosterError}`], ledger: LEDGER_IN, round: ROUND, profile: PROFILE }
+}
+const PANEL_POOL = ROSTER && Array.isArray(ROSTER.panel) ? ROSTER.panel.filter((m) => m && m.provider) : []
+const GATE_POOL = ROSTER
+  ? [ROSTER.gate, ...PANEL_POOL.filter((m) => m.provider !== ROSTER.author.provider && m.tier !== 'cheap')]
+  : []
+/** 失败换池：候选按"与上一个不同 provider 优先"排序——一家宕机不该把本轮放大成必 reject。 */
+const failoverOrder = (first, pool) => {
+  const rest = pool.filter((m) => who(m) !== who(first))
+  return [first, ...rest.filter((m) => m.provider !== first.provider), ...rest.filter((m) => m.provider === first.provider)]
+}
+/** 面板确定性分配（同一 roster → 同一映射，跨轮次 verdict 可比）：优先未用过的 provider，再退到未用过的模型。 */
+const assignPanel = (keys) => {
+  const usedP = new Set()
+  const usedM = new Set()
+  const out = {}
+  keys.forEach((k, i) => {
+    if (!PANEL_POOL.length) return
+    const pick = PANEL_POOL.find((m) => !usedP.has(m.provider)) || PANEL_POOL.find((m) => !usedM.has(who(m))) || PANEL_POOL[i % PANEL_POOL.length]
+    usedP.add(pick.provider)
+    usedM.add(who(pick))
+    out[k] = pick
+  })
+  return out
+}
+
 if (PROFILE === 'full-dev' && !PLAN) {
   return { verdict: 'reject', escalate: true, reasons: ['未提供 args.plan —— 无法派发计划审核'], ledger: LEDGER_IN, round: ROUND }
 }
@@ -291,23 +335,26 @@ const budget = { used: 0, starved: [], failed: [] }
  * 且**"一次都没派出去"（starved）与"派了但重派用尽"（failed）分开记账**，
  * 理由里也不再混（早期把重派消耗误记成 starved，导致一条已成功派发的角色被写成"未获派发"）。
  */
-async function dispatch(prompt, { label, phase, schema, reserve = 0 }) {
+async function dispatch(prompt, { label, phase, schema, reserve = 0, candidates = [null] }) {
   let dispatched = false
   for (let attempt = 0; attempt <= MAX_REVIEWER_RETRY; attempt++) {
     if (budget.used + reserve >= MAX_PANEL_SUBAGENTS) {
       log(`⛔ 阶段 2 subagent 预算不足（已用 ${budget.used}，需保留 ${reserve}），未派发 ${label}`)
       // 只有**一次都没派出去**才算 starved；派过但重派用尽属 failed（下面补记）
       if (!dispatched) budget.starved.push(label)
-      return null
+      return { result: null, model: null }
     }
     budget.used++
     dispatched = true
-    const r = await agent(prompt, { label: attempt === 0 ? label : `${label} (retry)`, phase, schema })
-    if (r) return r
-    log(`⚠️ ${label} 失败（第 ${attempt + 1} 次）——按纪律重派或标 missing，绝不静默当作通过`)
+    const model = candidates[Math.min(attempt, candidates.length - 1)]
+    const opts = { label: attempt === 0 ? label : `${label} (retry)`, phase, schema }
+    if (model) Object.assign(opts, { provider: model.provider }, model.model ? { model: model.model } : {})
+    const r = await agent(prompt, opts)
+    if (r) return { result: r, model }
+    log(`⚠️ ${label}${model ? ` @${who(model)}` : ''} 失败（第 ${attempt + 1} 次）——按纪律重派或标 missing，绝不静默当作通过`)
   }
   budget.failed.push(label)
-  return null
+  return { result: null, model: null }
 }
 
 const ledger = [...LEDGER_IN]
@@ -315,14 +362,18 @@ const panelKeys = panelFor()
 
 phase('Panel')
 const promptTable = PROFILE === 'research' ? RESEARCH_PANEL_PROMPTS : PANEL_PROMPTS
+const assignment = assignPanel(panelKeys)
 const panelRaw = panelKeys.length
-  ? await parallel(panelKeys.map((k) => () => dispatch(promptTable[k] + SOURCES_BLOCK, { label: `plan:${k}`, phase: 'Panel', schema: FINDINGS_SCHEMA, reserve: 1 })))
+  ? await parallel(panelKeys.map((k) => () => dispatch(promptTable[k] + SOURCES_BLOCK, {
+      label: `plan:${k}`, phase: 'Panel', schema: FINDINGS_SCHEMA, reserve: 1,
+      candidates: assignment[k] ? failoverOrder(assignment[k], PANEL_POOL) : [null],
+    })))
   : []
 
 const dropped = []
 const panel = []
 for (let i = 0; i < panelKeys.length; i++) {
-  if (panelRaw[i]) panel.push(panelRaw[i])
+  if (panelRaw[i].result) panel.push({ ...panelRaw[i].result, reviewer_model: who(panelRaw[i].model) })
   else dropped.push(panelKeys[i])
 }
 for (const r of panel) {
@@ -333,6 +384,7 @@ for (const r of panel) {
     high: (r.high || []).length,
     confirmed: null, // 主线程确认后发现为真的条数——由主线程回填，脚本不自评
     note: r.note || '',
+    ...(r.reviewer_model ? { reviewer_model: r.reviewer_model } : {}),
   })
 }
 for (const d of dropped) {
@@ -352,7 +404,11 @@ const gatePrompt =
         ),
       )
     : GATE_PROMPT
-const gate = await dispatch(gatePrompt + SOURCES_BLOCK, { label: `menxia:r${ROUND}`, phase: 'Gate', schema: GATE_SCHEMA })
+const gateRun = await dispatch(gatePrompt + SOURCES_BLOCK, {
+  label: `menxia:r${ROUND}`, phase: 'Gate', schema: GATE_SCHEMA,
+  candidates: ROSTER ? failoverOrder(ROSTER.gate, GATE_POOL) : [null],
+})
+const gate = gateRun.result
 
 phase('Ledger')
 
@@ -391,7 +447,18 @@ ledger.push({
   confirmed: null,
   verdict,
   missing: gateFailed,
+  ...(gateRun.model ? { reviewer_model: who(gateRun.model) } : {}),
 })
+
+// 模型多样性披露：roster 里只剩单 provider 时退化为同模型面板——不阻塞，但不许不说。
+const rosterProviders = new Set([...PANEL_POOL, ...(ROSTER ? [ROSTER.gate] : [])].map((m) => m.provider))
+const modelNote = !ROSTER
+  ? '无模型阵容（args.models 未传）：全部评审与主线同模型，视角独立仅在上下文层。'
+  : rosterProviders.size <= 1
+    ? '⚠️ 本轮评审无模型多样性：roster 仅含单一 provider，面板退化为同模型阵容。'
+    : null
+const decisionBrief = gate ? gate.decision_brief || null : null
+if (decisionBrief && modelNote && ROSTER) decisionBrief.risks = [...(decisionBrief.risks || []), modelNote]
 
 const out = {
   round: ROUND,
@@ -401,13 +468,16 @@ const out = {
   missing: gate ? gate.missing || [] : [],
   bookkeeping: gate ? gate.bookkeeping || [] : [],
   premisesChecked: gate ? Boolean(gate.premises_checked) : false,
-  decisionBrief: gate ? gate.decision_brief || null : null,
+  decisionBrief,
   panelFindings: panel.map((r) => ({
     dimension: r.dimension,
     high: r.high || [],
     falsifiabilityFailures: r.falsifiability_failures || [],
     commandsMissing: r.commands_missing || [],
+    reviewer_model: r.reviewer_model || null,
   })),
+  modelAssignment: Object.fromEntries([...Object.entries(assignment).map(([k, m]) => [k, who(m)]), ...(ROSTER ? [['menxia', who(gateRun.model || ROSTER.gate)]] : [])]),
+  modelNote,
   droppedDimensions: dropped,
   ledger,
   budgetUsed: budget.used,

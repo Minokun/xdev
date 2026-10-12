@@ -226,6 +226,32 @@ test('dsh preset: every row with required config carries it (plan-mode section)'
   assert.match(cordis, /dsh-plan-mode[\s\S]{0,400}exit_plan_mode/)
 })
 
+test('install.sh dsh registers the preset the way dsh 0.2 actually discovers it', async () => {
+  // Verified against dsh 0.2.0-rc.2 (2026-10-12): nothing scans
+  // ~/.dsh/.agent-presets/ — presets are @deepseek-ai/dsh-agent-preset cordis
+  // rows composed into the profile tree. The registration row carries one
+  // cordis-plugin-include child that mounts agent.cordis.yml (its `!!js`
+  // baseUrl resolves skills/ relative to the file). The include's baseUrl is
+  // the preset dir, so '@deepseek-ai/*' plugin names need a node_modules link
+  // to profiles/node_modules — without it every row fails ERR_MODULE_NOT_FOUND
+  // at boot (observed in ~/.dsh/logs/startup-*).
+  const install = await readFile(join(repoRoot, 'bin/install.sh'), 'utf8')
+  assert.match(install, /@deepseek-ai\/dsh-agent-preset/, 'must declare the preset row type')
+  assert.match(install, /xdev-include[\s\S]{0,120}name: '@deepseek-ai\/cordis-plugin-include'/, 'must mount agent.cordis.yml via the include row, not inline')
+  assert.match(install, /path: file:\/\/\$target_url\/agent\.cordis\.yml/, 'include must point at the installed file')
+  assert.match(install, /ln -sfn "\$DSH_HOME\/profiles\/node_modules" "\$target\/node_modules"/, 'must link the preset dir node_modules to the profile resolution root')
+  assert.match(install, /cordis\.patch\.yml/, 'must register into the profile patch layer')
+  assert.match(install, /dsh-web-app/, 'must only patch profiles that compose the preset registry')
+  assert.match(install, /preset-xdev/, 'registration row id')
+  // Honors a non-default dsh home and skips file sync when the repo IS the preset dir.
+  assert.match(install, /DSH_HOME/, 'must honor $DSH_HOME')
+  assert.match(install, /pwd -P/, 'must detect clone-in-place installs')
+  // agent.cordis.yml's skills dir must stay include-mounted (baseUrl = file's dir),
+  // not inlined into a patch where baseUrl would be the profile dir.
+  const cordis = await readFile(join(repoRoot, 'agent.cordis.yml'), 'utf8')
+  assert.match(cordis, /customSkillDirs:[\s\S]{0,160}baseUrl/, 'skills dir must resolve via baseUrl (include semantics)')
+})
+
 // --- v3.1: 伪证优先（falsification-first）-----------------------------------
 // 依据：2026-09-10 三会话实盘对照（standard 15.0M token / 13.7min 交付 vs xdev
 // 132.9M / 62.2min）。两个 xdev 运行的全部闸门都是自证假绿的盲区——"命令真跑了"
@@ -1609,4 +1635,331 @@ test('引用断言核验：裸行号不算证据 + 反查核验 + fresh 方法�
     'full-dev 与 research 两个门下门 prompt 都必须带证据完整性条款')
   const research = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
   assert.match(research, /裸 L<n> 按证据不完整记 missing/, 'research.md R1 附录必须有同款条款（真源）')
+})
+
+// ── v3.4 run-check / void（移植 big-model-app check_run.py；实盘上线即抓 a2 五项 FAIL）──────
+// 每条检查都要能红能绿——一条只会绿的机检门比没有更糟（它让人以为"已经机械保证了"）。
+
+async function buildRunFixture(t) {
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { execFileSync } = await import('node:child_process')
+  const { createHash } = await import('node:crypto')
+  const root = await mkdtemp(join(tmpdir(), 'xdev-runcheck-'))
+  t.after(() => execFileSync('rm', ['-rf', root]))
+  execFileSync('git', ['init', '-q'], { cwd: root })
+  await mkdir(join(root, 'scripts'), { recursive: true })
+  const script = 'print("hi")\n'
+  await writeFile(join(root, 'scripts/step.py'), script)
+  const runs = join(root, 'study/runs')
+  const runDir = join(runs, 'r-good')
+  await mkdir(runDir, { recursive: true })
+  await writeFile(join(runDir, 'out.csv'), 'a\n1\n')
+  await writeFile(join(runDir, 'hist.png'), 'png')
+  await writeFile(join(runs, 'VOIDED.md'), '| run_id | 作废原因 | 登记时间 |\n|---|---|---|\n| r-bad-0050 | 计数翻倍 | 2026-10-11 |\n')
+  const manifest = {
+    run_id: 'r-good', step: 'a2 外观可分性', step_kind: 'criterion', host: 'gpu-90', command: 'python scripts/step.py',
+    code_commit: 'abc1234', params: { seed: 1 }, started_at: '2026-10-11T10:00', finished_at: '2026-10-11T11:00', status: 'done',
+    inputs: [{ path: 'scripts/step.py', sha256: createHash('sha256').update(script).digest('hex') }, { path: 'runs/r-ok/x.csv' }],
+    outputs: ['out.csv（主表）', 'hist.png'],
+  }
+  const write = (m) => writeFile(join(runDir, 'manifest.json'), JSON.stringify(m, null, 1))
+  await write(manifest)
+  const check = () => {
+    try {
+      return { code: 0, out: execFileSync(process.execPath, [join(repoRoot, 'bin/research.mjs'), 'run-check', runDir], { encoding: 'utf8' }) }
+    } catch (e) { return { code: e.status, out: `${e.stdout}${e.stderr}` } }
+  }
+  return { root, runDir, manifest, write, check }
+}
+
+test('run-check: 合规 run 可交付；6 类检查各自能被打红（变异探针）', async (t) => {
+  const { writeFile, rm } = await import('node:fs/promises')
+  const f = await buildRunFixture(t)
+  const green = f.check()
+  assert.equal(green.code, 0, green.out)
+  assert.match(green.out, /结论：可交付/)
+  assert.match(green.out, /脚本哈希一致：scripts\/step\.py/)
+
+  const red = async (name, mutate, expect) => {
+    const m = structuredClone(f.manifest)
+    mutate(m)
+    await f.write(m)
+    const r = f.check()
+    assert.equal(r.code, 1, `${name}: 必须 exit 1\n${r.out}`)
+    assert.match(r.out, expect, name)
+    await f.write(f.manifest)
+  }
+  await red('① 必填字段缺失', (m) => { delete m.host }, /必填字段缺失：host/)
+  await red('② 占位文字（W5 原文，非哈希字段——哈希字段另有 64 位校验会兜住）', (m) => { m.code_commit = '见工作区' }, /存在占位文字：\.code_commit/)
+  await red('② 占位哈希', (m) => { m.inputs[0].sha256 = '见工作区 sha256sum' }, /不是 64 位/)
+  await red('③ 脚本哈希错一个字符', (m) => { m.inputs[0].sha256 = m.inputs[0].sha256.replace(/^./, (c) => (c === 'a' ? 'b' : 'a')) }, /与仓库文件不一致/)
+  await red('④ 引用作废 run（W6）', (m) => { m.inputs.push({ path: 'runs/r-bad-0050/x.csv' }) }, /已作废的 run.*r-bad-0050/)
+  await red('⑤ outputs 缺文件', (m) => { m.outputs.push('missing.json') }, /outputs 缺文件：missing\.json/)
+  await rm(join(f.runDir, 'hist.png'))
+  await red('⑥ 判据步骤无分布图', (m) => { m.outputs = ['out.csv'] }, /判据步骤分布图：0 张/)
+  await writeFile(join(f.runDir, 'hist.png'), 'png')
+})
+
+test('run-check: 作废引用的例外必须写在产物里（voided_refs_ack），且整词匹配不误伤同前缀 run', async (t) => {
+  const f = await buildRunFixture(t)
+  const m = structuredClone(f.manifest)
+  m.inputs.push({ path: 'runs/r-bad-0050/x.csv' })
+  m.voided_refs_ack = { 'r-bad-0050': '只读其中与作废原因无关的 overlap 副本' }
+  await f.write(m)
+  const acked = f.check()
+  assert.equal(acked.code, 0, acked.out)
+  assert.match(acked.out, /已声明例外：r-bad-0050/)
+  // r-bad-0050_trial2 ≠ r-bad-0050（实盘目录里真有这种同前缀命名）
+  const m2 = structuredClone(f.manifest)
+  m2.inputs.push({ path: 'runs/r-bad-0050_trial2/x.csv' })
+  await f.write(m2)
+  assert.equal(f.check().code, 0, '同前缀的不同 run 不得被当成作废 run')
+})
+
+test('void + verify: 作废登记 append-only；报告引用作废 run、删 VOIDED 条目、run manifest 不合规 —— verify 全红', async (t) => {
+  const { writeFile } = await import('node:fs/promises')
+  const { root, run } = await buildResearchFixture(t)
+  const verify = () => { try { return run(['verify', root]) } catch (e) { return `${e.stdout}${e.stderr}` } }
+  assert.match(verify(), /verify PASS/)
+  assert.match(verify(), /作废登记：0 个作废 run/)
+
+  run(['void', root, 'new-s1', '解析脚本', 'bug'])
+  const voided = await readFile(join(root, 'runs/VOIDED.md'), 'utf8')
+  assert.match(voided, /\| new-s1 \| 解析脚本 bug \|/)
+  assert.match(await readFile(join(root, 'state.md'), 'utf8'), /<!-- xdev:void\n\{"run_id":"new-s1"/)
+  assert.throws(() => run(['void', root, 'new-s1', 'again'], { stdio: 'pipe' }), '重复作废必须拒绝')
+  // report.md 引用 runs/new-s1/metrics.json → 作废 run 不能当证据
+  assert.match(verify(), /VOIDED-REF.*runs\/new-s1/)
+
+  // 删掉 VOIDED.md 条目（想"撤销作废"）→ void 机器块是真源
+  await writeFile(join(root, 'runs/VOIDED.md'), voided.replace(/\| new-s1 \|[^\n]*\n/, ''))
+  assert.match(verify(), /VOID-REMOVED.*new-s1/)
+  await writeFile(join(root, 'runs/VOIDED.md'), voided)
+  await writeFile(join(root, 'report.md'), '# report\n关键数字 runs/new-s2/metrics.json\n')
+
+  // run 带 manifest.json 但不合规 → verify 经同一 run-check 实现拦下
+  await writeFile(join(root, 'runs/new-s3/manifest.json'), JSON.stringify({ run_id: 'new-s3', step: 'TODO' }))
+  assert.match(verify(), /RUN-CHECK.*new-s3.*必填字段缺失/)
+})
+
+// ── v3.4 bin/handoff.mjs：执行契约 + 执行者失误台账（元规则"同类第二犯 → 机械化"的机械面）──
+
+const W_FIXTURE = join(repoRoot, 'tests/fixtures/execution-failures.w1-w13.jsonl')
+const handoff = async (args) => {
+  const { execFileSync } = await import('node:child_process')
+  try {
+    return { code: 0, out: execFileSync(process.execPath, [join(repoRoot, 'bin/handoff.mjs'), ...args], { encoding: 'utf8', stdio: 'pipe' }) }
+  } catch (e) { return { code: e.status, out: `${e.stdout}${e.stderr}` } }
+}
+
+test('failure-check: 实盘 W1–W13 绿；W5 退回文字规则红；W13 的停止条件分支算闭环；执行方自填复发红', async (t) => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { execFileSync } = await import('node:child_process')
+  const dir = await mkdtemp(join(tmpdir(), 'xdev-ledger-'))
+  t.after(() => execFileSync('rm', ['-rf', dir]))
+  const rows = (await readFile(W_FIXTURE, 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  const save = async (rs) => { const p = join(dir, 'l.jsonl'); await writeFile(p, rs.map((r) => JSON.stringify(r)).join('\n') + '\n'); return p }
+
+  const green = await handoff(['failure-check', await save(rows)])
+  assert.equal(green.code, 0, green.out)
+  assert.ok(rows.some((r) => r.id === 'W13' && r.enforcement === 'stop-condition' && r.same_class_as === 'W11'),
+    'fixture 必须包含停止条件分支（W13 = W11 同类复发），否则"停止条件算闭环"无人覆盖')
+
+  const mut = (id, patch) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r))
+  const w5 = await handoff(['failure-check', await save(mut('W5', { enforcement: 'prose' }))])
+  assert.equal(w5.code, 1, 'W5 复发 2 次仍为文字规则必须红')
+  assert.match(w5.out, /W5.*未闭环/)
+  const w13 = await handoff(['failure-check', await save(mut('W13', { enforcement: 'prose' }))])
+  assert.equal(w13.code, 1, 'W11 类第二次出现仍为文字规则必须红')
+  // 漏填 recurrence 绕不过去：声明同类却不报复发次数本身就红
+  const sneaky = await handoff(['failure-check', await save(mut('W13', { enforcement: 'prose', recurrence: undefined }))])
+  assert.equal(sneaky.code, 1)
+  assert.match(sneaky.out, /声明同类复发但 recurrence < 2/)
+  const exec = await handoff(['failure-check', await save([...rows, { ...rows[0], id: 'W14', recorded_by: 'executor', recurrence: 2, same_class_as: 'W1', enforcement: 'mechanical' }])])
+  assert.equal(exec.code, 1)
+  assert.match(exec.out, /执行方条目不得填写/)
+})
+
+test('failure-add: append-only 追加、自动编号；执行方声明同类被拒', async (t) => {
+  const { mkdtemp } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { execFileSync } = await import('node:child_process')
+  const dir = await mkdtemp(join(tmpdir(), 'xdev-ledger-'))
+  t.after(() => execFileSync('rm', ['-rf', dir]))
+  const base = ['--dir', dir, '--step', 'a1', '--mistake', 'manifest 占位哈希', '--evidence', 'runs/a1/manifest.json', '--rule', 'R15']
+  assert.equal((await handoff(['failure-add', ...base, '--enforcement', 'prose', '--by', 'executor'])).code, 0)
+  const bad = await handoff(['failure-add', ...base, '--enforcement', 'prose', '--by', 'executor', '--same-class-as', 'W1', '--recurrence', '2'])
+  assert.equal(bad.code, 1, '执行方不得自判同类')
+  const again = await handoff(['failure-add', ...base, '--enforcement', 'prose', '--by', 'reviewer', '--same-class-as', 'W1', '--recurrence', '2'])
+  assert.equal(again.code, 0, again.out)
+  assert.match(again.out, /⚠.*未闭环/, '追加时即提示未闭环')
+  const ledger = await readFile(join(dir, '.xdev/execution-failures.jsonl'), 'utf8')
+  assert.deepEqual(ledger.trim().split('\n').map((l) => JSON.parse(l).id), ['W1', 'W2'])
+  assert.equal((await handoff(['failure-check', '--dir', dir])).code, 1, '复核方判同类且仍为文字规则 → check 红')
+})
+
+test('contract: 骨架含八件套且拒绝覆盖；--check 抓残留标记、删节、✅ 无实测证据', async (t) => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { execFileSync } = await import('node:child_process')
+  const dir = await mkdtemp(join(tmpdir(), 'xdev-contract-'))
+  t.after(() => execFileSync('rm', ['-rf', dir]))
+  const p = join(dir, 'plan.execution.md')
+  assert.equal((await handoff(['contract', p])).code, 0)
+  assert.equal((await handoff(['contract', p])).code, 1, '已存在必须拒绝覆盖')
+  const skel = await readFile(p, 'utf8')
+  for (const s of ['铁律', '停止条件', '环境速查表', '开工打卡', '风险预检', '判断力步骤', '完成前自检', '失误档案']) assert.match(skel, new RegExp(s))
+  assert.match(skel, /⑥ \*\*适用性\*\*/, '风险预检必须含第 ⑥ 项适用性（W11/W13 实盘）')
+  assert.match(skel, /research\.mjs run-check/, '完成前自检必须指向机检门')
+  const raw = await handoff(['contract', '--check', p])
+  assert.equal(raw.code, 1, '未填写的骨架必须红')
+  assert.match(raw.out, /未填写/)
+
+  const filled = skel
+    .replace(/<!-- 设计方填写：\| ✅ \| \.\.\. \| \.\.\. \| 命令与输出要点 \| -->/, '| ✅ | gpu-90 /data/x | 跑 a3 | `nvidia-smi` 4 卡空闲（2026-10-12） |')
+    .replace(/<!-- 设计方填写[^\n]*-->/g, '已填')
+  await writeFile(p, filled)
+  const ok = await handoff(['contract', '--check', p])
+  assert.equal(ok.code, 0, ok.out)
+  await writeFile(p, filled.replace('`nvidia-smi` 4 卡空闲（2026-10-12）', ''))
+  assert.match((await handoff(['contract', '--check', p])).out, /✅ 行缺实测证据/)
+  await writeFile(p, filled.replace(/## 2\. 停止条件[\s\S]*?(?=## 3\.)/, ''))
+  assert.match((await handoff(['contract', '--check', p])).out, /必备节被删：## 2\. 停止条件/)
+})
+
+test('交接载体：契约骨架在 bin/（三目标都送达），claude-code/ 不新增非流程 .md（会被装成斜杠命令）', async () => {
+  const { readdirSync } = await import('node:fs')
+  const shipped = readdirSync(join(repoRoot, 'claude-code')).filter((f) => f.endsWith('.md')).map((f) => `claude-code/${f}`).sort()
+  assert.deepEqual(shipped, [...WORKFLOW_FILES].sort(), 'install.sh 把 claude-code/*.md 全部装成命令/prompt/skill——非流程文件不得放这里')
+  const tool = await readFile(join(repoRoot, 'bin/handoff.mjs'), 'utf8')
+  for (const m of tool.matchAll(/^import .*?from '([^']+)'/gm)) assert.match(m[1], /^node:/, `bin/handoff.mjs 必须零依赖（发现 ${m[1]}）`)
+})
+
+// ── v3.4 P5：跨 provider 评审阵容（同 provider 算一个视角，跨 provider 才算第二个视角）──────
+
+const ROSTER3 = {
+  author: { provider: 'kimi', model: 'k3' },
+  panel: [
+    { provider: 'zai', model: 'glm', tier: 'cheap' },
+    { provider: 'bailian', model: 'ds', tier: 'strong' },
+    { provider: 'qwen', model: 'max', tier: 'strong' },
+  ],
+  gate: { provider: 'bailian', model: 'ds', tier: 'strong' },
+}
+const FINDING = (dimension) => ({ dimension, high: [], note: 'ok' })
+
+test('gate roster: 3 provider 时 large 面板三人互不同 provider，门下门按 roster 派发，模型记入台账与结果', async () => {
+  const { out, calls } = await runGate({
+    args: { plan: 'p.md', size: 'large', models: ROSTER3 },
+    agentStub: (prompt, opts) => (opts.phase === 'Gate' ? APPROVE : FINDING(opts.label.split(':')[1])),
+  })
+  const panelProviders = calls.filter((c) => c.opts.phase === 'Panel').map((c) => c.opts.provider)
+  assert.equal(new Set(panelProviders).size, 3, `面板三人必须跨 provider：${panelProviders}`)
+  const gateCall = calls.find((c) => c.opts.phase === 'Gate')
+  assert.equal(gateCall.opts.provider, 'bailian')
+  assert.equal(gateCall.opts.model, 'ds')
+  assert.equal(out.verdict, 'approve')
+  assert.ok(out.panelFindings.every((f) => f.reviewer_model), '面板结果必须带 reviewer_model（F15：哪个模型看到哪类缺陷可测量）')
+  assert.ok(out.ledger.filter((e) => e.round === 1).every((e) => e.reviewer_model), '台账每行带 reviewer_model')
+  assert.equal(out.modelNote, null, '多 provider 阵容不需要披露')
+  // 同一 roster → 同一映射（跨轮次 verdict 可比）
+  const again = await runGate({ args: { plan: 'p.md', size: 'large', models: ROSTER3 }, agentStub: (p, o) => (o.phase === 'Gate' ? APPROVE : FINDING(o.label.split(':')[1])) })
+  assert.deepEqual(again.out.modelAssignment, out.modelAssignment)
+  // 同 provider 多模型排在前面时，"先换 provider 再换模型"才看得出区别（ROSTER3 里两条规则结果相同，守不住）
+  const crowded = { ...ROSTER3, panel: [{ provider: 'zai', model: 'a' }, { provider: 'zai', model: 'b' }, ...ROSTER3.panel.slice(1)] }
+  const c = await runGate({ args: { plan: 'p.md', size: 'large', models: crowded }, agentStub: (p, o) => (o.phase === 'Gate' ? APPROVE : FINDING(o.label.split(':')[1])) })
+  const cp = c.calls.filter((x) => x.opts.phase === 'Panel').map((x) => x.opts.provider)
+  assert.equal(new Set(cp).size, 3, `provider 数足够时不得让同 provider 的两个模型占两席：${cp}`)
+})
+
+test('gate roster: 门下门与作者同 provider / cheap 档 → 配置错误 fail-closed，一个审核员都不派', async () => {
+  for (const gate of [{ provider: 'kimi', model: 'k3-other', tier: 'strong' }, { provider: 'zai', model: 'glm', tier: 'cheap' }]) {
+    const { out, calls } = await runGate({ args: { plan: 'p.md', models: { ...ROSTER3, gate } }, agentStub: () => APPROVE })
+    assert.equal(out.verdict, 'reject')
+    assert.equal(out.escalate, true)
+    assert.match(out.reasons[0], /模型阵容配置错误/)
+    assert.equal(calls.length, 0, '配置错误时不得派发')
+  }
+})
+
+test('gate roster: provider 失败换池重派（不同 provider）；单 provider roster 不阻塞但必须披露；无 roster 行为与现状一致', async () => {
+  const { out, calls } = await runGate({
+    args: { plan: 'p.md', size: 'small', models: ROSTER3 },
+    agentStub: (prompt, opts) => (opts.provider === 'bailian' ? null : APPROVE), // bailian 整家宕机
+  })
+  const gateCalls = calls.filter((c) => c.opts.phase === 'Gate')
+  assert.equal(gateCalls.length, 2)
+  assert.notEqual(gateCalls[1].opts.provider, 'bailian', '重派必须换到另一 provider')
+  assert.notEqual(gateCalls[1].opts.provider, 'kimi', '换池后仍不得与作者同源')
+  assert.notEqual(gateCalls[1].opts.provider, 'zai', 'cheap 档不得进门下门候选')
+  assert.equal(out.verdict, 'approve')
+
+  const single = { author: { provider: 'kimi', model: 'k3' }, panel: [{ provider: 'zai', model: 'a' }, { provider: 'zai', model: 'b' }], gate: { provider: 'zai', model: 'a', tier: 'strong' } }
+  const s = await runGate({ args: { plan: 'p.md', size: 'small', models: single }, agentStub: () => ({ ...APPROVE, decision_brief: { what: 'x', risks: [] } }) })
+  assert.equal(s.out.verdict, 'approve', '单 provider 不阻塞')
+  assert.match(s.out.modelNote, /无模型多样性/)
+  assert.ok(s.out.decisionBrief.risks.some((r) => /无模型多样性/.test(r)), '披露必须进决策简报（用户确认的对象）')
+
+  const none = await runGate({ args: { plan: 'p.md', size: 'small' }, agentStub: () => APPROVE })
+  assert.equal(none.calls[0].opts.provider, undefined, '无 roster 不得传 provider')
+  assert.match(none.out.modelNote, /无模型阵容/)
+})
+
+test('model-routing-probe: 覆盖被静默忽略时必须 FAIL（阴性对照）；随附 example roster 能通过门禁配置校验', async () => {
+  const source = await readFile(join(repoRoot, '.claude/workflows/model-routing-probe.js'), 'utf8')
+  const runnable = source.replace(/^export const meta =/m, 'const meta =')
+  const runProbe = (agent, args) => new Function('phase', 'log', 'parallel', 'agent', 'args',
+    `return (async () => {\n${runnable}\n})()`)(() => {}, () => {}, async (ts) => Promise.all(ts.map((t) => t())), agent, args)
+  const targets = [{ provider: 'bailian', model: 'ds' }, { provider: 'zai', model: 'glm' }]
+  const honored = await runProbe(async (p, o) => (o.provider.startsWith('__') ? null : { answer: 'pong' }), { targets })
+  assert.equal(honored.ok, true, JSON.stringify(honored))
+  const ignored = await runProbe(async () => ({ answer: 'pong' }), { targets })
+  assert.equal(ignored.ok, false, '不存在的 provider 也成功 = 覆盖被忽略，探针必须红')
+  assert.match(ignored.reasons.join(), /阴性对照未失败/)
+  const down = await runProbe(async (p, o) => (o.provider === 'zai' || o.provider.startsWith('__') ? null : { answer: 'pong' }), { targets })
+  assert.equal(down.ok, false)
+
+  const example = JSON.parse(await readFile(join(repoRoot, '.xdev/review-models.example.json'), 'utf8'))
+  const { out } = await runGate({ args: { plan: 'p.md', size: 'small', models: example }, agentStub: () => APPROVE })
+  assert.equal(out.verdict, 'approve', `随附示例必须是合法配置：${out.reasons}`)
+})
+
+test('薄壳行数预算覆盖四个薄壳（v3.4 订正：此前 <120 只守 bugfix/iterate，design/impl 无约束）', async () => {
+  for (const name of ['bugfix', 'iterate', 'full-dev-design', 'full-dev-impl']) {
+    const text = await readFile(join(repoRoot, `claude-code/${name}.md`), 'utf8')
+    assert.ok(text.split('\n').length < 120, `${name}: grew past the thin-shell budget`)
+  }
+  // 交接薄壳只放指针、不承载规则（D7）：必须指向 full-dev.md 与 handoff.mjs，且仍自声明不重复
+  const design = await readFile(join(repoRoot, 'claude-code/full-dev-design.md'), 'utf8')
+  const impl = await readFile(join(repoRoot, 'claude-code/full-dev-impl.md'), 'utf8')
+  assert.match(design, /handoff\.mjs contract/)
+  assert.match(impl, /执行契约/)
+  for (const s of [design, impl]) assert.match(s, /本文件不重复/)
+  // 权威在 full-dev.md（经 gen-dsh 送达 dsh——薄壳本身不进 preset）
+  const flow = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  assert.match(flow, /handoff\.mjs contract <plan>\.execution\.md/, 'full-dev 阶段 2 末必须有交接契约指令')
+  assert.match(flow, /缺执行契约不得交接/)
+  assert.match(flow, /存在执行契约 → 先按其开工打卡/, 'full-dev 阶段 3 首段必须有开工打卡')
+  const skill = await readFile(join(repoRoot, 'skills/xdev-full-dev/SKILL.md'), 'utf8')
+  assert.match(skill, /handoff\.mjs contract/, 'dsh skill 未同步交接契约（run: node bin/gen-dsh.mjs）')
+})
+
+test('v3.4 元规则与研究侧增补：full-dev / research 两处元规则各自独立守卫，研究侧预检含适用性', async () => {
+  const flow = await readFile(join(repoRoot, 'claude-code/full-dev.md'), 'utf8')
+  const research = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
+  for (const [name, src] of [['full-dev', flow], ['research', research]]) {
+    assert.match(src, /\*\*失误复发 → 机械化\*\*/, `${name}: 元规则缺失`)
+    assert.match(src, /只加文字规则[^\n]{0,4}(记为)?[ =]*未闭环/, `${name}: 必须声明"只加文字规则 = 未闭环"`)
+  }
+  assert.match(research, /⑥\*\*适用性\*\*/, '风险预检第 ⑥ 项适用性（W11/W13）')
+  assert.match(research, /research\.mjs run-check <run 目录>/, '阶段 3 每个 run 过 run-check')
+  assert.match(research, /research\.mjs void/, '作废登记走 void')
+  assert.match(research, /\[推断\]\*\*——\[推断\] 禁入结论/, '报告纪律：[推断] 禁入结论')
+  assert.match(research, /分布形态/, '判据附分布形态')
+  assert.doesNotMatch(research, /manifest\.sha256/, 'research.mjs 从不产出 manifest.sha256（陈旧目录约定）')
+  assert.doesNotMatch(research, /`node bin\/research\.mjs/, '工具路径须相对 skill 资源目录（../../bin/），用户项目里没有 bin/')
+  assert.match(flow, /model-routing-probe\.js/, '跨 provider 阵容启用前须先跑探针')
+  assert.match(flow, /门下门须与作者异 provider 且 strong 档/)
 })

@@ -14,6 +14,12 @@
       "detail": "CHANGELOG 声称的守卫测试条数（真值 = 实际 it/test 计数）"
     },
     {
+      "doc": "docs/CHANGELOG.md",
+      "pattern": "条新测试（(\\d+) 总）",
+      "actual": { "kind": "testCases" },
+      "detail": "演进 CHANGELOG 顶部条目声称的测试总数（真值 = 实际 it/test 计数）"
+    },
+    {
       "doc": "README.md",
       "pattern": "dev workflow is ~(\\d+) lines",
       "flags": "i",
@@ -128,6 +134,8 @@
     }
   ],
   "commands": [
+    "node bin/research.mjs",
+    "node bin/handoff.mjs",
     "node bin/gen-dsh.mjs",
     "node bin/cost-report.mjs",
     "node bin/drift-check.mjs",
