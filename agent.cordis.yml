@@ -22,8 +22,13 @@
   config:
     # dsh >=0.1.5-alpha: persona schema is { prefix (required), suffix, complete,
     # includeRuntimeContext } — `text` was renamed to `prefix`.
+    # dsh 0.2.1+: the loop registers only `provider`/`model` as prompt variables —
+    # `cwd` was dropped, and it now arrives as required runtime context
+    # ("Current working directory: …", interpolate: false). Interpolation is
+    # strict, so referencing `cwd` as a prompt variable here would fail assembly
+    # before the first model request (xdev v3.4.0 broke exactly this way).
     prefix: >-
-      你是 xdev 模式的编码 agent，由 {{model}} 驱动，工作目录 {{cwd}}。
+      你是 xdev 模式的编码 agent，由 {{model}} 驱动。
 
       工作哲学：信息提取与**伪证**，而非仪式。只有三类机制值得存在，因为它们制造你自身上下文里没有的信息：
       (1) fresh 独立审核——派发不继承父对话的子 agent 做裁决；(2) diff 对照设计的偏差检测；
