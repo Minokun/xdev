@@ -4,6 +4,14 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.4.1] - 2026-10-28
+
+dsh 0.2.1 compatibility fix. dsh 0.2.1-rc.2 dropped the built-in `cwd` prompt variable — the loop now registers only `provider` and `model`, and the working directory arrives as required runtime context (`Current working directory: …`, `interpolate: false`). xdev v3.4.0's persona prefix still interpolated `{{cwd}}`, and dsh's variable interpolation is strict, so **every xdev run on dsh 0.2.1+ died during prompt assembly, before the first model request** — the GUI showed 本轮运行失败/处理失败 with `unknown prompt variable "{{cwd}}" in section "deployment:persona-prefix"; registered variables: provider, model`. v3.4.0's dsh adaptation was verified on `0.2.0-rc.2`, where `cwd` was still a registered variable, so the break only appeared after upgrading.
+
+### Fixed
+
+- **xdev 模式在 dsh 0.2.1+ 上每轮都失败** — `agent.cordis.yml` 的 persona prefix 删掉了 `{{cwd}}` 引用（保留 `{{model}}`），并在该行上方注释里钉住原因与版本边界，避免后续升级又把变量写回来。信息不丢：工作目录仍由 dsh 的 working-directory 服务以「必填运行时上下文」注入到模型。验证：按 dsh 的 `!!js` YAML 方言解析 preset 后，全树 `{{…}}` 扫描只剩 `{{model}}`；仓库与 `~/.dsh/.agent-presets/xdev` 的 `agent.cordis.yml` diff 为空；84 项守卫测试全部通过，`gen-dsh.mjs --check` 无 stale。
+
 ## [v3.4.0] - 2026-10-12
 
 Weak-model execution contract + cross-provider review roster. Basis: a live handoff where a strong model wrote the plan and GLM-5.3 executed it (2026-10-09 ~ 10-12) — the executor was reliable under "iron rules + stop conditions + machine gate", but **text rules held only until a mistake recurred**: placeholder hashes and references to voided runs came back after the written rule, and stopped only once a script checked them.
