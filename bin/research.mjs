@@ -288,8 +288,8 @@ function cmdVerify(dir) {
     }
   }
 
-  // 5) T2 溯源：报告/verdict 里的 runs/ 引用必须存在且在持久位置
-  const docFiles = [join(dir, 'report.md')]
+  // 5) T2 溯源：报告/文献/verdict 里的 runs/ 引用必须存在且在持久位置（严禁 /tmp 易失路径）
+  const docFiles = [join(dir, 'report.md'), join(dir, 'literature.md')]
   const judgeDir = join(dir, 'judge')
   if (existsSync(judgeDir)) {
     const walkMd = (d) => { for (const n of readdirSync(d)) { const p = join(d, n); if (statSync(p).isDirectory()) walkMd(p); else if (n.endsWith('.md')) docFiles.push(p) } }
@@ -354,6 +354,27 @@ function cmdVerify(dir) {
     }
     if (cells.length && !problems.some((p) => p.includes('VERDICT') || p.includes('JUDGE'))) ok(`verdict 双路：${cmp}/${cells.length} 格一致`)
   }
+
+  // 8) 外部证据契约：literature.md / report.md 不得把空/错/仅标题抓取标为 source-read，
+  //    不得将 AUROC 与 AU-PRO 作同量级/直接可比，不得把同模型重读/second-opinion 标为 independently-checked
+  for (const ef of [join(dir, 'literature.md'), join(dir, 'report.md')]) {
+    if (!existsSync(ef)) continue
+    const rel = relative(dir, ef)
+    const lines = readFileSync(ef, 'utf8').split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i]
+      if (/\bsource-read\b/.test(l) && /\b(empty|title_only|error)\b|空正文|仅标题|HTTP\s*(202|[45]\d\d)/i.test(l) && !/(禁入|不得|禁止|不算)/.test(l)) {
+        bad('EXT-EMPTY-SOURCE-READ', `${rel}:${i + 1} 将 empty/title_only/error 抓取标为 source-read`)
+      }
+      if (/\bAUROC\b/i.test(l) && /\bAU-?PRO\b/i.test(l) && /(同量级|直接可比|直接横比|\bcomparable\b)/i.test(l) && !/(不可|不能|禁止|不得|\bnot\s+comparable\b|\bincomparable\b)/i.test(l)) {
+        bad('EXT-METRIC-CONFLICT', `${rel}:${i + 1} 将 AUROC 与 AU-PRO 作同量级/直接可比（违反跨指标比较禁令）`)
+      }
+      if (/\bindependently-checked\b/.test(l) && /(同模型重读|second-opinion|同源摘要)/i.test(l) && !/(禁入|不得|禁止|不算)/.test(l)) {
+        bad('EXT-FAKE-INDEPENDENT', `${rel}:${i + 1} 将同模型重读/second-opinion/同源摘要标为 independently-checked`)
+      }
+    }
+  }
+  if (!problems.some((p) => p.startsWith('[EXT-'))) ok('外部证据契约：literature.md / report.md 无越级标注或跨指标混比')
 
   if (problems.length) {
     console.error(`\nverify FAIL：${problems.length} 项（fail-closed，不得软化）`)

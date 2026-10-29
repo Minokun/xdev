@@ -12,13 +12,14 @@ External research evidence contract (`/xdev:ask` & `/xdev:research` stage 1) + `
 
 - **External research evidence contract (`/xdev:ask` as single source of truth, shared by `/xdev:research` stage 1)** — 3-level evidence state (`snippet-only` / `source-read` / `independently-checked`, barring HTTP 200/202 empty or title-only fetches from `source-read`), separate source nature (`primary` / `secondary` / `promotional`, where tender thresholds ≠ measured performance) and continuation provenance (`inherited` / `reverified` / `new` / `corrected`); short proposition-alignment card for high-impact external claims (`correction` / `absence` / `ranking` / `comparison`), forcing dimension mismatches down to "related precedent / narrowed claim / not directly comparable"; cross-metric comparison ban (`AUROC` vs `AU-PRO`); `Unknowns` reverse-constraining `Answer` (unverified sources in `Unknowns` must exit quantitative/ranking/overturning claims in `Answer`); ban on self-reported tool call totals without trusted telemetry; and 3–5 decision-changing caveats bound to high-impact conclusions across follow-up simplified summaries.
 - **`cost-report.mjs` `web_fetch` content-state classification & per-turn `toolCounts`** — `classifyWebFetchResult` and `computeMetrics` pair `web_fetch` calls with `tool/result` payloads to report `{ statusCode, extractedChars, contentState: 'empty'|'title_only'|'error'|'body', usableForSourceRead }` and per-turn tool counts (`turnsDetail[].toolCounts`), rendering a `web_fetch 有效正文` summary line in markdown reports.
+- **`research.mjs verify` external-evidence mechanical gate** — step 8 in `verify` checks `literature.md` and `report.md` for empty/title-only/error fetches promoted to `source-read` (`EXT-EMPTY-SOURCE-READ`), direct cross-metric equivalence between `AUROC` and `AU-PRO` (`EXT-METRIC-CONFLICT`), and same-model re-read / `second-opinion` promoted to `independently-checked` (`EXT-FAKE-INDEPENDENT`), plus `/tmp` ephemeral path checks on `literature.md`.
 
 ### Fixed
 
 - **`ask.md` read-only clause conflicted with `agent.cordis.yml` external truth grounding** — `ask.md` previously banned all network calls outside Graphify; it now explicitly permits read-only `web_search` / `web_fetch` when the question involves external literature, public benchmarks, industry comparison, or authoritative truth outside the repo.
 - **`cost-report.mjs` missed dsh 0.2.x `session.v4.jsonl.zstd` transcripts during ID / `--latest` discovery** — `listSessions` hardcoded `session.v3.jsonl.zstd`; it now discovers `session.v4.jsonl.zstd` first and falls back to `v3`.
 
-`tests/workflows.test.mjs` grew from 11 to 86 tests guarding each new mechanism; 12 new mutation probes.
+`tests/workflows.test.mjs` grew from 11 to 86 tests guarding each new mechanism; 15 new mutation probes.
 
 ## [v3.4.1] - 2026-10-28
 

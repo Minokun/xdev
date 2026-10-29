@@ -11,7 +11,7 @@
 
 ## [v3.4.2] - 2026-10-29 (外部调研证据契约 + cost-report v4 / web_fetch 机械审计)
 
-**改动位置：** `claude-code/ask.md`（+ 生成的 `skills/xdev-ask/SKILL.md`）、`claude-code/research.md` 阶段 1（+ 生成的 `skills/xdev-research/SKILL.md`）、`bin/cost-report.mjs`、`docs/reviews/2026-10-28-external-research-evidence-gates-design.md`（r2）、`tests/`。
+**改动位置：** `claude-code/ask.md`（+ 生成的 `skills/xdev-ask/SKILL.md`）、`claude-code/research.md` 阶段 1（+ 生成的 `skills/xdev-research/SKILL.md`）、`bin/research.mjs`（`verify` 外部证据机检）、`bin/cost-report.mjs`、`docs/reviews/2026-10-28-external-research-evidence-gates-design.md`（r2）、`tests/`。
 
 **Rationale（实盘，2026-10-28 三会话外部调研对照）：** 同一组三轮问题（仓库进展 → 简化解释 → 行业定位）下，xdev 会话读取既有研究底稿后回源纠正了 E-RC 的数值（证明续研复用有真实正收益），但暴露五处外部调研失控：① 4 次 `web_search` + 5 次 `web_fetch` 被凭印象自报为 3+4；② 5 次 `web_fetch` 全部无有效正文（2 次 `dlzb.com` HTTP 200 空正文、1 次 `mvtec.com` HTTP 200 仅 15 字符短标题、1 次 OSS 403、1 次 IEEE HTTP 202 空正文），仍写出"亲自核到/外部真值"；③ 用"部件级 SAM + 正常原型 AD"先例宣称推翻"跨杆/跨期重复结构建模"窄命题；④ 把 `AU-PRO` 与框级 `AUROC` 称作"同量级"；⑤ 简化回答剥离了关键候选池/样本量限制。此外 `ask.md` 第 42 行"禁止 Graphify 之外的网络调用"与 `agent.cordis.yml` 开放 `tool-web` 外部接地自相矛盾，`cost-report.mjs` 硬编码 `v3` 导致 `session.v4.jsonl.zstd` 按 ID 无法自动发现。
 
@@ -23,9 +23,9 @@
 
 **What landed：**
 1. **`ask.md` 外部调研证据契约（唯一真源）+ 只读联网例外**：开放外部文献/基准/权威真值的只读 `web_search`/`web_fetch`；定义三级证据状态（`snippet-only` / `source-read` / `independently-checked`，HTTP 200/202 空或仅标题抓取禁入 `source-read`）+ 来源性质 + provenance；高影响结论（`correction/absence/ranking/comparison`）短命题对齐卡与强制降级表述；跨指标（如 `AUROC` vs `AU-PRO`）禁比；`Unknowns` 反向限缩 `Answer`；禁自报工具调用总次数；跨轮简化回答绑定保留 3–5 条关键 caveat。
-2. **`research.md` 阶段 1 等行对齐**：将原二元标签升级为指向 `ask.md` 的三级外部证据状态与命题对齐约束，行数保持 415/415。
+2. **`research.md` 阶段 1 等行对齐 + `bin/research.mjs verify` 外部证据机械门**：`research.md` 将原二元标签升级为指向 `ask.md` 的三级外部证据状态与命题对齐约束，行数保持 415/415；`research.mjs verify` 新增第 8 项检查，对 `literature.md` / `report.md` 机械拦截空/仅标题/错误抓取标 `source-read`（`EXT-EMPTY-SOURCE-READ`）、`AUROC` 与 `AU-PRO` 跨指标直接横比（`EXT-METRIC-CONFLICT`）、同模型重读/`second-opinion` 冒充 `independently-checked`（`EXT-FAKE-INDEPENDENT`），并将 `literature.md` 纳入 `T2-EPHEMERAL`（`/tmp` 路径检查）。
 3. **`cost-report.mjs` v4 自动发现与 `web_fetch` 状态审计**：`listSessions` 优先发现 `session.v4.jsonl.zstd`（回退 `v3`）；`classifyWebFetchResult` + `computeMetrics` 从 `tool/result` 机械提取每次 `web_fetch` 的 `statusCode` / `extractedChars` / `contentState`（`empty` / `title_only` / `error` / `body`）与分轮次 `toolCounts`，对 `e422fe6c` 实盘会话实测输出 `web_fetch 有效正文：0 / 5（空正文 3 · 仅标题 1 · 错误/挑战 1）`。
-4. 守卫：2 条新测试（86 总）+ 12 条变异探针。VERSION → 3.4.2。
+4. 守卫：2 条新测试（86 总）+ 15 条变异探针。VERSION → 3.4.2。
 
 ## [v3.4.0] - 2026-10-12 (弱模型执行契约 + 跨 provider 评审阵容)
 

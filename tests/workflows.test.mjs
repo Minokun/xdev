@@ -1966,7 +1966,8 @@ test('v3.4 元规则与研究侧增补：full-dev / research 两处元规则各�
 
 // ── v3.4.2 外部调研证据契约 + cost-report v4 / web_fetch 机械审计 ──────────────────
 
-test('外部调研证据契约：ask.md 唯一真源（只读联网例外 / 三级证据状态 / 短命题对齐卡 / 跨指标禁比 / Unknowns 反向限缩 / 禁自报次数 / 关键 caveat）与 research.md 阶段 1 对齐', async () => {
+test('外部调研证据契约：ask.md 唯一真源（只读联网例外 / 三级证据状态 / 短命题对齐卡 / 跨指标禁比 / Unknowns 反向限缩 / 禁自报次数 / 关键 caveat）与 research.md 阶段 1 对齐', async (t) => {
+  const { writeFile } = await import('node:fs/promises')
   const ask = await readFile(join(repoRoot, 'claude-code/ask.md'), 'utf8')
   const research = await readFile(join(repoRoot, 'claude-code/research.md'), 'utf8')
   const askSkill = await readFile(join(repoRoot, 'skills/xdev-ask/SKILL.md'), 'utf8')
@@ -1999,6 +2000,23 @@ test('外部调研证据契约：ask.md 唯一真源（只读联网例外 / 三�
   assert.match(research, /按 `ask\.md`《外部调研证据契约》标三级状态（`snippet-only`\/`source-read`\/`independently-checked`，空\/错抓取禁入 `source-read`）/, 'research 阶段 1 必须复用 ask.md 的三级外部证据状态')
   assert.match(askSkill, /外部调研证据契约/, 'skills/xdev-ask/SKILL.md 必须同步')
   assert.match(researchSkill, /按 `\/xdev-ask`《外部调研证据契约》/, 'skills/xdev-research/SKILL.md 必须把 ask.md 引用转为 /xdev-ask')
+
+  // 7) bin/research.mjs verify 机械门：拦截 literature.md / report.md 的空抓取越级、跨指标混比、同模型重读假独立
+  const { root, run } = await buildResearchFixture(t)
+  const lit = join(root, 'literature.md')
+  const litOrig = await readFile(lit, 'utf8')
+  const checkVerifyRed = async (line, code) => {
+    await writeFile(lit, `${litOrig}\n${line}\n`)
+    let out = ''
+    try { out = run(['verify', root]) } catch (e) { out = `${e.stdout}${e.stderr}` }
+    assert.match(out, new RegExp(code), `literature.md 违规行必须触发 ${code}`)
+    assert.match(out, /verify FAIL/)
+  }
+  await checkVerifyRed('- [MVTec VAND] 状态: source-read（web_fetch HTTP 200 title_only 仅标题）', 'EXT-EMPTY-SOURCE-READ')
+  await checkVerifyRed('- MVTec AD 2 AU-PRO 63.6% 与 MPDD AUROC 62% 属于同量级', 'EXT-METRIC-CONFLICT')
+  await checkVerifyRed('- [IEEE 10847919] 状态: independently-checked（由 second-opinion 同源摘要确认）', 'EXT-FAKE-INDEPENDENT')
+  await writeFile(lit, `${litOrig}\n- MVTec AD 2 AU-PRO 63.6% 与 MPDD AUROC 62% 因指标不同不可直接比较（snippet-only）\n`)
+  assert.match(run(['verify', root]), /verify PASS/, '明确声明不可直接比较的合规条目必须放行')
 })
 
 test('cost-report: 自动发现 session.v4.jsonl.zstd，机械提取分轮次 toolCounts 与 web_fetch 空正文/仅标题/HTTP 错误状态', async (t) => {
