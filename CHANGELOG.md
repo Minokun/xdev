@@ -4,6 +4,22 @@ All notable user-facing changes to xdev are documented here.
 
 This file is for GitHub Releases and upgrade notes. For deeper workflow design rationale, see `docs/CHANGELOG.md`.
 
+## [v3.4.2] - 2026-10-29
+
+External research evidence contract (`/xdev:ask` & `/xdev:research` stage 1) + `cost-report.mjs` v4 session discovery and `web_fetch` content-state audit. Basis: `docs/reviews/2026-10-28-external-research-evidence-gates-design.md` (r2, three live research/benchmarking sessions on 2026-10-28 where 5/5 `web_fetch` calls returned empty/title-only/403/202 payloads while the model still claimed verified full text, over-extrapolated a component-level precedent to overturn a cross-pole/cross-period proposition, compared `AU-PRO` with box-level `AUROC` as "same order of magnitude", and misreported 4 searches + 5 fetches as 3 + 4).
+
+### Added
+
+- **External research evidence contract (`/xdev:ask` as single source of truth, shared by `/xdev:research` stage 1)** — 3-level evidence state (`snippet-only` / `source-read` / `independently-checked`, barring HTTP 200/202 empty or title-only fetches from `source-read`), separate source nature (`primary` / `secondary` / `promotional`, where tender thresholds ≠ measured performance) and continuation provenance (`inherited` / `reverified` / `new` / `corrected`); short proposition-alignment card for high-impact external claims (`correction` / `absence` / `ranking` / `comparison`), forcing dimension mismatches down to "related precedent / narrowed claim / not directly comparable"; cross-metric comparison ban (`AUROC` vs `AU-PRO`); `Unknowns` reverse-constraining `Answer` (unverified sources in `Unknowns` must exit quantitative/ranking/overturning claims in `Answer`); ban on self-reported tool call totals without trusted telemetry; and 3–5 decision-changing caveats bound to high-impact conclusions across follow-up simplified summaries.
+- **`cost-report.mjs` `web_fetch` content-state classification & per-turn `toolCounts`** — `classifyWebFetchResult` and `computeMetrics` pair `web_fetch` calls with `tool/result` payloads to report `{ statusCode, extractedChars, contentState: 'empty'|'title_only'|'error'|'body', usableForSourceRead }` and per-turn tool counts (`turnsDetail[].toolCounts`), rendering a `web_fetch 有效正文` summary line in markdown reports.
+
+### Fixed
+
+- **`ask.md` read-only clause conflicted with `agent.cordis.yml` external truth grounding** — `ask.md` previously banned all network calls outside Graphify; it now explicitly permits read-only `web_search` / `web_fetch` when the question involves external literature, public benchmarks, industry comparison, or authoritative truth outside the repo.
+- **`cost-report.mjs` missed dsh 0.2.x `session.v4.jsonl.zstd` transcripts during ID / `--latest` discovery** — `listSessions` hardcoded `session.v3.jsonl.zstd`; it now discovers `session.v4.jsonl.zstd` first and falls back to `v3`.
+
+`tests/workflows.test.mjs` grew from 11 to 86 tests guarding each new mechanism; 12 new mutation probes.
+
 ## [v3.4.1] - 2026-10-28
 
 dsh 0.2.1 compatibility fix. dsh 0.2.1-rc.2 dropped the built-in `cwd` prompt variable — the loop now registers only `provider` and `model`, and the working directory arrives as required runtime context (`Current working directory: …`, `interpolate: false`). xdev v3.4.0's persona prefix still interpolated `{{cwd}}`, and dsh's variable interpolation is strict, so **every xdev run on dsh 0.2.1+ died during prompt assembly, before the first model request** — the GUI showed 本轮运行失败/处理失败 with `unknown prompt variable "{{cwd}}" in section "deployment:persona-prefix"; registered variables: provider, model`. v3.4.0's dsh adaptation was verified on `0.2.0-rc.2`, where `cwd` was still a registered variable, so the break only appeared after upgrading.

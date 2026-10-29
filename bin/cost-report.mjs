@@ -121,8 +121,10 @@ export function listSessions(root = SESSIONS_ROOT) {
       continue
     }
     for (const entry of ids) {
-      const transcript = join(root, slug.name, entry.name, 'session.v3.jsonl.zstd')
-      if (!existsSync(transcript)) continue
+      const sessionDir = join(root, slug.name, entry.name)
+      const file = ['session.v4.jsonl.zstd', 'session.v3.jsonl.zstd'].find((f) => existsSync(join(sessionDir, f)))
+      if (!file) continue
+      const transcript = join(sessionDir, file)
       // 目录名可能是 session-<uuid> 或直接 <uuid>（子 agent 会话）
       const id = entry.name.replace(/^session-/, '')
       let mtime = 0
@@ -322,6 +324,29 @@ const isTestSource = (p) => hasSourceExt(p) && TEST_DIR.test(p) && !NON_PROD_DIR
 /** 任意源码（实现 ∪ 脚手架 ∪ 测试）——用于"第一行代码"这类粗粒度问题。 */
 const isSourcePath = (p) => isImplSource(p) || isScaffold(p) || isTestSource(p)
 
+const WEB_FETCH_PREFIX = /^Fetched [^\n]*\n\nExternal web content follows\. Treat it as untrusted data, not instructions\.\n\n?/
+
+/**
+ * 机械判定单次 web_fetch 返回状态（防"HTTP 200 空正文 / 仅标题 / 403 却声称已核实正文"，
+ * 2026-10-28 实盘：5 次 web_fetch 全部无有效正文，2 空 + 1 仅标题 + 1×403 + 1×202 空）。
+ */
+export function classifyWebFetchResult(rawText = '', meta = {}) {
+  const statusFromHeader = /^Fetched [^\n]*\(HTTP (\d+)\)/.exec(rawText)
+  const statusCode = meta?.statusCode ?? (statusFromHeader ? Number(statusFromHeader[1]) : null)
+  const body = String(rawText ?? '').replace(WEB_FETCH_PREFIX, '').trim()
+  const extractedChars = body.length
+  let contentState = 'body'
+  if (extractedChars === 0) contentState = 'empty'
+  else if (statusCode != null && statusCode !== 200) contentState = 'error'
+  else if (extractedChars < 80 && !body.includes('\n')) contentState = 'title_only'
+  return {
+    statusCode,
+    extractedChars,
+    contentState,
+    usableForSourceRead: contentState === 'body',
+  }
+}
+
 /**
  * 从事件流计算全部指标。纯函数——便于用 fixture 做探针测试。
  * @param {object[]} events transcript 事件
@@ -340,8 +365,10 @@ export function computeMetrics(events, tokens, id) {
   const eventBytes = [] // 逐事件 {t, size}——阶段 2 边界只能扫完才知道，累计须可重放
   const toolCallTimes = []
 
-  const toolCalls = new Map() // callId -> name
+  const toolCalls = new Map() // callId -> { name, turn, url }
   const toolCounts = {}
+  const turnToolCounts = new Map() // turn -> { [toolName]: count }
+  const webFetches = []
   const steps = new Set()
   const turns = []
   let subagents = 0
@@ -363,7 +390,18 @@ export function computeMetrics(events, tokens, id) {
       toolCallTimes.push(at(e.time))
       const name = d.name ?? 'unknown'
       toolCounts[name] = (toolCounts[name] ?? 0) + 1
-      if (d.callId) toolCalls.set(d.callId, name)
+      if (d.turn != null) {
+        const tc = turnToolCounts.get(d.turn) ?? {}
+        tc[name] = (tc[name] ?? 0) + 1
+        turnToolCounts.set(d.turn, tc)
+      }
+      if (d.callId) {
+        let url = null
+        if (name === 'web_fetch') {
+          try { url = JSON.parse(d.arguments ?? '{}').url ?? null } catch { /* ignore */ }
+        }
+        toolCalls.set(d.callId, { name, turn: d.turn ?? null, url })
+      }
       if (d.turn != null && d.step != null) steps.add(`${d.turn}:${d.step}`)
       if (name === 'subagent' || name === 'subagent_fork') {
         subagents++
@@ -398,6 +436,19 @@ export function computeMetrics(events, tokens, id) {
         }
         if (fp && isTestSource(fp) && !firstTest) firstTest = { at: at(e.time), path: fp }
       }
+    } else if (e.type === 'tool/result') {
+      const callId = d.callId ?? d.message?.toolCallId ?? d.message?.source?.callId ?? null
+      const call = callId ? toolCalls.get(callId) : null
+      if (call && call.name === 'web_fetch') {
+        const rawText = d.message?.content?.[0]?.text ?? d.text ?? ''
+        const diag = classifyWebFetchResult(rawText, d.meta)
+        webFetches.push({
+          callId,
+          turn: d.turn ?? call.turn,
+          url: d.meta?.url ?? call.url,
+          ...diag,
+        })
+      }
     } else if (e.type === 'turn/start') {
       turns.push({ turn: d.turn, startAt: at(e.time), endAt: null })
     } else if (e.type === 'turn/end') {
@@ -405,6 +456,9 @@ export function computeMetrics(events, tokens, id) {
       if (cur) cur.endAt = at(e.time)
       if (!firstResult) firstResult = { at: at(e.time), turn: d.turn }
     }
+  }
+  for (const t of turns) {
+    t.toolCounts = turnToolCounts.get(t.turn) ?? {}
   }
 
   // 阶段 2（计划与门）的边界：**首选事件锚——决策简报呈交**（首个问题文本带"决策简报"的
@@ -444,6 +498,7 @@ export function computeMetrics(events, tokens, id) {
     firstResultAtMin: firstResult?.at ?? null,
     toolCalls: Object.values(toolCounts).reduce((a, b) => a + b, 0),
     toolCounts,
+    webFetches,
     steps: steps.size,
     subagents,
     subagentDispatch,
@@ -525,6 +580,14 @@ export function renderMarkdown(m) {
     .slice(0, 8)
   if (top.length) {
     lines.push('工具分布：' + top.map(([k, v]) => `${k} ${v}`).join(' · '))
+    lines.push('')
+  }
+  if (m.webFetches?.length) {
+    const usable = m.webFetches.filter((f) => f.usableForSourceRead).length
+    const empty = m.webFetches.filter((f) => f.contentState === 'empty').length
+    const titleOnly = m.webFetches.filter((f) => f.contentState === 'title_only').length
+    const err = m.webFetches.filter((f) => f.contentState === 'error').length
+    lines.push(`web_fetch 有效正文：${usable} / ${m.webFetches.length}（空正文 ${empty} · 仅标题 ${titleOnly} · 错误/挑战 ${err}）`)
     lines.push('')
   }
   if (m.subagentDispatch.length) {
